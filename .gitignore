@@ -1,5 +1,9 @@
 cbok/foundation/local/*
 !cbok/foundation/local/README.md
 !cbok/foundation/local/kubeadm.yaml
+review/*
+!review/README.md
+personnel
+ebook
 venv
 .idea
