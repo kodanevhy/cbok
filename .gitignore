@@ -1,3 +1,5 @@
 cbok/foundation/local/*
+!cbok/foundation/local/README.md
+!cbok/foundation/local/kubeadm.yaml
 venv
 .idea
