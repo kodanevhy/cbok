@@ -3,7 +3,7 @@ cbok/foundation/local/*
 !cbok/foundation/local/kubeadm.yaml
 review/*
 !review/README.md
-personnel
+personnel/*
 !personnel/README.md
 ebook
 venv
