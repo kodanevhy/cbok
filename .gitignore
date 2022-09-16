@@ -4,6 +4,7 @@ cbok/foundation/local/*
 review/*
 !review/README.md
 personnel
+!personnel/README.md
 ebook
 venv
 .idea
