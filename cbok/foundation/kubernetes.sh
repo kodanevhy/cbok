@@ -4,7 +4,8 @@ set -ex
 
 HOSTNAME="workspace"
 HOST_IP=$1
-# Not only the kubernetes version is, but also relates to all the other toolkits version around kubernetes.
+# Not only the Kubernetes version is, but also relates to all
+# the other toolkits version around it.
 VERSION="v1.24.2"
 CNI_PLUGIN_VERSION="v1.1.1"
 LOCAL_DIRECTORY="local"
