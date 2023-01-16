@@ -2,6 +2,7 @@ cbok/foundation/local/*
 !cbok/foundation/local/README.md
 !cbok/foundation/local/kubeadm.yaml
 cbok/toolbox/virt-devel/local/*
+!cbok/toolbox/virt-devel/local/README.md
 review/*
 !review/README.md
 personnel/*
