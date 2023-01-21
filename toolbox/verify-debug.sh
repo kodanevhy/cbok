@@ -47,7 +47,7 @@ function main() {
     pushd $local_
 
     # The file in verify-debug.tar.gz were code with filename
-    # format in '.' connected.
+    # formatted in '.' connected.
     if [ -f "verify-debug.tar.gz" ]; then
         tar zxvf verify-debug.tar.gz -C .
     else

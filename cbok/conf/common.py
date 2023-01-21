@@ -1,14 +1,9 @@
 from oslo_config import cfg
 
-common_group = cfg.OptGroup('common',
-                            title='common options',
-                            help='Options under this group are used to define'
-                                 ' common config.')
-
 COMMON_OPTS = [
     cfg.StrOpt(
         'workspace',
-        default='Workspace',
+        default='workspace',
         help='An extremely outer directory name for starting up. You may set '
              '"workspace" and "workspace_abs_path" in your favor.'
     ),
@@ -21,9 +16,8 @@ COMMON_OPTS = [
 
 
 def register_opts(conf):
-    conf.register_group(common_group)
-    conf.register_opts(COMMON_OPTS, group=common_group)
+    conf.register_opts(COMMON_OPTS)
 
 
 def list_opts():
-    return {common_group: COMMON_OPTS}
+    return {'DEFAULT': COMMON_OPTS}
