@@ -7,7 +7,8 @@ review/*
 !review/README.md
 personnel/*
 !personnel/README.md
-ebook
-venv
-.idea
+ebook/
+venv/
+.idea/
 .DS_Store
+__pycache__/

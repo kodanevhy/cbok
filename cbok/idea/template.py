@@ -1,8 +1,10 @@
 import os
 
-import cbok.conf
+from cbok import conf
+from oslo_log import log as logging
 
-CONF = cbok.conf.CONF
+CONF = conf.CONF
+LOG = logging.getLogger(__name__)
 
 FILE_FORMAT_CHAR_MAP = {'txt': '[]', 'md': '# '}
 FILE_FORMAT = [suffix for suffix in FILE_FORMAT_CHAR_MAP]
@@ -22,15 +24,18 @@ class Template:
         self.file_format = self.filename.split('.')[-1]
 
     def _ensure_filename(self, filename):
-        # NOTE(mizar): The filename may be formatted to 'a.b',
+        # NOTE(kodanevhy): The filename may be formatted to 'a.b',
         # so here it adds a prefix and replaces '.' to '_'.
         if filename.split('.')[-1] not in FILE_FORMAT:
-            # TODO(mizar): Log a warning message for the none prefix file.
             self.filename = filename.replace('.', '_') + FILE_FORMAT[0]
+            LOG.warning('Just accept %(file_format)s suffixed file,'
+                        'now generating the filename to %(filename)s' %
+                        {'file_format': FILE_FORMAT,
+                         'filename': self.filename})
 
     def create(self):
         try:
-            # NOTE(mizar): 'with open' may not create upper directory
+            # NOTE(kodanevhy): 'with open' may not create upper directory
             # automatically.
             if not os.path.exists(CONF.workspace):
                 os.mkdir(CONF.workspace)
