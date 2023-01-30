@@ -1,0 +1,14 @@
+[DEFAULT]
+workspace=workspace
+workspace_abs_path=/root/
+
+[api]
+api_works=4
+host=127.0.0.1
+debug=true
+
+[bookkeeping_database]
+connection = mysql+pymysql://root:000000@localhost:3306/bookkeeping
+max_overflow = -1
+max_pool_size = 20
+max_retries = -1
