@@ -1,6 +1,7 @@
 foundation/local/*
 !foundation/local/README.md
 !foundation/local/kubeadm.yaml
+!foundation/local/calico.yaml
 toolbox/virt-devel/local/*
 !toolbox/virt-devel/local/README.md
 review/*
