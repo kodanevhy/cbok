@@ -83,7 +83,9 @@ function main() {
     task_ctr_id="$(docker run -dit --name $prj-ut --privileged=true -v $local_/$prj:/$prj $mother_img bash)"
 
     docker exec -it $task_ctr_id bash -c "cd /$prj;sudo pip install tox"
+    set +e
     docker exec -it $task_ctr_id bash -c "cd /$prj;sudo tox -e $cmd"
+    set -e
     do_backup
     popd
 }
