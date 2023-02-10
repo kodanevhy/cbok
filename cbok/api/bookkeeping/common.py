@@ -1,17 +1,9 @@
 import collections
-import itertools
-import re
 from urllib import parse as urlparse
 
 from oslo_log import log as logging
-from oslo_utils import strutils
-import webob
-from webob import exc
 
 import cbok.conf
-from cbok import exception
-from cbok import objects
-from cbok import utils
 
 CONF = cbok.conf.CONF
 

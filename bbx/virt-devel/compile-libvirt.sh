@@ -50,14 +50,14 @@ sed -i 's/from importlib import metadata/try:\n    from importlib import metadat
 
 cd local
 
-if [ ! -f libvirt-official-6.0.0.tar.xz ]; then
+if [ ! -f libvirt-6.0.0.tar.xz ]; then
     # Download the source code from official website "libvirt.org/sources" instead
     # of git repository such as gitlab or github etc. The consideration for this
     # is that the source code from official website already includes the
     # executable script "configure" for compiling.
-    wget https://libvirt.org/sources/libvirt-6.0.0.tar.xz --no-check-certificate -O libvirt-official-6.0.0.tar.xz
+    wget https://libvirt.org/sources/libvirt-6.0.0.tar.xz --no-check-certificate -O libvirt-6.0.0.tar.xz
 fi
-tar xvf libvirt-official-6.0.0.tar.xz -C . && cd libvirt-6.0.0
+tar xvf libvirt-6.0.0.tar.xz -C . && cd libvirt-6.0.0
 
 # Find all the "--" flags to replace it to be "-" in compile docs, because
 # it may cause a parser error: "Double hyphen within comment".
