@@ -10,38 +10,35 @@ from sqlalchemy.sql import null
 from cbok.db.sqlalchemy import api as db_session
 from cbok import exception
 
-INIT_VERSION = {'bookkeeping': 0}
+INIT_VERSION = {'main': 0}
 _REPOSITORY = {}
 
 LOG = logging.getLogger(__name__)
 
 
-def get_engine(database='main', context=None):
-    if database == 'bookkeeping':
-        return db_session.get_engine(context=context)
-    # TODO(kodanevhy): we didn't have any other databases yet.
-    # if database == 'api':
-    #     return db_session.get_api_engine()
+def get_engine(database='main'):
+    if database == 'main':
+        return db_session.get_engine()
 
 
-def db_sync(version=None, database='main', context=None):
+def db_sync(version=None, database='main'):
     if version is not None:
         try:
             version = int(version)
         except ValueError:
             raise exception.CBoKException("version should be an integer.")
 
-    current_version = db_version(database, context=context)
+    current_version = db_version(database)
     repository = _find_migrate_repo(database)
     if version is None or version > current_version:
-        return versioning_api.upgrade(get_engine(database, context=context),
+        return versioning_api.upgrade(get_engine(database),
                 repository, version)
     else:
-        return versioning_api.downgrade(get_engine(database, context=context),
+        return versioning_api.downgrade(get_engine(database),
                 repository, version)
 
 
-def db_version(database='main', context=None):
+def db_version(database='main'):
     repository = _find_migrate_repo(database)
 
     # NOTE(kodanevhy): This is a crude workaround for races in _db_version. The 2
@@ -66,31 +63,26 @@ def db_version(database='main', context=None):
     # Until we do that, though, we should be able to just try again if we
     # failed for any reason. In both of the above races, trying again should
     # succeed the second time round.
-    #
-    # For additional context, see:
-    # * https://bugzilla.redhat.com/show_bug.cgi?id=1652287
-    # * https://bugs.launchpad.net/nova/+bug/1804652
     try:
-        return _db_version(repository, database, context)
+        return _db_version(repository, database)
     except Exception:
-        return _db_version(repository, database, context)
+        return _db_version(repository, database)
 
 
-def _db_version(repository, database, context):
+def _db_version(repository, database):
     try:
-        return versioning_api.db_version(get_engine(database, context=context),
+        return versioning_api.db_version(get_engine(database),
                                          repository)
     except versioning_exceptions.DatabaseNotControlledError as exc:
         meta = sqlalchemy.MetaData()
-        engine = get_engine(database, context=context)
+        engine = get_engine(database)
         meta.reflect(bind=engine)
         tables = meta.tables
         if len(tables) == 0:
             db_version_control(INIT_VERSION[database],
-                               database,
-                               context=context)
+                               database)
             return versioning_api.db_version(
-                        get_engine(database, context=context), repository)
+                        get_engine(database), repository)
         else:
             LOG.exception(exc)
             # Some pre-Essex DB's may not be version controlled.
@@ -140,9 +132,9 @@ def _process_null_records(table, col_name, check_fkeys, delete=False):
     return records
 
 
-def db_version_control(version=None, database='main', context=None):
+def db_version_control(version=None, database='main'):
     repository = _find_migrate_repo(database)
-    versioning_api.version_control(get_engine(database, context=context),
+    versioning_api.version_control(get_engine(database),
                                    repository,
                                    version)
     return version
@@ -152,8 +144,8 @@ def _find_migrate_repo(database='main'):
     """Get the path for the migrate repository."""
     global _REPOSITORY
     rel_path = 'migrate_repo'
-    if database == 'bookkeeping':
-        rel_path = os.path.join('bookkeeping_migrations', 'migrate_repo')
+    if database == 'main':
+        rel_path = os.path.join('main_migrations', 'migrate_repo')
     path = os.path.join(os.path.abspath(os.path.dirname(__file__)),
                         rel_path)
     assert os.path.exists(path)

@@ -10,22 +10,23 @@ these objects be simple dictionaries.
 
 """
 
-from oslo_db import concurrency
 from oslo_log import log as logging
 
 import cbok.conf
 from cbok.db import constants
+from cbok.db.sqlalchemy import api as sa_api
 
 
 CONF = cbok.conf.CONF
+LOG = logging.getLogger(__name__)
 # NOTE(kodanevhy): These constants are re-defined in this module to preserve
 # existing references to them.
 MAX_INT = constants.MAX_INT
 SQL_SP_FLOAT_MAX = constants.SQL_SP_FLOAT_MAX
 
-_BACKEND_MAPPING = {'sqlalchemy': 'cbok.db.sqlalchemy.api'}
+IMPL = sa_api
 
 
-IMPL = concurrency.TpoolDbapiWrapper(CONF, backend_mapping=_BACKEND_MAPPING)
-
-LOG = logging.getLogger(__name__)
+def meh_get(meh_id):
+    """Get a meh or raise if it does not exist."""
+    return IMPL.meh_get(meh_id)

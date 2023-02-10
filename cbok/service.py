@@ -3,20 +3,19 @@ from oslo_service import service
 from oslo_service import wsgi
 
 from cbok import conf
-from cbok.api.bookkeeping import routes
+from cbok.api import wsgi as wsgi_api
 
 LOG = logging.getLogger(__name__)
 CONF = conf.CONF
 
-PIPELINE = [routes.RouterMiddleware]
+PIPELINE = [wsgi_api.Router]
 
 
 def load_pipeline_wsgi():
     app = PIPELINE[-1]()
-    # TODO(kodanevhy): we didn't have any other middlewares to wrap yet.
-    # for wsgi_middleware in PIPELINE[-2::-1]:
-    #     app = wsgi_middleware(app)
-    #
+    # NOTE(kodanevhy): we didn't have any other middlewares to wrap yet.
+    for wsgi_middleware in PIPELINE[-2::-1]:
+        app = wsgi_middleware()
     return app
 
 

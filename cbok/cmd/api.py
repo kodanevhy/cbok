@@ -11,6 +11,7 @@ CONF = cbok.conf.CONF
 LOG = logging.getLogger(__name__)
 
 
+# TODO(kodanevhy): Provide app enable/disable ability.
 def main():
     config.parse_args(sys.argv)
     logging.setup(CONF, 'cbok')

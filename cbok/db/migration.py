@@ -5,14 +5,14 @@ from cbok.db.sqlalchemy import migration
 IMPL = migration
 
 
-def db_sync(version=None, database='main', context=None):
+def db_sync(version=None, database='main'):
     """Migrate the database to `version` or the most recent version."""
-    return IMPL.db_sync(version=version, database=database, context=context)
+    return IMPL.db_sync(version=version, database=database)
 
 
-def db_version(database='main', context=None):
+def db_version(database='main'):
     """Display the current database version."""
-    return IMPL.db_version(database=database, context=context)
+    return IMPL.db_version(database=database)
 
 
 def db_initial_version(database='main'):
