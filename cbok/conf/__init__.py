@@ -3,8 +3,8 @@ from oslo_log import log as logging
 
 from cbok.conf import api
 from cbok.conf import common
-from cbok.conf import idea
 from cbok.conf import database
+from cbok.conf import idea
 
 CONF = cfg.CONF
 

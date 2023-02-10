@@ -2,30 +2,17 @@
   CLI interface for cbok management.
 """
 
-import collections
 import functools
-import re
 import sys
 import traceback
-from urllib import parse as urlparse
 
-from dateutil import parser as dateutil_parser
 from oslo_config import cfg
-from oslo_db import exception as db_exc
 from oslo_log import log as logging
-import oslo_messaging as messaging
-from oslo_serialization import jsonutils
-from oslo_utils import encodeutils
-from oslo_utils import uuidutils
-from sqlalchemy.engine import url as sqla_url
 
 from cbok.cmd import common as cmd_common
 import cbok.conf
 from cbok import config
-from cbok.db import api as db
 from cbok.db import migration
-from cbok.db.sqlalchemy import api as sa_db
-from cbok import exception
 from cbok import objects
 from cbok import version
 
@@ -47,7 +34,7 @@ args = cmd_common.args
 action_description = cmd_common.action_description
 
 
-class BookkeepingDbCommands(object):
+class DbCommands(object):
     """Class for managing the bookkeeping database."""
 
     def __init__(self):
@@ -56,15 +43,15 @@ class BookkeepingDbCommands(object):
     @args('version', metavar='VERSION', nargs='?', help='Database version')
     def sync(self, version=None):
         """Sync the database up to the most recent version."""
-        return migration.db_sync(version, database='bookkeeping')
+        return migration.db_sync(version, database='main')
 
     def version(self):
         """Print the current database version."""
-        print(migration.db_version(database='bookkeeping'))
+        print(migration.db_version(database='main'))
 
 
 CATEGORIES = {
-    'bookkeeping_db': BookkeepingDbCommands,
+    'db': DbCommands,
 }
 
 

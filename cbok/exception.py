@@ -15,7 +15,7 @@ from webob import util as woutil
 LOG = logging.getLogger(__name__)
 
 
-class CBoKException(Exception):
+class CBoKException(BaseException):
     """Base CBoK Exception
 
     To correctly use this class, inherit from it and define
@@ -77,3 +77,20 @@ class DBNotAllowed(CBoKException):
 class Invalid(CBoKException):
     msg_fmt = "Bad Request - Invalid Parameters"
     code = 400
+
+
+class MehTypeNotFound(CBoKException):
+    msg_fmt = 'Meh type is not found, fixed choice in %(choices)s.'
+
+
+class MehNotFound(CBoKException):
+    msg_fmt = 'Meh %(meh_id)s is not found.'
+
+
+class InvalidID(Invalid):
+    msg_fmt = 'Invalid ID received %(id)s.'
+
+
+class Forbidden(CBoKException):
+    msg_fmt = "Forbidden"
+    code = 403

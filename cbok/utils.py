@@ -1,31 +1,12 @@
 """Utilities and helper functions."""
 
-import contextlib
-import datetime
-import functools
-import hashlib
 import inspect
-import os
-import random
-import re
-import shutil
-import tempfile
 
-import eventlet
 from oslo_concurrency import lockutils
 from oslo_log import log as logging
-import oslo_messaging as messaging
-from oslo_utils import encodeutils
-from oslo_utils import excutils
-from oslo_utils import importutils
-from oslo_utils.secretutils import md5
-from oslo_utils import strutils
 from oslo_utils import timeutils
 
 import cbok.conf
-from cbok import exception
-
-profiler = importutils.try_import('osprofiler.profiler')
 
 
 CONF = cbok.conf.CONF
@@ -41,3 +22,21 @@ if hasattr(inspect, 'getfullargspec'):
     getargspec = inspect.getfullargspec
 else:
     getargspec = inspect.getargspec
+
+
+def isotime(at=None):
+    """Current time as ISO string,
+    as timeutils.isotime() is deprecated
+
+    :returns: Current time in ISO format
+    """
+    if not at:
+        at = timeutils.utcnow()
+    date_string = at.strftime("%Y-%m-%dT%H:%M:%S")
+    tz = at.tzinfo.tzname(None) if at.tzinfo else 'UTC'
+    date_string += ('Z' if tz in ['UTC', 'UTC+00:00'] else tz)
+    return date_string
+
+
+def strtime(at):
+    return at.strftime("%Y-%m-%dT%H:%M:%S.%f")

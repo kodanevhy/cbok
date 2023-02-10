@@ -10,5 +10,4 @@ def register_all():
     # NOTE(kodanevhy): You must make sure your object gets imported in this
     # function in order for it to be registered by services that may need
     # to receive it via RPC.
-    __import__('cbok.objects.catkin')
     __import__('cbok.objects.meh')

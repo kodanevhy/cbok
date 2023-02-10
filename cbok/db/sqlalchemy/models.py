@@ -12,7 +12,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import orm
 from sqlalchemy import ForeignKey, DateTime, Boolean, Text, Float
 
-
 CONF = cfg.CONF
 BASE = declarative_base()
 
@@ -55,69 +54,19 @@ class CBoKBase(models.TimestampMixin,
         return copy
 
 
-class Catkin(BASE, CBoKBase, models.SoftDeleteMixin):
-    """Represents an incoming."""
-
-    __tablename__ = 'catkin'
-    __table_args__ = (
-        schema.UniqueConstraint("host", "topic", "deleted",
-                                name="uniq_services0host0topic0deleted"),
-        schema.UniqueConstraint("host", "binary", "deleted",
-                                name="uniq_services0host0binary0deleted"),
-        Index('services_uuid_idx', 'uuid', unique=True),
-    )
-
-    id = Column(Integer, primary_key=True)
-    uuid = Column(String(36), nullable=True)
-    host = Column(String(255))
-    binary = Column(String(255))
-    topic = Column(String(255))
-    report_count = Column(Integer, nullable=False, default=0)
-    disabled = Column(Boolean, default=False)
-    disabled_reason = Column(String(255))
-    last_seen_up = Column(DateTime, nullable=True)
-    forced_down = Column(Boolean, default=False)
-    version = Column(Integer, default=0)
-
-    instance = orm.relationship(
-        "Instance",
-        backref='services',
-        primaryjoin='and_(Service.host == Instance.host,'
-                    'Service.binary == "nova-compute",'
-                    'Instance.deleted == 0)',
-        foreign_keys=host,
-    )
-
-
 class Meh(BASE, CBoKBase, models.SoftDeleteMixin):
-    """Represents an expenditure."""
+    """Represents a meh."""
 
     __tablename__ = 'meh'
     __table_args__ = (
-        schema.UniqueConstraint("host", "topic", "deleted",
-                                name="uniq_services0host0topic0deleted"),
-        schema.UniqueConstraint("host", "binary", "deleted",
-                                name="uniq_services0host0binary0deleted"),
-        Index('services_uuid_idx', 'uuid', unique=True),
+        Index('meh_uuid_idx', 'uuid', unique=True),
     )
 
     id = Column(Integer, primary_key=True)
-    uuid = Column(String(36), nullable=True)
-    host = Column(String(255))
-    binary = Column(String(255))
-    topic = Column(String(255))
-    report_count = Column(Integer, nullable=False, default=0)
-    disabled = Column(Boolean, default=False)
-    disabled_reason = Column(String(255))
-    last_seen_up = Column(DateTime, nullable=True)
-    forced_down = Column(Boolean, default=False)
-    version = Column(Integer, default=0)
-
-    instance = orm.relationship(
-        "Instance",
-        backref='services',
-        primaryjoin='and_(Service.host == Instance.host,'
-                    'Service.binary == "nova-compute",'
-                    'Instance.deleted == 0)',
-        foreign_keys=host,
-    )
+    uuid = Column(String(length=36), nullable=False)
+    type = Column(String(length=255), nullable=False)
+    amount = Column(Float, nullable=False, default=0)
+    relationship = Column(String(length=36), nullable=True)
+    description = Column(String(length=255), nullable=False)
+    worthy = Column(Float, nullable=True)
+    ready = Column(Boolean, nullable=True)
