@@ -1,10 +1,10 @@
 import pbr.version
 
 CBoK_VENDOR = "CBoK"
-CBoK_PRODUCT = "CBoK Bookkeeping"
+CBoK_PRODUCT = "CBoK"
 CBoK_PACKAGE = None  # OS distro package version suffix
 CBoK_SUPPORT = (
-    "Please report this at http://bugs.launchpad.net/nova/ "
+    "Please report this at https://github.com/kodanevhy/cbok "
     "and attach the CBoK API log if possible.")
 
 loaded = False

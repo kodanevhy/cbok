@@ -35,7 +35,7 @@ action_description = cmd_common.action_description
 
 
 class DbCommands(object):
-    """Class for managing the bookkeeping database."""
+    """Class for managing the cbok database."""
 
     def __init__(self):
         pass

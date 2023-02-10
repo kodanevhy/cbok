@@ -6,7 +6,6 @@ from cbok import utils
 
 CONF = cbok.conf.CONF
 
-
 LOG = logging.getLogger(__name__)
 
 
@@ -32,11 +31,6 @@ class ViewBuilder(common.ViewBuilder):
                 "links": self._get_links(request,
                                          instance["uuid"],
                                          self._collection_name),
-                # NOTE(sdague): historically this was the
-                # os-disk-config extension, but now that extensions
-                # are gone, we merge these attributes here.
-                "OS-DCF:diskConfig": (
-                    'AUTO' if instance.get('auto_disk_config') else 'MANUAL'),
             },
         }
         return server
@@ -46,21 +40,6 @@ class ViewBuilder(common.ViewBuilder):
               show_sec_grp=None, bdms=None, cell_down_support=False,
               show_user_data=False):
         """Generic, non-detailed view of an instance."""
-        if cell_down_support and 'display_name' not in instance:
-            # NOTE(tssurya): If the microversion is >= 2.69, this boolean will
-            # be true in which case we check if there are instances from down
-            # cells (by checking if their objects have missing keys like
-            # `display_name`) and return partial constructs based on the
-            # information available from the nova_api database.
-            return {
-                "server": {
-                    "id": instance.uuid,
-                    "status": "UNKNOWN",
-                    "links": self._get_links(request,
-                                             instance.uuid,
-                                             self._collection_name),
-                },
-            }
         return {
             "server": {
                 "id": instance["uuid"],
@@ -102,10 +81,6 @@ class ViewBuilder(common.ViewBuilder):
 
         instance_uuids = [inst['uuid'] for inst in instances]
 
-        # NOTE(gmann): pass show_sec_grp=False in _list_view() because
-        # security groups for detail method will be added by separate
-        # call to self._add_security_grps by passing the all servers
-        # together. That help to avoid multiple neutron call for each server.
         servers_dict = self._list_view(self.show, request, instances,
                                        # We process host_status in aggregate.
                                        show_host_status=False,

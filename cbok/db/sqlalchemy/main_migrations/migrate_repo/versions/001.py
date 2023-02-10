@@ -2,9 +2,7 @@ from sqlalchemy import Boolean
 from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import dialects
-from sqlalchemy import Enum
 from sqlalchemy import Float
-from sqlalchemy import ForeignKey
 from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import MetaData

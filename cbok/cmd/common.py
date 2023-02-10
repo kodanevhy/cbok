@@ -168,7 +168,7 @@ def get_action_fn():
     # check arguments
     missing = validate_args(fn, *fn_args, **fn_kwargs)
     if missing:
-        # NOTE(mikal): this isn't the most helpful error message ever. It is
+        # NOTE(kodanevhy): this isn't the most helpful error message ever. It is
         # long, and tells you a lot of things you probably don't want to know
         # if you just got a single arg wrong.
         print(fn.__doc__)

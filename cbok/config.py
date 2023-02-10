@@ -1,5 +1,4 @@
 import cbok.conf
-from cbok.db.sqlalchemy import api as sqlalchemy_api
 
 CONF = cbok.conf.CONF
 
