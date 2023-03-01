@@ -6,11 +6,11 @@ set -ex
 
 yum install -y gtk3-devel spice-server spice-protocol spice-server-devel bzip2 usbredir-devel numactl-devel
 
+cd local
+
 if [ -d qemu-4.2.0 ]; then
     rm -rf qemu-4.2.0
 fi
-
-cd local
 
 if [ ! -f qemu-4.2.0.tar.xz ]; then
     wget https://download.qemu.org/qemu-4.2.0.tar.xz

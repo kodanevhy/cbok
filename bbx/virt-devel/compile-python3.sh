@@ -6,11 +6,11 @@ set -ex
 
 yum -y install wget gcc-c++ pcre pcre-devel zlib zlib-devel openssl openssl-devel
 
+cd local
+
 if [ -d Python-3.6.6 ]; then
     rm -rf Python-3.6.6
 fi
-
-cd local
 
 if [ ! -f Python-3.6.6.tar.xz ]; then
     wget https://www.python.org/ftp/python/3.6.6/Python-3.6.6.tar.xz --no-check-certificate
