@@ -4,23 +4,12 @@
 
 set -ex
 
-echo "Suggest that compile libvirt 6.0.0 with Python 3.6.8 and CentOS 7.9(3.10.0-1160.el7.x86_64) based distribution."
-which python3
-centos_release=$(cat /etc/redhat-release | grep CentOS)
-if [ ! "$centos_release" ]; then
-    exit 0
-fi
-
 pip_list=$(pip3 list)
 if test "$(echo "$pip_list" | grep rst2html5)";then
     pip3 uninstall -y rst2html5
 fi
 if test "$(echo "$pip_list" | grep importlib_metadata)";then
     pip3 uninstall -y importlib_metadata
-fi
-
-if [ -d libvirt-6.0.0 ]; then
-    rm -rf libvirt-6.0.0
 fi
 
 yum -y install wget gcc apr-devel apr-util-devel atk-devel bzip2-devel cairo-devel cairo-gobject-devel \
@@ -49,6 +38,10 @@ pip3 install --index https://pypi.tuna.tsinghua.edu.cn/simple/ importlib_metadat
 sed -i 's/from importlib import metadata/try:\n    from importlib import metadata\nexcept ImportError:\n    import importlib_metadata as metadata/g' /usr/lib/python3.6/site-packages/rst2html5/__init__.py
 
 cd local
+
+if [ -d libvirt-6.0.0 ]; then
+    rm -rf libvirt-6.0.0
+fi
 
 if [ ! -f libvirt-6.0.0.tar.xz ]; then
     # Download the source code from official website "libvirt.org/sources" instead
