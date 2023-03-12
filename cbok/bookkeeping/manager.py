@@ -18,15 +18,17 @@ class MehManager(manager.Manager):
     def get_meh(meh_id):
         return meh_obj.Meh.get_by_uuid(meh_id)
 
-    @staticmethod
-    def create_meh(meh_type, amount, desc, relationship=None):
+    def create_meh(self, transaction=None, counterparty=None, commodity=None,
+                   trade_type=None, payment_method=None, trade_state=None,
+                   trade_date=None, relationship=None, amount=None,
+                   description=None, worthy=0, ready=False):
         meh_uuid = uuidutils.generate_uuid()
         r_meh = meh_obj.Meh.get_by_uuid(relationship)
         meh = meh_obj.Meh()
         meh.uuid = meh_uuid
-        meh.type = meh_type
+        meh.type = trade_type
         meh.amount = amount
-        meh.description = desc
+        meh.description = description
         meh.relationship = r_meh.uuid
         meh.save()
         return meh

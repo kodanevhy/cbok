@@ -7,6 +7,7 @@ from cbok import exception
 from cbok.api.bookkeeping import wsgi
 from cbok.api.bookkeeping.views import meh as views_meh
 from cbok.bookkeeping import common
+from cbok.bookkeeping import flow
 from cbok.bookkeeping import manager
 
 LOG = logging.getLogger(__name__)
@@ -32,21 +33,25 @@ class MehController(wsgi.BaseController):
 
     @wsgi.expected_errors(404)
     def create(self, req, body):
-        meh_dict = body['meh']
+        """Create meh, support to create a single meh or even batched."""
+        if req.link:
+            create_kwargs = flow.Flow(req.link).extract_current()
+        else:
+            create_kwargs = list(body['meh'])
 
-        def _validata_type(m_type):
-            if m_type and m_type not in common.MEH_TYPE:
-                raise exception.MehTypeNotFound(choices=common.MEH_TYPE)
-        meh_type = _validata_type(meh_dict['meh_type'])
-        amount = float(meh_dict['amount'])
-        try:
-            meh = self.meh_api.create_meh(meh_type, amount,
-                                          meh_dict['description'],
-                                          meh_dict['relationship'])
-        except exception.MehNotFound(meh_dict['relationship']) as error:
-            raise exc.HTTPNotFound(explanation=error.format_message())
-
-        return {'meh': meh.uuid}
+        def _validata_trade_type(m_type):
+            if m_type and m_type not in common.TRADE_TYPE:
+                raise exception.TradeTypeNotFound(choices=common.TRADE_TYPE)
+        batched = []
+        for meh_meta in create_kwargs:
+            _validata_trade_type(meh_meta['type'])
+            common.decimalization_amount(meh_meta)
+            try:
+                meh = self.meh_api.create_meh(**meh_meta)
+            except exception.MehNotFound(meh_meta['relationship']) as error:
+                raise exc.HTTPNotFound(explanation=error.format_message())
+            batched.append({'meh': meh.uuid})
+        return batched
 
     def update(self):
         pass

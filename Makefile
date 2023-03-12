@@ -1,0 +1,1 @@
+# execute tools/purify.sh
