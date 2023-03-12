@@ -1,13 +1,14 @@
 """Utilities and helper functions."""
 
 import inspect
+import time
 
 from oslo_concurrency import lockutils
 from oslo_log import log as logging
 from oslo_utils import timeutils
 
 import cbok.conf
-
+from cbok import exception
 
 CONF = cbok.conf.CONF
 
@@ -39,4 +40,4 @@ def isotime(at=None):
 
 
 def strtime(at):
-    return at.strftime("%Y-%m-%dT%H:%M:%S.%f")
+    return time.strptime(at, '%Y-%m-%d %H:%M:%S')

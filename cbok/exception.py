@@ -79,12 +79,21 @@ class Invalid(CBoKException):
     code = 400
 
 
-class MehTypeNotFound(CBoKException):
-    msg_fmt = 'Meh type is not found, fixed choice in %(choices)s.'
+class TradeTypeNotFound(CBoKException):
+    msg_fmt = 'Trade type is not found, fixed choice in %(choices)s.'
 
 
 class MehNotFound(CBoKException):
     msg_fmt = 'Meh %(meh_id)s is not found.'
+
+
+class IncoherentBillFlow(CBoKException):
+    msg_fmt = 'Incoherent, %(vacancy) days are vacancy, it may be necessary ' \
+              'to upload a bill flow with a longer cycle.'
+
+
+class TimeFormatterMismatched(CBoKException):
+    msg_fmt = 'Only allow %(formatter) formatter, but mismatching.'
 
 
 class InvalidID(Invalid):

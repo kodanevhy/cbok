@@ -13,7 +13,7 @@ gitignore_path = os.path.join(cbok_backup, '.gitignore')
 
 
 def execute(cmd):
-    return processutils.execute(cmd)
+    return processutils.execute(*cmd)
 
 
 class GitIgnoreParser(object):
