@@ -4,6 +4,8 @@ foundation/local/*
 !foundation/local/calico.yaml
 bbx/virt-devel/local/*
 !bbx/virt-devel/local/README.md
+bbx/kernel/local/*
+!bbx/kernel/local/README.md
 review/*
 !review/README.md
 personnel/*

@@ -1,0 +1,16 @@
+# /usr/local/bochs/bin/bochs -f .
+
+###############################################
+# Configuration file for Bochs
+###############################################
+romimage: file=$BXSHARE/BIOS-bochs-latest
+megs: 16
+vgaromimage: file=$BXSHARE/VGABIOS-elpin-2.40
+floppya: 1_44="local/bootimage-0.11", status=inserted
+boot: a
+log: bochsout.txt
+parport1: enable=0
+mouse: enabled=0
+private_colormap: enabled=0
+fullscreen: enabled=0
+screenmode: name="sample"
