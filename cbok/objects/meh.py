@@ -1,6 +1,8 @@
+from oslo_db import exception as db_exc
 from oslo_log import log as logging
 
 from cbok import config
+from cbok import exception
 from cbok.db import api as db_api
 from cbok.objects import base
 from cbok.objects import fields
@@ -44,8 +46,27 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
     def obj_load_attr(self, attrname):
         pass
 
-    def save(self):
-        pass
+    @staticmethod
+    def _meh_create(values):
+        try:
+            db_meh = db_api.meh_create(values)
+        except db_exc.DBDuplicateEntry as e:
+            if 'uuid' in e.columns:
+                raise exception.MehUUIDExists(meh_uuid=values['uuid'])
+            raise exception.MehExists(id=values['id'])
+        except Exception as e:
+            raise db_exc.DBError(e)
+
+        return db_meh
+
+    def create(self):
+        if self.obj_attr_is_set('id'):
+            raise exception.ObjectActionError(action='create',
+                                              reason='already created')
+
+        updates = self.obj_get_changes()
+        db_meh = self._meh_create(updates)
+        self._from_db_object(self, db_meh)
 
     @staticmethod
     def _from_db_object(meh, db_meh):
@@ -65,7 +86,8 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
 
     @classmethod
     def nearly_one(cls):
-        return ''
+        db_meh = db_api.meh_get_nearly()
+        return cls._from_db_object(cls(), db_meh)
 
 
 @base.CBoKObjectRegistry.register

@@ -30,3 +30,13 @@ IMPL = sa_api
 def meh_get(meh_id):
     """Get a meh or raise if it does not exist."""
     return IMPL.meh_get(meh_id)
+
+
+def meh_get_nearly():
+    """Get the nearest meh order by trade date."""
+    return IMPL.meh_get_nearly()
+
+
+def meh_create(meh):
+    """Create a single meh."""
+    return IMPL.meh_create(meh)
