@@ -22,6 +22,9 @@ class MehController(wsgi.BaseController):
         self.meh_api = manager.MehManager()
         super(MehController, self).__init__(**kwargs)
 
+    def index(self, req):
+        pass
+
     @wsgi.expected_errors(404)
     def show(self, req, meh_id):
         try:

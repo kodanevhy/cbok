@@ -96,6 +96,22 @@ class TimeFormatterMismatched(CBoKException):
     msg_fmt = 'Only allow %(formatter) formatter, but mismatching.'
 
 
+class ObjectActionError(CBoKException):
+    msg_fmt = 'Object action %(action)s failed because: %(reason)s'
+
+
+class MehExists(CBoKException):
+    msg_fmt = 'Meh with id %(id)s already exists.'
+
+
+class MehUUIDExists(CBoKException):
+    msg_fmt = 'Meh with ID %(meh_id)s already exists.'
+
+
+class DecompressFlowFailed(CBoKException):
+    msg_fmt = 'Decompress bill flow failed.'
+
+
 class InvalidID(Invalid):
     msg_fmt = 'Invalid ID received %(id)s.'
 

@@ -30,5 +30,5 @@ class MehManager(manager.Manager):
         meh.amount = amount
         meh.description = description
         meh.relationship = r_meh.uuid
-        meh.save()
+        meh.create()
         return meh

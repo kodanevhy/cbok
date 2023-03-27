@@ -33,3 +33,19 @@ def meh_get(meh_id):
     except db_exc.DBError:
         LOG.warning("Invalid meh id %s in request", meh_id)
         raise exception.InvalidID(id=meh_id)
+
+
+def meh_get_nearly():
+    session = sessionmaker(bind=get_engine())
+    meh = session().query(models.Meh).order_by('trade_date').first()
+    if not meh:
+        LOG.warning('None of any meh found.')
+        meh = None
+    return meh
+
+
+def meh_create(meh):
+    session = sessionmaker(bind=get_engine())
+    db_meh = models.Meh()
+    db_meh.update(meh)
+    db_meh.save(session)
