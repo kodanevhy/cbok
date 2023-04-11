@@ -20,18 +20,18 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
     fields = {
         'id': fields.IntegerField(),
         'uuid': fields.UUIDField(),
-        'transaction': fields.StringField(),
-        'counterparty': fields.StringField(),
-        'commodity': fields.StringField(),
+        'transaction': fields.StringField(nullable=True),
+        'counterparty': fields.StringField(nullable=True),
+        'commodity': fields.StringField(nullable=True),
         # NOTE(koda): Well, type means incoming or expenditure.
-        'trade_type': fields.StringField(),
-        'payment_method': fields.StringField(),
-        'trade_state': fields.StringField(),
+        'trade_type': fields.StringField(nullable=True),
+        'payment_method': fields.StringField(nullable=True),
+        'trade_state': fields.StringField(nullable=True),
         'trade_date': fields.DateTimeField(nullable=True),
         # NOTE(koda): The meh may relate to the others, in a case of that
         # type incoming may cause by an expenditure, so I use relationship
         # field to represent foreign key like.
-        'relationship': fields.UUIDField(),
+        'relationship': fields.UUIDField(nullable=True),
         'amount': fields.FloatField(nullable=False),
         'description': fields.StringField(nullable=False),
         # NOTE(koda): Support to save a certain proportion of meh,

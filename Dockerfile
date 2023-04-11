@@ -1,1 +1,1 @@
-# Install wget, sed, ls etc. command at packaging begin.
+# Install wget, file etc. command at packaging begin.

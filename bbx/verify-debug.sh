@@ -5,16 +5,13 @@
 
 set -ex
 
+source common.sh
+
 local_='/root/workspace/verify-debug'
 deploy_name=$1
 cm_name=$2
 
 # 客户端传文件，给文件绝对路径，根据绝对路径修改文件名为.相隔，形成压缩包传到服务端
-
-function die() {
-    echo "error: $1" >&2
-    exit 1
-}
 
 function check_input_args() {
 

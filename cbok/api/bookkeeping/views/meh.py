@@ -55,8 +55,14 @@ class ViewBuilder(common.ViewBuilder):
 
         meh = {
             "meh": {
-                "id": meh["uuid"],
-                "type": meh["type"],
+                "meh_uuid": meh["uuid"],
+                "transaction": meh["transaction"],
+                "counterparty": meh["counterparty"],
+                "commodity": meh["commodity"],
+                "trade_type": meh["trade_type"],
+                "payment_method": meh["payment_method"],
+                "trade_state": meh["trade_state"],
+                "trade_date": meh["trade_date"],
                 "relationship": meh.get("relationship") or "",
                 "amount": meh["amount"],
                 "description": meh["description"],

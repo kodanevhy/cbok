@@ -3,7 +3,7 @@ workspace=workspace
 workspace_abs_path=/root/
 
 [api]
-api_works=4
+api_works=1
 host=127.0.0.1
 debug=true
 

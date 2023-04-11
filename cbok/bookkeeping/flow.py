@@ -1,15 +1,19 @@
 import itertools
 import os
-from tempfile import mktemp
+import shutil
+from tempfile import mkdtemp
+import time
 import zipfile
+import zlib
 
 from oslo_concurrency import processutils
 from oslo_log import log as logging
 import pandas
 
 from cbok import exception
-from cbok.objects import meh
 from cbok import utils
+from cbok.bookkeeping import common
+from cbok.objects import meh
 
 
 LOG = logging.getLogger(__name__)
@@ -21,40 +25,65 @@ def execute(cmd):
 
 class Flow:
     def __init__(self, link):
-        self.localize(link)
+        self.link = link
         self.csv_path = None
+        self.target_dir = None
         self.earliest = '9999-12-31 23:59:59'
 
     def localize(self, link):
         """Download and VIOLENTLY decompress the bill flow file."""
-        compressed_target = mktemp(suffix='.flow.wechat.zip')
-        parent_temp = os.path.dirname(compressed_target)
+        self.target_dir = mkdtemp(suffix='.cbok.flow')
+        target_unzipped = os.path.join(self.target_dir, 'unzipped')
+        compressed_target = os.path.join(self.target_dir, 'wechat.zip')
         cmd = ['wget', link, '-O', compressed_target]
         execute(cmd)
+        # Note(koda): WeChat just allow user to download the bill for 3 times,
+        # if exceeded, it will return an HTML error page.
+        # TODO(koda): mention client don't download flow by itself.
+        if not zipfile.is_zipfile(compressed_target):
+            raise exception.InvalidLink(link=link)
+        unzip_start = time.time()
         meta_chars = '0123456789'
-        for char in itertools.permutations(meta_chars, 6):
+        for char in itertools.product(meta_chars, repeat=6):
             password = ''.join(char)
             try:
                 with zipfile.ZipFile(compressed_target) as zf:
-                    zf.extractall(parent_temp, pwd=password.encode('utf-8'))
-            except RuntimeError:
+                    if os.path.exists(target_unzipped):
+                        shutil.rmtree(target_unzipped)
+                    zf.extractall(target_unzipped,
+                                  pwd=password.encode('utf-8'))
+            except (RuntimeError, zlib.error, zipfile.BadZipFile):
                 # Note(koda): It will raise a RuntimeError when achieving a
                 # bad password for file, means that uncompress the file
                 # failed, passing now and let it continue to process the next
-                # try.
+                # try. The other errors are expected when unzipping.
                 pass
+            except Exception as err:
+                shutil.rmtree(target_unzipped)
+                raise err
             else:
-                cmd = ['ls', os.path.join(parent_temp, '微信支付账单\*')]
-                self.csv_path = execute(cmd)
+                self.csv_path = common.recursion_directory(target_unzipped)[0]
                 if not self.csv_path:
                     raise exception.DecompressFlowFailed()
+                LOG.info('Compress flow successfully with password '
+                         '%(password)s in %(duration).2f seconds, and generate '
+                         'target flow %(path)s.',
+                         {'password': password,
+                          'duration': (time.time() - unzip_start),
+                          'path': self.csv_path})
+                break
 
     def _process_flow(self):
         # Note(koda): Shit tencent mistake: lack 2 ',' in bill flow,
         # result in parsing cells failed.
-        # cmd = ['sed', '-i', '"s/,,,,,,,,/,,,,,,,,,,/g"', self.csv_path]
-        # execute(cmd)
+        with open(self.csv_path, 'r') as fr:
+            line = fr.read()
+            replaced = line.replace(',,,,,,,,', ',,,,,,,,,,')
+            with open(self.csv_path, 'w') as fw:
+                fw.write(replaced)
+
         csv = pandas.read_csv(self.csv_path)
+        shutil.rmtree(self.target_dir)
         aggregate = list()
         for index, row in csv.iterrows():
             create_kwargs = dict()
@@ -85,6 +114,7 @@ class Flow:
 
     def extract_current(self):
         """Get the meh only behind the nearest trade date of database."""
+        self.localize(self.link)
         try:
             trade_date_db = meh.Meh.nearly_one().trade_date
         except AttributeError:
