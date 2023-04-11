@@ -112,6 +112,12 @@ class DecompressFlowFailed(CBoKException):
     msg_fmt = 'Decompress bill flow failed.'
 
 
+class InvalidLink(Invalid):
+    msg_fmt = 'Link %(link)s invalid, there is 3 times for downloading the ' \
+              'flow, but failed just 1 time, please upload the absolutely ' \
+              'newest link and wait again.'
+
+
 class InvalidID(Invalid):
     msg_fmt = 'Invalid ID received %(id)s.'
 

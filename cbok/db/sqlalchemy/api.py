@@ -1,8 +1,8 @@
 """Implementation of SQLAlchemy backend."""
+import contextlib
 
 from sqlalchemy.engine import create_engine
 from sqlalchemy.orm import sessionmaker
-
 from oslo_db import exception as db_exc
 from oslo_log import log as logging
 
@@ -12,21 +12,24 @@ from cbok import exception
 
 CONF = cbok.conf.CONF
 
-
 LOG = logging.getLogger(__name__)
 
 
-def get_engine():
-    """Get a database engine object.
+@contextlib.contextmanager
+def session_constructor():
+    """Get a database engine object and execute.
     """
     engine = create_engine(CONF.db.connection, echo=False)
-    return engine
+    session = sessionmaker(bind=engine, expire_on_commit=False)()
+    yield session
+    session.commit()
+    session.close()
 
 
 def meh_get(meh_id):
     try:
-        session = sessionmaker(bind=get_engine())
-        meh = session().query(models.Meh).filter_by(uuid=meh_id).first()
+        with session_constructor() as session:
+            meh = session.query(models.Meh).filter_by(uuid=meh_id).first()
         if not meh:
             raise exception.MehNotFound(meh_id=meh_id)
         return meh
@@ -36,8 +39,8 @@ def meh_get(meh_id):
 
 
 def meh_get_nearly():
-    session = sessionmaker(bind=get_engine())
-    meh = session().query(models.Meh).order_by('trade_date').first()
+    with session_constructor() as session:
+        meh = session.query(models.Meh).order_by('trade_date').first()
     if not meh:
         LOG.warning('None of any meh found.')
         meh = None
@@ -45,7 +48,10 @@ def meh_get_nearly():
 
 
 def meh_create(meh):
-    session = sessionmaker(bind=get_engine())
-    db_meh = models.Meh()
-    db_meh.update(meh)
-    db_meh.save(session)
+    with session_constructor() as session:
+        db_meh = models.Meh()
+        db_meh.update(meh)
+        session.add(db_meh)
+
+    return {key: value for key, value in db_meh
+            if key != '_sa_instance_state'}

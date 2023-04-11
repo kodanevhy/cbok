@@ -1,9 +1,9 @@
 from oslo_log import log as logging
+from oslo_utils import uuidutils
 
 from cbok import config
 from cbok import manager
 from cbok.objects import meh as meh_obj
-from oslo_utils import uuidutils
 
 LOG = logging.getLogger(__name__)
 CONF = config.CONF
@@ -23,12 +23,20 @@ class MehManager(manager.Manager):
                    trade_date=None, relationship=None, amount=None,
                    description=None, worthy=0, ready=False):
         meh_uuid = uuidutils.generate_uuid()
-        r_meh = meh_obj.Meh.get_by_uuid(relationship)
+        # r_meh = meh_obj.Meh.get_by_uuid(relationship)
         meh = meh_obj.Meh()
         meh.uuid = meh_uuid
-        meh.type = trade_type
+        meh.transaction = transaction
+        meh.counterparty = counterparty
+        meh.commodity = commodity
+        meh.trade_type = trade_type
+        meh.payment_method = payment_method
+        meh.trade_state = trade_state
+        meh.trade_date = trade_date
+        # meh.relationship = r_meh.uuid
         meh.amount = amount
-        meh.description = description
-        meh.relationship = r_meh.uuid
+        meh.description = '1'
+        meh.worthy = '1'
+        meh.ready = '1'
         meh.create()
         return meh

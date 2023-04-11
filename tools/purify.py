@@ -24,12 +24,12 @@ class GitIgnoreParser(object):
         self.recursion_result = []
         self.recursion_result_directory = []
 
-    def list_all_files(self, dirpath):
+    def recursion_directory(self, dirpath):
         files = os.listdir(dirpath)
         for fi in files:
             fi_d = os.path.join(dirpath, fi)
             if os.path.isdir(fi_d):
-                self.list_all_files(fi_d)
+                self.recursion_directory(fi_d)
             else:
                 self.recursion_result.append(os.path.join(dirpath, fi_d))
         return self.recursion_result
@@ -85,7 +85,7 @@ class GitIgnoreParser(object):
                     _abs = cbok_backup.join(entry)
                     # Some files in a directory.
                     if _abs.endswith('*'):
-                        for result in self.list_all_files(_abs[:-1]):
+                        for result in self.recursion_directory(_abs[:-1]):
                             if result not in self.protected:
                                 os.remove(result)
                     # A single file.
