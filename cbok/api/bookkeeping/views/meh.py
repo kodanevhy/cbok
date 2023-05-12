@@ -1,3 +1,4 @@
+import dateutil.parser
 from oslo_log import log as logging
 
 from cbok.api.bookkeeping import common
@@ -62,12 +63,12 @@ class ViewBuilder(common.ViewBuilder):
                 "trade_type": meh["trade_type"],
                 "payment_method": meh["payment_method"],
                 "trade_state": meh["trade_state"],
-                "trade_date": meh["trade_date"],
+                "trade_date": utils.isotime(at=meh["trade_date"]),
                 "relationship": meh.get("relationship") or "",
                 "amount": meh["amount"],
                 "description": meh["description"],
-                "worthy": meh.get("worthy") or "",
-                "ready": meh.get("ready") or "",
+                "worthy": meh.get("worthy") or 1.0,
+                "ready": meh.get("ready") or False,
                 "created": utils.isotime(meh["created_at"]),
                 "updated": utils.isotime(meh["updated_at"]),
                 "deleted": utils.isotime(meh["deleted_at"]),

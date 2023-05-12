@@ -1,8 +1,6 @@
 import os
 import time
 
-TRADE_TYPE = {'收入': 'incoming', '支出': 'expenditure'}
-
 
 def decimalization(create_kwargs):
     amount = create_kwargs['amount']

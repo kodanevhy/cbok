@@ -33,10 +33,10 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
         # field to represent foreign key like.
         'relationship': fields.UUIDField(nullable=True),
         'amount': fields.FloatField(nullable=False),
-        'description': fields.StringField(nullable=False),
+        'description': fields.StringField(nullable=True),
         # NOTE(koda): Support to save a certain proportion of meh,
         # especially when type is expenditure.
-        'worthy': fields.BooleanField(nullable=True),
+        'worthy': fields.FloatField(nullable=True),
         'ready': fields.BooleanField(nullable=True)
         }
 
@@ -81,6 +81,8 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
 
     @classmethod
     def get_by_uuid(cls, uuid):
+        if not uuid:
+            return None
         db_meh = db_api.meh_get(uuid)
         return cls._from_db_object(cls(), db_meh)
 

@@ -73,6 +73,6 @@ class Meh(BASE, CBoKBase, models.SoftDeleteMixin):
     trade_date = Column(String(length=255), nullable=True)
     relationship = Column(String(length=36), nullable=True)
     amount = Column(Float, nullable=False, default=0)
-    description = Column(String(length=255), nullable=False)
+    description = Column(String(length=255), nullable=True)
     worthy = Column(Float, nullable=True)
     ready = Column(Boolean, nullable=True)
