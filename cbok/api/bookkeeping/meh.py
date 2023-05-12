@@ -5,7 +5,6 @@ from cbok import config
 from cbok import exception
 from cbok.api.bookkeeping import wsgi
 from cbok.api.bookkeeping.views import meh as views_meh
-from cbok.bookkeeping import common
 from cbok.bookkeeping import flow
 from cbok.bookkeeping import manager
 
@@ -43,15 +42,7 @@ class MehController(wsgi.BaseController):
         else:
             create_kwargs = [create_body]
 
-        def _validata_trade_type(m_type):
-            if m_type and m_type not in common.TRADE_TYPE.keys():
-                raise exc.HTTPBadRequest('Malformed trade type.')
-        batched = []
-        for meh_meta in create_kwargs:
-            _validata_trade_type(meh_meta['trade_type'])
-            common.decimalization(meh_meta)
-            meh = self.meh_api.create_meh(**meh_meta)
-            batched.append({'meh': meh.uuid})
+        batched = self.meh_api.create_meh(create_kwargs)
         return batched
 
     def update(self):

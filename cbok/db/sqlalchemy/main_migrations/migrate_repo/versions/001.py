@@ -36,7 +36,7 @@ def upgrade(migrate_engine):
                 Column('trade_date', String(length=36), nullable=True),
                 Column('relationship', String(length=36), nullable=True),
                 Column('amount', Float, nullable=False, default=0),
-                Column('description', String(length=255), nullable=False),
+                Column('description', String(length=255), nullable=True),
                 Column('worthy', Float, nullable=True),
                 Column('ready', Boolean, nullable=True),
                 Index('uuid_idx', 'uuid'),
