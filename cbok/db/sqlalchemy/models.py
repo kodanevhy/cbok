@@ -1,10 +1,10 @@
 """
 SQLAlchemy models for cbok data.
 """
+from cbok.objects import meh
 
 from oslo_config import cfg
 from oslo_db.sqlalchemy import models
-from oslo_utils import timeutils
 from sqlalchemy import (Column, Index, Integer, BigInteger, Enum, String,
                         schema, Unicode)
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
@@ -61,6 +61,8 @@ class Meh(BASE, CBoKBase, models.SoftDeleteMixin):
     __table_args__ = (
         Index('meh_uuid_idx', 'uuid', unique=True),
     )
+
+    exec(meh.Meh.branch('model'))
 
     id = Column(Integer, primary_key=True)
     uuid = Column(String(length=36), nullable=False)

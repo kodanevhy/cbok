@@ -1,5 +1,6 @@
 from oslo_db import exception as db_exc
 from oslo_log import log as logging
+from oslo_utils import uuidutils
 
 from cbok import config
 from cbok import exception
@@ -46,6 +47,12 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
     def obj_load_attr(self, attrname):
         pass
 
+    @classmethod
+    def branch(cls, branch_type):
+        for subclass in base.Branch.__subclasses__():
+            if branch_type == subclass.branch_type:
+                return subclass(cls.fields).construct()
+
     @staticmethod
     def _meh_create(values):
         try:
@@ -59,14 +66,31 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
 
         return db_meh
 
-    def create(self):
-        if self.obj_attr_is_set('id'):
+    @classmethod
+    def create(cls, data_dict):
+        """Unify object creation.
+
+        Idea is that the creation fixed procedures throughout the CBoK:
+        1.Dict for arguments
+        2.call next layer: API model
+        3.Get the return and return (must)
+
+        :param data_dict: Meh dict format.
+        """
+        for key in data_dict:
+            if key not in cls.fields:
+                raise 'Unknown field: %s.' % key
+        obj = cls(**data_dict)
+
+        meh_uuid = uuidutils.generate_uuid()
+        if cls.get_by_uuid(meh_uuid):
             raise exception.ObjectActionError(action='create',
                                               reason='already created')
 
-        updates = self.obj_get_changes()
-        db_meh = self._meh_create(updates)
-        self._from_db_object(self, db_meh)
+        updates = obj.obj_get_changes()
+        db_meh = obj._meh_create(updates)
+        obj._from_db_object(cls(), db_meh)
+        return db_meh
 
     @staticmethod
     def _from_db_object(meh, db_meh):
