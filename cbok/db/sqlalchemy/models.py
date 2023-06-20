@@ -5,12 +5,11 @@ from cbok.objects import meh
 
 from oslo_config import cfg
 from oslo_db.sqlalchemy import models
-from sqlalchemy import (Column, Index, Integer, BigInteger, Enum, String,
-                        schema, Unicode)
+from sqlalchemy import Index
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import orm
-from sqlalchemy import ForeignKey, DateTime, Boolean, Text, Float
+from sqlalchemy import Text
 
 CONF = cfg.CONF
 BASE = declarative_base()
@@ -62,19 +61,5 @@ class Meh(BASE, CBoKBase, models.SoftDeleteMixin):
         Index('meh_uuid_idx', 'uuid', unique=True),
     )
 
-    exec(meh.Meh.branch('model'))
-
-    id = Column(Integer, primary_key=True)
-    uuid = Column(String(length=36), nullable=False)
-    transaction = Column(String(length=255), nullable=True)
-    counterparty = Column(String(length=255), nullable=True)
-    commodity = Column(String(length=255), nullable=True)
-    trade_type = Column(String(length=255), nullable=True)
-    payment_method = Column(String(length=255), nullable=True)
-    trade_state = Column(String(length=255), nullable=True)
-    trade_date = Column(String(length=255), nullable=True)
-    relationship = Column(String(length=36), nullable=True)
-    amount = Column(Float, nullable=False, default=0)
-    description = Column(String(length=255), nullable=True)
-    worthy = Column(Float, nullable=True)
-    ready = Column(Boolean, nullable=True)
+    for stc in meh.Meh.branch('model'):
+        exec(stc)

@@ -2,6 +2,7 @@ import re
 
 from oslo_versionedobjects import base as ovoo_base
 
+from cbok import utils
 from cbok.objects import fields as obj_fields
 
 
@@ -56,70 +57,50 @@ class Branch:
     def __init__(self, obj_dict):
         """Parent for object which haven't been filled in."""
         self.obj_dict = obj_dict
+        self.obj_filled = None
 
     def construct(self):
         raise NotImplementedError('You must implement construct.')
+
+    @staticmethod
+    def match_type(field_type):
+        field_type_pattern = "(fields.)(.*)(Field\()(.*)(\))"   # noqa
+        matched = re.match(field_type_pattern, str(field_type))
+        return matched
 
 
 class DBModel(Branch):
 
     branch_type = 'model'
 
-    @staticmethod
-    def get_type(o_type):
-        if 'Integer' in o_type:
-            return 'Integer'
-        elif 'Float' in o_type:
-            return 'Float'
-        elif 'Bool' in o_type:
-            return 'Boolean'
-        else:
-            return 'String'
-
-    def get_null(self, o_type):
-        if 'nullable=True' in o_type:
-            return 'nullable=True'
-        else:
-            return 'nullable=False'
-
-    def get_length(self, o_type):
-        if 'UUID' in o_type:
-            return '36'
-        else:
-            return '255'
-
     def construct(self):
-        # class Meh(BASE, CBoKBase, models.SoftDeleteMixin):
-        #     """Represents a meh."""
-        #
-        #     __tablename__ = 'meh'
-        #     __table_args__ = (
-        #         Index('meh_uuid_idx', 'uuid', unique=True),
-        #     )
-        #
-        #     id = Column(Integer, primary_key=True)
-        #     uuid = Column(String(length=36), nullable=False)
-        #     transaction = Column(String(length=255), nullable=True)
-        #     counterparty = Column(String(length=255), nullable=True)
-        #     commodity = Column(String(length=255), nullable=True)
-        #     trade_type = Column(String(length=255), nullable=True)
-        #     payment_method = Column(String(length=255), nullable=True)
-        #     trade_state = Column(String(length=255), nullable=True)
-        #     trade_date = Column(String(length=255), nullable=True)
-        #     relationship = Column(String(length=36), nullable=True)
-        #     amount = Column(Float, nullable=False, default=0)
-        #     description = Column(String(length=255), nullable=True)
-        #     worthy = Column(Float, nullable=True)
-        #     ready = Column(Boolean, nullable=True)
-        yuju = []
+        constructed = []
         for field, field_type in self.obj_dict:
+            target = {'model_type': str, 'nullable': str, 'primary': str}
             if field == 'id':
-                continue
-            model_type = self.get_type(str(field_type))
-            nullable = self.get_null(str(field_type))
-            length = self.get_length(str(field_type))
-            constructed = 'Column(' + model_type + '(length=' + length + ')' + ', ' + nullable + ')'
-            yuju.append(constructed)
+                target['model_type'] = 'Integer'
+                target['primary'] = 'primary_key=True'
+
+            matched = self.match_type(field_type)
+            if matched:
+                target['model_type'] = matched.group(2)
+                target['nullable'] = matched.group(4)
+
+                if not target['model_type']:
+                    raise
+                else:
+                    length = '36' if field == 'UUID' else '255'
+                    target['model_type'] += '(length=' + length + ')'
+
+            for item in target:
+                if item:
+                    item += ', '
+
+            sentence = field + ' = Column(' \
+                               + target['model_type'] \
+                               + target['nullable'] \
+                               + target['primary'] + ')'
+            constructed.append(sentence)
 
 
 class APIView(Branch):
@@ -127,5 +108,27 @@ class APIView(Branch):
     branch_type = 'view'
 
     def construct(self):
-        for field in self.obj_dict:
-            pass
+        assert self.obj_filled is not None, 'Branch view: ' \
+                                            'No filled object provided.'
+        constructed = {}
+        for field, field_type in self.obj_dict:
+            if field == 'id':
+                continue
+            filled_data = getattr(self.obj_filled, field)
+            from cbok.objects import fields
+            if isinstance(filled_data, fields.DateTimeField):
+                filled_data = utils.isotime(filled_data)
+            matched = self.match_type(field_type)
+
+            if filled_data is None:
+                if matched.group(2) == 'Bool':
+                    filled_data = False
+                elif matched.group(2) == 'Float':
+                    filled_data = 0.0
+                elif matched.group(2) == 'Integer':
+                    filled_data = 0
+                elif matched.group(2) == 'String':
+                    filled_data = ''
+            constructed.update({field: filled_data})
+
+        return constructed

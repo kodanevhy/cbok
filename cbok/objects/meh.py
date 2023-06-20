@@ -48,10 +48,14 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
         pass
 
     @classmethod
-    def branch(cls, branch_type):
+    def branch(cls, branch_type, meh=None):
         for subclass in base.Branch.__subclasses__():
             if branch_type == subclass.branch_type:
-                return subclass(cls.fields).construct()
+                subclass = subclass(cls.fields)
+                # 'meh' always not null when branch view.
+                if meh:
+                    subclass.fill_data = meh
+                return subclass.construct()
 
     @staticmethod
     def _meh_create(values):

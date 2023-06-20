@@ -3,8 +3,10 @@ workspace=workspace
 workspace_abs_path=/root/
 
 [email]
-key_163=PDSRSAJDHTZSBEYC
-receiver=1923001710@qq.com
+server=smtp.163.com
+sender=yormng@163.com
+port=25
+key=PDSRSAJDHTZSBEYC
 
 [api]
 api_works=1
