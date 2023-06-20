@@ -22,12 +22,12 @@ class Message(MIMEText):
 
 class Email:
     def __init__(self, receiver):
-        self.server = 'smtp.163.com'
-        self.sender = 'yormng@163.com'
-        self.port = 25
-        self.key = 'PDSRSAJDHTZSBEYC'
-        self.use_tls = False
+        self.server = CONF.email.server
+        self.sender = CONF.email.sender
         self.receiver = receiver
+        self.port = CONF.email.port
+        self.key = CONF.email.secret
+        self.use_tls = False
 
     def authenticate(self):
         smtp_obj = smtplib.SMTP()
