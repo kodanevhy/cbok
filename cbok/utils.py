@@ -8,7 +8,6 @@ from oslo_log import log as logging
 from oslo_utils import timeutils
 
 import cbok.conf
-from cbok import exception
 
 CONF = cbok.conf.CONF
 

@@ -5,11 +5,11 @@ from cbok.objects import meh
 
 from oslo_config import cfg
 from oslo_db.sqlalchemy import models
-from sqlalchemy import Index
+from sqlalchemy import (Column, Index, Integer, String)
 from sqlalchemy.dialects.mysql import MEDIUMTEXT
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import orm
-from sqlalchemy import Text
+from sqlalchemy import Boolean, Text, Float
 
 CONF = cfg.CONF
 BASE = declarative_base()
