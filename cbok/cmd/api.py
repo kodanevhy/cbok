@@ -1,6 +1,5 @@
 import sys
 
-import eventlet
 from oslo_log import log as logging
 
 import cbok.conf
@@ -15,7 +14,6 @@ LOG = logging.getLogger(__name__)
 def main():
     config.parse_args(sys.argv)
     logging.setup(CONF, 'cbok')
-    eventlet.monkey_patch()
     app = service.load_pipeline_wsgi()
 
     # Setup server.
@@ -26,4 +24,5 @@ def main():
 
 
 if __name__ == '__main__':
+    from cbok import cmd
     main()
