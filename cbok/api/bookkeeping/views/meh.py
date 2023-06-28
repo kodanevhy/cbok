@@ -1,4 +1,3 @@
-import dateutil.parser
 from oslo_log import log as logging
 
 from cbok.api.bookkeeping import common

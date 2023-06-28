@@ -7,12 +7,18 @@ Options under this group are used to define CBoK email.
 """)
 
 EMAIL_OPTS = [
-    cfg.StrOpt('receiver',
+    cfg.StrOpt('server',
                default='',
-               help='CBoK email receiver.'),
-    cfg.StrOpt('key_163',
+               help='CBoK email server.'),
+    cfg.StrOpt('sender',
                default='',
-               help='CBoK email server key especially for 163.'),
+               help='CBoK email sender.'),
+    cfg.StrOpt('port',
+               default='',
+               help='CBoK email port.'),
+    cfg.StrOpt('secret',
+               default='',
+               help='CBoK email server secret.'),
 ]
 
 
