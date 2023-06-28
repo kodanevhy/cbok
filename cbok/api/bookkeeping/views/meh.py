@@ -2,7 +2,7 @@ from oslo_log import log as logging
 
 from cbok.api.bookkeeping import common
 import cbok.conf
-from cbok.objects import meh as meh_obj
+from cbok import utils
 
 CONF = cbok.conf.CONF
 
@@ -54,7 +54,27 @@ class ViewBuilder(common.ViewBuilder):
     def show(meh):
         """Detailed view of a single instance."""
 
-        return {'meh': meh_obj.Meh.branch('view', meh)}
+        meh = {
+            "meh": {
+                "meh_uuid": meh["uuid"],
+                "transaction": meh["transaction"],
+                "counterparty": meh["counterparty"],
+                "commodity": meh["commodity"],
+                "trade_type": meh["trade_type"],
+                "payment_method": meh["payment_method"],
+                "trade_state": meh["trade_state"],
+                "trade_date": meh["trade_date"],
+                "relationship": meh.get("relationship") or "",
+                "amount": meh["amount"],
+                "description": meh["description"],
+                "worthy": meh.get("worthy") or "",
+                "ready": meh.get("ready") or "",
+                "created": utils.isotime(meh["created_at"]),
+                "updated": utils.isotime(meh["updated_at"]),
+                "deleted": utils.isotime(meh["deleted_at"]),
+            },
+        }
+        return meh
 
     def index(self, request, instances, cell_down_support=False):
         """Show a list of servers without many details."""

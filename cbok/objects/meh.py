@@ -34,10 +34,10 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
         # field to represent foreign key like.
         'relationship': fields.UUIDField(nullable=True),
         'amount': fields.FloatField(nullable=False),
-        'description': fields.StringField(nullable=True),
+        'description': fields.StringField(nullable=False),
         # NOTE(koda): Support to save a certain proportion of meh,
         # especially when type is expenditure.
-        'worthy': fields.FloatField(nullable=True),
+        'worthy': fields.BooleanField(nullable=True),
         'ready': fields.BooleanField(nullable=True)
         }
 

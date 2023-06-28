@@ -1,7 +1,6 @@
 """
 SQLAlchemy models for cbok data.
 """
-from cbok.objects import meh
 
 from oslo_config import cfg
 from oslo_db.sqlalchemy import models
@@ -61,5 +60,17 @@ class Meh(BASE, CBoKBase, models.SoftDeleteMixin):
         Index('meh_uuid_idx', 'uuid', unique=True),
     )
 
-    for stc in meh.Meh.branch('model'):
-        exec(stc)
+    id = Column(Integer, primary_key=True)
+    uuid = Column(String(length=36), nullable=False)
+    transaction = Column(String(length=255), nullable=True)
+    counterparty = Column(String(length=255), nullable=True)
+    commodity = Column(String(length=255), nullable=True)
+    trade_type = Column(String(length=255), nullable=True)
+    payment_method = Column(String(length=255), nullable=True)
+    trade_state = Column(String(length=255), nullable=True)
+    trade_date = Column(String(length=255), nullable=True)
+    relationship = Column(String(length=36), nullable=True)
+    amount = Column(Float, nullable=False, default=0)
+    description = Column(String(length=255), nullable=False)
+    worthy = Column(Float, nullable=True)
+    ready = Column(Boolean, nullable=True)

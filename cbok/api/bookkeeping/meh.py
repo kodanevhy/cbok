@@ -5,6 +5,7 @@ from cbok import config
 from cbok import exception
 from cbok.api.bookkeeping import wsgi
 from cbok.api.bookkeeping.views import meh as views_meh
+from cbok.bookkeeping import common
 from cbok.bookkeeping import flow
 from cbok.bookkeeping import manager
 
@@ -42,7 +43,10 @@ class MehController(wsgi.BaseController):
         else:
             create_kwargs = [create_body]
 
-        batched = self.meh_api.create_meh(create_kwargs)
+        batched = []
+        for meh_meta in create_kwargs:
+            meh = self.meh_api.create_meh(**meh_meta)
+            batched.append({'meh': meh.uuid})
         return batched
 
     def update(self):
