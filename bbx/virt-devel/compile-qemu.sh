@@ -19,7 +19,7 @@ tar xvf qemu-4.2.0.tar.xz -C . && cd qemu-4.2.0
 
 mkdir build && cd build
 
-CC=gcc ../configure --prefix=/ --target-list=x86_64-softmmu --enable-usb-redir --enable-vnc --enable-gtk --enable-kvm --enable-numa --enable-tools --enable-spice
+CC=gcc ../configure --prefix=/ --target-list=x86_64-softmmu --enable-usb-redir --enable-debug --enable-vnc --enable-gtk --enable-kvm --enable-numa --enable-tools --enable-spice
 
 make
 make install

@@ -1,3 +1,11 @@
+<!--
+Comes from ChatGPT, and test pass by command virsh define and start.
+
+However, hadn't been sure that the vm is active in QEMU, need to update vnc to watch:
+    <graphics type='vnc' autoport='yes' listen='0.0.0.0'/>
+this sentence haven't been tested pass now.
+-->
+
 <domain type='qemu'>
   <name>myguest</name>
   <memory unit='KiB'>1048576</memory>
