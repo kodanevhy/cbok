@@ -7,14 +7,19 @@
  * in the code, outer filter comes from user.
  *
  * Usage:
- * locate-func-arm64 Func_Name grep filter1 grep filter2 ...
+ * locate-func-arm64 Func_Name --debug
+ *
+ * --debug: Open the debug mode.
  */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-char *GREP = "grep";
+#define bool int
+
+bool debug = 1;
+
 char *connector = " | grep ";
 char *sedConnector = " | sed ";
 
@@ -35,8 +40,8 @@ int constructInnerFilter() {
     strcat(innerFilter, connector);
     strcat(innerFilter, "-v \"//\"");
 
-    strcat(innerFilter, sedConnector);
     // Remove result when matching 2 pairs of parentheses.
+    strcat(innerFilter, sedConnector);
     strcat(innerFilter, "'/.*(.*(.*/d'");
     return 0;
 }
@@ -62,11 +67,11 @@ int main(int argc, char **argv, char **envp) {
         strcat(cmd, target);
 
         for (int i = 2; i <= argc - 1; i++) {
-            if (strcmp(argv[i], GREP) == 0) {
+            if (strcmp(argv[i], "--debug") == 0)
+            {
+                debug = 0;
                 continue;
             }
-            strcat(outerFilter, connector);
-            strcat(outerFilter, argv[i]);
         }
     }
 
@@ -74,7 +79,9 @@ int main(int argc, char **argv, char **envp) {
     strcat(cmd, innerFilter);
     strcat(cmd, outerFilter);
 
-    printf("%s: \"%s\"\n\n", "Going to execute", cmd);
+    if (debug == 0) {
+        printf("%s: \"%s\"\n", "Going to execute", cmd);
+    }
     system(cmd);
 
     return 0;
