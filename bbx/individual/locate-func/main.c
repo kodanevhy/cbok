@@ -27,6 +27,11 @@ char outerFilter[200];
 int constructInnerFilter() {
     strcat(innerFilter, connector);
     strcat(innerFilter, "-v \";\"");
+
+    // Remove funcName in single line comment.
+    strcat(innerFilter, connector);
+    strcat(innerFilter, "-v \"//\"");
+
     strcat(innerFilter, sedConnector);
     // Remove result when matching 2 pairs of parentheses.
     strcat(innerFilter, "'/([(*(*))]/d'");
