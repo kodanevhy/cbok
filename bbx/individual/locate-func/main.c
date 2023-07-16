@@ -19,7 +19,7 @@ char *connector = " | grep ";
 char *sedConnector = " | sed ";
 
 char cmd[100] = "grep -rn ";
-char target[3] = " .\0";
+char target[5] = " *.c\0";   // Only locate from C file.
 char innerFilter[100];
 char outerFilter[200];
 
@@ -40,7 +40,13 @@ int main(int argc, char **argv, char **envp) {
         goto exit;
     }
 
-    strcat(cmd, argv[1]);
+    char funcName[100];
+
+    strcat(funcName, "\"");
+    strcat(funcName, argv[1]);
+    // Connect a "(" to funcName to ensure it's exactly a funcName.
+    strcat(funcName, "(\"");
+    strcat(cmd, funcName);
     if (argc == 2) {
         strcat(cmd, target);
     // >= 3
@@ -60,7 +66,7 @@ int main(int argc, char **argv, char **envp) {
     strcat(cmd, innerFilter);
     strcat(cmd, outerFilter);
 
-    printf("%s: \"%s\"\n", "Going to execute", cmd);
+    printf("%s: \"%s\"\n\n", "Going to execute", cmd);
     system(cmd);
 
     return 0;
