@@ -19,7 +19,7 @@ char *connector = " | grep ";
 char *sedConnector = " | sed ";
 
 char cmd[100] = "grep -rn ";
-char target[5] = " *.c\0";   // Only locate from C file.
+char target[17] = " --include=\"*.c\"\0";   // Only locate from C file.
 char innerFilter[100];
 char outerFilter[200];
 
@@ -32,8 +32,8 @@ int constructInnerFilter() {
     strcat(innerFilter, connector);
     strcat(innerFilter, "-v \"//\"");
 
-    strcat(innerFilter, sedConnector);
     // Remove result when matching 2 pairs of parentheses.
+    strcat(innerFilter, sedConnector);
     strcat(innerFilter, "'/([(*(*))]/d'");
     return 0;
 }
