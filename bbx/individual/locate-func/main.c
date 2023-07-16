@@ -3,8 +3,8 @@
  *
  * Copyright (c) 2023 Kodanevhy Zhou
  *
- * To locate a function definition in C project. Inner filter always
- * grep -v ";", outer filter comes from user.
+ * To locate a function definition in C project. Inner filter is always fixed
+ * in the code, outer filter comes from user.
  *
  * Usage:
  * locate-func-arm64 Func_Name grep filter1 grep filter2 ...
