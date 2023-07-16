@@ -1,9 +1,37 @@
+/*
+ * Locate Function Definition
+ *
+ * Copyright (c) 2023 Kodanevhy Zhou
+ *
+ * To locate a function definition in C project. Inner filter always
+ * grep -v ";", outer filter comes from user.
+ *
+ * Usage:
+ * locate-func-arm64 Func_Name grep filter1 grep filter2 ...
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
 char *GREP = "grep";
 char *connector = " | grep ";
+char *sedConnector = " | sed ";
+
+char cmd[100] = "grep -rn ";
+char target[3] = " .\0";
+char innerFilter[100];
+char outerFilter[200];
+
+
+int constructInnerFilter() {
+    strcat(innerFilter, connector);
+    strcat(innerFilter, "-v \";\"");
+    strcat(innerFilter, sedConnector);
+    // Remove result when matching 2 pairs of parentheses.
+    strcat(innerFilter, "'/([(*(*))]/d'");
+    return 0;
+}
 
 
 int main(int argc, char **argv, char **envp) {
@@ -12,35 +40,28 @@ int main(int argc, char **argv, char **envp) {
         goto exit;
     }
 
-    char total_cmd[100] = "grep -rn ";
-    char *target;
-    char grep_str[100];
-
-    strcat(total_cmd, argv[1]);
+    strcat(cmd, argv[1]);
     if (argc == 2) {
-        target = " .\0";
-        strcat(total_cmd, target);
+        strcat(cmd, target);
     // >= 3
     } else {
-        target = " . | grep \0";
-        strcat(total_cmd, target);
+        strcat(cmd, target);
 
         for (int i = 2; i <= argc - 1; i++) {
             if (strcmp(argv[i], GREP) == 0) {
                 continue;
             }
-            strcat(grep_str, argv[i]);
-            // The last space will be redundant to add to the command, so skip adding
-            // the (argc - 1) space char.
-            if (i != (argc - 1)) {
-                strcat(grep_str, connector);
-            }
+            strcat(outerFilter, connector);
+            strcat(outerFilter, argv[i]);
         }
     }
-    strcat(total_cmd, grep_str);
 
-    printf("%s: \"%s\"\n", "Going to execute", total_cmd);
-    system(total_cmd);
+    constructInnerFilter();
+    strcat(cmd, innerFilter);
+    strcat(cmd, outerFilter);
+
+    printf("%s: \"%s\"\n", "Going to execute", cmd);
+    system(cmd);
 
     return 0;
 
