@@ -6,7 +6,7 @@ TARGET_PATH 	:= bin
 CPU_ARCH 		:= $(shell uname -m)
 TARGET_API 		:= locate-func-${CPU_ARCH}
 
-build:
+build: clean
 	mkdir -p ${TARGET_PATH}
 	${CC} main.c -o ${TARGET_PATH}/${TARGET_API}
 
