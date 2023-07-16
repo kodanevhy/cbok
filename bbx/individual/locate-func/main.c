@@ -18,7 +18,7 @@ char *GREP = "grep";
 char *connector = " | grep ";
 char *sedConnector = " | sed ";
 
-char cmd[100] = "grep -rn ";
+char cmd[500] = "grep -rn ";
 char target[17] = " --include=\"*.c\"\0";   // Only locate from C file.
 char innerFilter[100];
 char outerFilter[200];
@@ -28,13 +28,16 @@ int constructInnerFilter() {
     strcat(innerFilter, connector);
     strcat(innerFilter, "-v \";\"");
 
+    strcat(innerFilter, connector);
+    strcat(innerFilter, "-v \"=\"");
+
     // Remove funcName in single line comment.
     strcat(innerFilter, connector);
     strcat(innerFilter, "-v \"//\"");
 
-    // Remove result when matching 2 pairs of parentheses.
     strcat(innerFilter, sedConnector);
-    strcat(innerFilter, "'/([(*(*))]/d'");
+    // Remove result when matching 2 pairs of parentheses.
+    strcat(innerFilter, "'/.*(.*(.*/d'");
     return 0;
 }
 
