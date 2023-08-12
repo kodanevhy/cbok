@@ -1,13 +1,22 @@
 import collections
 from urllib import parse as urlparse
+from webob import exc
 
 from oslo_log import log as logging
 
 import cbok.conf
+from cbok import exception
 
 CONF = cbok.conf.CONF
-
 LOG = logging.getLogger(__name__)
+
+
+def get_meh(meh_api, meh_uuid):
+    """Fetch a meh from the meh API, handling error checking."""
+    try:
+        return meh_api.get(meh_uuid)
+    except exception.MehNotFound as e:
+        raise exc.HTTPNotFound(explanation=e.format_message())
 
 
 class ViewBuilder(object):
