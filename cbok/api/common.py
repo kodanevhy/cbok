@@ -6,6 +6,7 @@ from oslo_log import log as logging
 
 import cbok.conf
 from cbok import exception
+from cbok.objects import caper as caper_obj
 
 CONF = cbok.conf.CONF
 LOG = logging.getLogger(__name__)
@@ -16,6 +17,14 @@ def get_meh(meh_api, meh_uuid):
     try:
         return meh_api.get(meh_uuid)
     except exception.MehNotFound as e:
+        raise exc.HTTPNotFound(explanation=e.format_message())
+
+
+def get_caper(caper_uuid):
+    """Fetch a caper from the caper API, handling error checking."""
+    try:
+        return caper_obj.Caper.get_by_uuid(caper_uuid)
+    except exception.CaperNotFound as e:
         raise exc.HTTPNotFound(explanation=e.format_message())
 
 

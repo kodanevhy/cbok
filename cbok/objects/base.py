@@ -1,3 +1,5 @@
+from abc import ABC
+
 from oslo_versionedobjects import base as ovoo_base
 
 from cbok.objects import fields as obj_fields
@@ -23,12 +25,13 @@ class CBoKPersistentObject(object):
         }
 
 
-class CBoKObject(ovoo_base.VersionedObject):
+class CBoKObject(ovoo_base.VersionedObject, ABC):
 
     def obj_load_attr(self, attrname):
         pass
 
-    def save(self):
+    # NOTE(Koda): Do not use context now, set it None.
+    def save(self, context=None):
         pass
 
     OBJ_SERIAL_NAMESPACE = 'cbok_object'

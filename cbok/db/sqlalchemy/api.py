@@ -53,5 +53,41 @@ def meh_create(meh):
         db_meh.update(meh)
         session.add(db_meh)
 
-    return {key: value for key, value in db_meh
-            if key != '_sa_instance_state'}
+    return {key: value for key, value in db_meh}
+
+
+def meh_update(meh_id, meh):
+    with session_constructor() as session:
+        pass
+
+
+def meh_get_by_caper(caper_uuid):
+    try:
+        with session_constructor() as session:
+            meh = session.query(models.Caper).filter_by(caper=caper_uuid)
+    except db_exc.DBError:
+        LOG.warning("Invalid caper id %s in request", caper_uuid)
+        raise exception.InvalidID(id=caper_uuid)
+
+    return {key: value for key, value in meh}
+
+
+def caper_get(caper_uuid):
+    try:
+        with session_constructor() as session:
+            caper = session.query(models.Caper).filter_by(uuid=caper_uuid).first()
+        if not caper:
+            raise exception.CaperNotFound(caper_id=caper_uuid)
+        return caper
+    except db_exc.DBError:
+        LOG.warning("Invalid caper id %s in request", caper_uuid)
+        raise exception.InvalidID(id=caper_uuid)
+
+
+def caper_create(caper):
+    with session_constructor() as session:
+        db_caper = models.Caper()
+        db_caper.update(caper)
+        session.add(db_caper)
+
+    return {key: value for key, value in db_caper}

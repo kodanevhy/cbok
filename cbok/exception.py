@@ -108,6 +108,18 @@ class MehUUIDExists(CBoKException):
     msg_fmt = 'Meh with ID %(meh_id)s already exists.'
 
 
+class CaperNotFound(CBoKException):
+    msg_fmt = 'Caper %(caper_id)s is not found.'
+
+
+class CaperExists(CBoKException):
+    msg_fmt = 'Caper with id %(id)s already exists.'
+
+
+class CaperUUIDExists(CBoKException):
+    msg_fmt = 'Caper with ID %(caper_id)s already exists.'
+
+
 class DecompressFlowFailed(CBoKException):
     msg_fmt = 'Decompress bill flow failed.'
 

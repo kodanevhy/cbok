@@ -40,3 +40,21 @@ def meh_get_nearly():
 def meh_create(meh):
     """Create a single meh."""
     return IMPL.meh_create(meh)
+
+
+def meh_update(meh_id, meh):
+    return IMPL.meh_update(meh_id, meh)
+
+
+def meh_get_by_caper(caper_uuid):
+    return IMPL.meh_get_by_caper(caper_uuid)
+
+
+def caper_get(caper_uuid):
+    """Get a caper or raise if it does not exist."""
+    return IMPL.caper_get(caper_uuid)
+
+
+def caper_create(caper):
+    """Create an caper."""
+    return IMPL.caper_create(caper)

@@ -32,10 +32,10 @@ def db_sync(version=None, database='main'):
     repository = _find_migrate_repo(database)
     if version is None or version > current_version:
         return versioning_api.upgrade(get_engine(database),
-                repository, version)
+                                      repository, version)
     else:
         return versioning_api.downgrade(get_engine(database),
-                repository, version)
+                                        repository, version)
 
 
 def db_version(database='main'):
