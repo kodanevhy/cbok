@@ -1,3 +1,4 @@
+from cbok.api.bookkeeping import caper
 from cbok.api.bookkeeping import meh
 from cbok import conf
 
@@ -14,5 +15,16 @@ ROUTE_TABLE = (
          'GET': [meh.MehController, 'show'],
          'PUT': [meh.MehController, 'update'],
          'DELETE': [meh.MehController, 'delete']
-     })
+     }),
+    ('/caper',
+     {
+         'GET': [caper.CaperController, 'index'],
+         'POST': [caper.CaperController, 'create']
+     }),
+    ('/caper/{caper_id}',
+     {
+         'GET': [caper.CaperController, 'show'],
+         'PUT': [caper.CaperController, 'update'],
+         'DELETE': [caper.CaperController, 'delete']
+     }),
 )

@@ -1,6 +1,6 @@
 from oslo_log import log as logging
 
-from cbok.api.bookkeeping import common
+from cbok.api import common
 import cbok.conf
 from cbok import utils
 

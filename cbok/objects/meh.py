@@ -38,7 +38,8 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
         # NOTE(koda): Support to save a certain proportion of meh,
         # especially when type is expenditure.
         'worthy': fields.BooleanField(nullable=True),
-        'ready': fields.BooleanField(nullable=True)
+        'ready': fields.BooleanField(nullable=True),
+        'caper': fields.UUIDField(nullable=True),
         }
 
     def __init__(self, *args, **kwargs):
@@ -60,47 +61,36 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
 
         return db_meh
 
-    @classmethod
-    def create(cls, data_dict):
+    def create(self):
         """Unify object creation.
 
         Idea is that the creation fixed procedures throughout the CBoK:
         1.Dict for arguments
         2.call next layer: API model
         3.Get the return and return (must)
-
-        :param data_dict: Meh dict format.
         """
-        for key in data_dict:
-            if key not in cls.fields:
-                raise 'Unknown field: %s.' % key
-        obj = cls(**data_dict)
-
         meh_uuid = uuidutils.generate_uuid()
-        if cls.get_by_uuid(meh_uuid):
+        if self.get_by_uuid(meh_uuid):
             raise exception.ObjectActionError(action='create',
                                               reason='already created')
 
-        updates = obj.obj_get_changes()
-        db_meh = obj._meh_create(updates)
-        obj._from_db_object(cls(), db_meh)
+        updates = self.obj_get_changes()
+        db_meh = self._meh_create(updates)
+        self._from_db_object(db_meh)
         return db_meh
 
-    @staticmethod
-    def _from_db_object(meh, db_meh):
-        for name, field in meh.fields.items():
+    def _from_db_object(self, db_meh):
+        for name, field in self.fields.items():
             value = db_meh[name]
             if isinstance(field, fields.IntegerField):
                 value = value if value is not None else 0
-            meh[name] = value
+            self[name] = value
 
-        meh.obj_reset_changes()
-        return meh
+        self.obj_reset_changes()
+        return self
 
     @classmethod
     def get_by_uuid(cls, uuid):
-        if not uuid:
-            return None
         db_meh = db_api.meh_get(uuid)
         return cls._from_db_object(cls(), db_meh)
 
@@ -108,6 +98,9 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
     def nearly_one(cls):
         db_meh = db_api.meh_get_nearly()
         return cls._from_db_object(cls(), db_meh)
+
+    def save(self, context=None):
+        pass
 
 
 @base.CBoKObjectRegistry.register

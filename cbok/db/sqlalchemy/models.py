@@ -74,3 +74,19 @@ class Meh(BASE, CBoKBase, models.SoftDeleteMixin):
     description = Column(String(length=255), nullable=False)
     worthy = Column(Float, nullable=True)
     ready = Column(Boolean, nullable=True)
+    caper = Column(String(length=36), nullable=True)
+
+
+class Caper(BASE, CBoKBase, models.SoftDeleteMixin):
+    """Represents a caper."""
+
+    __tablename__ = 'caper'
+    __table_args__ = (
+        Index('caper_uuid_idx', 'uuid', unique=True),
+    )
+
+    id = Column(Index, primary_key=True)
+    uuid = Column(String(length=36), nullable=False)
+    name = Column(String(length=255), nullable=False)
+    description = Column(String(length=255), nullable=True)
+    progressing = Column(Boolean, nullable=False, default=False)
