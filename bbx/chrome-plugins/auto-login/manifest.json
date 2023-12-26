@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "CBoK Chrome Extension",
+  "version": "1.0",
+  "description": "CBoK Chrome Extension",
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "cbok.png",
+      "48": "cbok.png",
+      "128": "cbok.png"
+    }
+  },
+  "permissions": [
+    "activeTab"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ]
+    }
+  ]
+}
+

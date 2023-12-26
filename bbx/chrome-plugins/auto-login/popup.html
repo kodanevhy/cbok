@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <title>CBoK Extension Popup</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 99vh;
+            background-color: #f0f0f0;
+        }
+
+        #popup-container {
+            width: 300px;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            text-align: center;
+            font-family: 'Arial', sans-serif;
+        }
+
+        #logo {
+            width: 200px;
+            height: auto;
+            margin-bottom: 10px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        input {
+            width: 200px;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        button {
+            background-color: #4caf50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+<div id="popup-container">
+    <img id="logo" src="cbok.png" alt="Logo"/>
+    <h1>Hello, CBoK Chrome Extension!</h1>
+    <label for="correctedPassword">Password: </label>
+    <input id="correctedPassword" type="password" value="Admin@ES20!8" placeholder="Password" required/>
+    <button id="tabLogin">Current Tab Login</button>
+</div>
+<script src="popup.js"></script>
+</body>
+</html>
