@@ -45,8 +45,8 @@ class MehController(wsgi.BaseController):
 
         batched = []
         for meh_meta in create_kwargs:
-            meh = self.meh_api.create(**meh_meta)
-            batched.append({'meh': meh.uuid})
+            meh = self.meh_api.create(meh_meta)
+            batched.append({'meh': meh['uuid']})
         return batched
 
     def update(self, req, meh_uuid):

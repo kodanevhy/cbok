@@ -6,7 +6,7 @@ workspace_abs_path=/root/
 server=smtp.163.com
 sender=yormng@163.com
 port=25
-key=PDSRSAJDHTZSBEYC
+secret=PDSRSAJDHTZSBEYC
 
 [api]
 api_works=1

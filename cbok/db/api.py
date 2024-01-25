@@ -56,5 +56,5 @@ def caper_get(caper_uuid):
 
 
 def caper_create(caper):
-    """Create an caper."""
+    """Create a caper."""
     return IMPL.caper_create(caper)

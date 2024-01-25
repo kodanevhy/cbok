@@ -10,12 +10,14 @@ from oslo_concurrency import processutils
 from oslo_log import log as logging
 import pandas
 
+from cbok import conf
 from cbok import exception
 from cbok import utils
 from cbok.bookkeeping import common
 from cbok.objects import meh
 
 
+CONF = conf.CONF
 LOG = logging.getLogger(__name__)
 
 
@@ -34,9 +36,14 @@ class Flow:
         """Download and VIOLENTLY decompress the bill flow file."""
         self.target_dir = mkdtemp(suffix='.cbok.flow')
         target_unzipped = os.path.join(self.target_dir, 'unzipped')
-        compressed_target = os.path.join(self.target_dir, 'wechat.zip')
-        cmd = ['wget', link, '-O', compressed_target]
-        execute(cmd)
+        if not CONF.api.debug:
+            compressed_target = os.path.join(self.target_dir, 'wechat.zip')
+            cmd = ['wget', link, '-O', compressed_target]
+            execute(cmd)
+            password = ''
+        else:
+            compressed_target = '../etc/wechat.zip'
+            password = '036881'
         # Note(koda): WeChat just allow user to download the bill for 3 times,
         # if exceeded, it will return an HTML error page.
         # TODO(koda): mention client don't download flow by itself.
@@ -45,7 +52,8 @@ class Flow:
         unzip_start = time.time()
         meta_chars = '0123456789'
         for char in itertools.product(meta_chars, repeat=6):
-            password = ''.join(char)
+            if not password:
+                password = ''.join(char)
             try:
                 with zipfile.ZipFile(compressed_target) as zf:
                     if os.path.exists(target_unzipped):
@@ -74,8 +82,7 @@ class Flow:
                 break
 
     def _process_flow(self):
-        # Note(koda): Shit tencent mistake: lack 2 ',' in bill flow,
-        # result in parsing cells failed.
+        # Note(koda): Lack 2 ',' in bill flow, result in parsing cells failed.
         with open(self.csv_path, 'r') as fr:
             line = fr.read()
             replaced = line.replace(',,,,,,,,', ',,,,,,,,,,')
@@ -108,6 +115,8 @@ class Flow:
                 if utils.strtime(row[0]) < utils.strtime(self.earliest):
                     self.earliest = row[0]
                 for i, item in enumerate(init):
+                    if init[i] == 'amount':
+                        row[i] = row[i].replace('¥', '')
                     create_kwargs[init[i]] = row[i]
                 aggregate.append(create_kwargs)
         return aggregate

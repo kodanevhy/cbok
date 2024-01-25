@@ -24,5 +24,4 @@ def main():
 
 
 if __name__ == '__main__':
-    from cbok import cmd
     main()

@@ -7,6 +7,7 @@ from oslo_log import log as logging
 import sqlalchemy
 from sqlalchemy.sql import null
 
+from cbok import conf
 from cbok.db.sqlalchemy import api as db_session
 from cbok import exception
 
@@ -14,11 +15,12 @@ INIT_VERSION = {'main': 0}
 _REPOSITORY = {}
 
 LOG = logging.getLogger(__name__)
+CONF = conf.CONF
 
 
 def get_engine(database='main'):
     if database == 'main':
-        return db_session.get_engine()
+        return db_session.create_engine(CONF.db.connection)
 
 
 def db_sync(version=None, database='main'):

@@ -85,7 +85,7 @@ class Caper(BASE, CBoKBase, models.SoftDeleteMixin):
         Index('caper_uuid_idx', 'uuid', unique=True),
     )
 
-    id = Column(Index, primary_key=True)
+    id = Column(Integer, primary_key=True)
     uuid = Column(String(length=36), nullable=False)
     name = Column(String(length=255), nullable=False)
     description = Column(String(length=255), nullable=True)

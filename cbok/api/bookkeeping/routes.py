@@ -10,7 +10,7 @@ ROUTE_TABLE = (
          'GET': [meh.MehController, 'index'],
          'POST': [meh.MehController, 'create'],
      }),
-    ('/meh/{meh_id}',
+    ('/meh/{meh_uuid}',
      {
          'GET': [meh.MehController, 'show'],
          'PUT': [meh.MehController, 'update'],
@@ -21,7 +21,7 @@ ROUTE_TABLE = (
          'GET': [caper.CaperController, 'index'],
          'POST': [caper.CaperController, 'create']
      }),
-    ('/caper/{caper_id}',
+    ('/caper/{caper_uuid}',
      {
          'GET': [caper.CaperController, 'show'],
          'PUT': [caper.CaperController, 'update'],

@@ -69,11 +69,9 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
         2.call next layer: API model
         3.Get the return and return (must)
         """
-        meh_uuid = uuidutils.generate_uuid()
-        if self.get_by_uuid(meh_uuid):
+        if self.obj_attr_is_set('id'):
             raise exception.ObjectActionError(action='create',
                                               reason='already created')
-
         updates = self.obj_get_changes()
         db_meh = self._meh_create(updates)
         self._from_db_object(db_meh)
@@ -97,6 +95,8 @@ class Meh(base.CBoKPersistentObject, base.CBoKObject,
     @classmethod
     def nearly_one(cls):
         db_meh = db_api.meh_get_nearly()
+        if not db_meh:
+            return
         return cls._from_db_object(cls(), db_meh)
 
     def save(self, context=None):
