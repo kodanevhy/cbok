@@ -1,6 +1,5 @@
 from oslo_db import exception as db_exc
 from oslo_log import log as logging
-from oslo_utils import uuidutils
 
 from cbok import config
 from cbok import exception

@@ -4,12 +4,7 @@
   "version": "1.0",
   "description": "CBoK Chrome Extension",
   "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "cbok.png",
-      "48": "cbok.png",
-      "128": "cbok.png"
-    }
+    "default_popup": "popup.html"
   },
   "permissions": [
     "activeTab"

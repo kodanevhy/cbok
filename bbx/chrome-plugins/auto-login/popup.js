@@ -21,6 +21,20 @@ tabLogin.onclick = async function () {
     await chrome.tabs.sendMessage(tab.id, {action: "tabLogin", identity: identity});
 }
 
+const showPasswordCheckbox = document.getElementById('showPasswordCheckbox');
+showPasswordCheckbox.onclick = function () {
+    let passwordField = document.getElementById("correctedPassword");
+    let checkbox = document.getElementById("showPasswordCheckbox");
+
+    if (checkbox.checked) {
+        passwordField.type = "text";
+    } else {
+        passwordField.type = "password";
+    }
+    // Ensure consistent styling after checkbox state change
+    passwordField.style.width = passwordField.offsetWidth + "px";
+}
+
 function extractDomain(currentUrl) {
     let domain;
     const match = currentUrl.match(/:\/\/(www[0-9]?\.)?(.[^/:]+)/i);

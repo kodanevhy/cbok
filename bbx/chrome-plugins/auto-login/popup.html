@@ -33,25 +33,57 @@
             display: block;
             margin-bottom: 8px;
             color: #555;
+            text-align: left; /* Ensure labels are aligned properly */
         }
 
         h1 {
             color: #333;
         }
 
-        input {
-            width: 200px;
+        .password-input-container {
+            position: relative; /* Enable relative positioning */
+            margin-bottom: 15px; /* Adjust spacing between elements */
+            text-align: left; /* Align contents to the left */
+            display: flex; /* Use flexbox for horizontal alignment */
+            align-items: center; /* Center align items vertically */
+        }
+
+        .password-label {
+            flex: 0 0 auto; /* Do not grow, do not shrink, fixed width */
+            margin-right: 10px; /* Adjust spacing between label and input */
+            color: #555;
+            size: 10px;
+        }
+
+        input[type="password"] {
+            flex: 1; /* Expand to fill remaining space */
+            width: 100%; /* Ensure the input takes up 100% width */
             padding: 8px;
-            margin-bottom: 10px;
             border: 1px solid #ccc;
             border-radius: 4px;
             font-size: 14px;
+            box-sizing: border-box; /* Ensure padding is included in width calculation */
+        }
+
+        input[type="text"] {
+            flex: 1; /* Expand to fill remaining space */
+            width: 100%; /* Ensure the input takes up 100% width */
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box; /* Ensure padding is included in width calculation */
+        }
+
+        #showPasswordCheckbox {
+            margin-left: 10px; /* Adjust spacing between password input and checkbox */
         }
 
         button {
             background-color: #4caf50;
             color: white;
             padding: 10px 15px;
+            margin-top: 40px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
@@ -66,11 +98,16 @@
 </head>
 <body>
 <div id="popup-container">
-    <img id="logo" src="cbok.png" alt="Logo"/>
-    <h1>Hello, CBoK Chrome Extension!</h1>
-    <label for="correctedPassword">Password: </label>
-    <input id="correctedPassword" type="password" value="Admin@ES20!8" placeholder="Password" required/>
-    <button id="tabLogin">Current Tab Login</button>
+    <h1>CBoK Chrome Extension</h1>
+    <form>
+        <label for="correctedPassword" class="password-label">Password:</label>
+
+        <div class="password-input-container">
+            <input id="correctedPassword" type="password" value="Admin@ES20!8" placeholder="Password" required>
+            <input type="checkbox" id="showPasswordCheckbox">
+        </div>
+        <button id="tabLogin">Current Tab Login</button>
+    </form>
 </div>
 <script src="popup.js"></script>
 </body>
