@@ -1,6 +1,7 @@
 import base64
 import os.path
 import re
+import time
 
 import urllib3
 from urllib3 import exceptions
@@ -190,4 +191,6 @@ def run():
     manager.try_login_and_persistent()
 
 if __name__ == '__main__':
-    run()
+    while True:
+        run()
+        time.sleep(600)
