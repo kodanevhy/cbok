@@ -146,7 +146,7 @@ class LoginManager:
             current_addresses = []
 
         # We need to check current record first, if failed, remove.
-        addresses = list(set(current_addresses + self.ADDRESS))
+        addresses = set((list(current_addresses) + self.ADDRESS))
         for addr in addresses:
             url = 'https://%s/ems_dashboard_api/auth_login/' % addr
             csrf = self._resolve_form_csrftoken(url)
