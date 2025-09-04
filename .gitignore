@@ -5,6 +5,7 @@ foundation/local/*
 apps/bbx/chrome_plugins/auto_login/static/passphrase
 apps/bbx/virt_devel/local/*
 !apps/bbx/virt_devel/local/README.md
+apps/bbx/virt_devel/example/*
 apps/bbx/kernel/local/*
 !apps/bbx/kernel/local/README.md
 review/*
