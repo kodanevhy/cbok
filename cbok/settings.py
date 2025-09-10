@@ -15,7 +15,7 @@ import sys
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(BASE_DIR, 'apps'))
+sys.path.insert(0, os.path.join(BASE_DIR, 'cbok', 'apps'))
 # sys.path.insert(0, os.path.join(BASE_DIR, 'extra_apps'))
 
 # Quick-start development settings - unsuitable for production
@@ -60,9 +60,9 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'corsheaders.middleware.CorsMiddleware',
-    'middleware.00_global.GlobalMiddleware',
-    'middleware.01_input.InputMiddleware',
-    'middleware.02_exception.ExcMiddleware',
+    'cbok.middleware.00_global.GlobalMiddleware',
+    'cbok.middleware.01_input.InputMiddleware',
+    'cbok.middleware.02_exception.ExcMiddleware',
 ]
 
 ROOT_URLCONF = 'cbok.urls'
@@ -198,3 +198,5 @@ LOGGING = {
 CRONJOBS = [
     ('0 12 * * *', 'bbx.chrome_plugins.auto_login.manager.run')
 ]
+
+Workspace = "/Users/mizar/Workspace/"

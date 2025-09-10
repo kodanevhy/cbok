@@ -9,3 +9,8 @@ class InvalidParam(base_exception.CBoKException):
 class MalformedURL(base_exception.CBoKException):
     msg_fmt = 'Bad Request - Malformed URL'
     code = 400
+
+
+class CannotLocateProject(base_exception.CBoKException):
+    msg_fmt = 'Cannot locate project'
+    code = 400

@@ -5,7 +5,7 @@ import logging
 from django import http
 from django.utils.deprecation import MiddlewareMixin
 
-from cbok.exceptions import base_exception
+from cbok.exception import base_exception
 
 LOG = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class ExcMiddleware(MiddlewareMixin):
     def __init__(self, get_response=None):
         super().__init__(get_response)
         self.main_exc_module = importlib.import_module(
-            'cbok.exceptions')
+            'cbok.exception')
         self.supported = {
             400: http.HttpResponseBadRequest,
             404: http.HttpResponseNotFound,

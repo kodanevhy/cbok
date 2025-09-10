@@ -2,12 +2,12 @@ foundation/local/*
 !foundation/local/README.md
 !foundation/local/kubeadm.yaml
 !foundation/local/calico.yaml
-apps/bbx/chrome_plugins/auto_login/static/passphrase
-apps/bbx/virt_devel/local/*
-!apps/bbx/virt_devel/local/README.md
-apps/bbx/virt_devel/example/*
-apps/bbx/kernel/local/*
-!apps/bbx/kernel/local/README.md
+cbok/apps/bbx/chrome_plugins/auto_login/static/passphrase
+cbok/apps/bbx/virt_devel/local/*
+!cbok/apps/bbx/virt_devel/local/README.md
+cbok/apps/bbx/virt_devel/example/*
+cbok/apps/bbx/kernel/local/*
+!cbok/apps/bbx/kernel/local/README.md
 review/*
 !review/README.md
 personnel/*
@@ -18,3 +18,4 @@ venv/
 .DS_Store
 __pycache__/
 log/
+CBoK.egg-info/
