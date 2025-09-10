@@ -7,7 +7,7 @@
 宿主机推荐安装Python 3.9.6，配置虚拟环境后，在项目根目录执行如下命令。
 
 ```shell
-  cd requirements && python3 install.py
+  python3 requirements/install.py
 ```
 
 安装成功后，检查关键依赖项如下：
@@ -28,3 +28,10 @@
   python3 manage.py migrate
 ```
 
+三、 本地安装CBoK（可选）
+
+部分功能在本地使用，例如`bbx`中的`put_patch`，需要先在本地安装。这会在Python site中创建一个链接指向本地CBoK source。
+```shell
+  python3 -m site
+  pip3 install -e .
+```
