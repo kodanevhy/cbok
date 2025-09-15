@@ -27,15 +27,19 @@ class PatchCommands:
 
     @action_description("Upload the patch changes to a running env")
     @args(
-        'service', metavar='<service>',
+        '--node', metavar='<node>', default=None,
+        help='The node locate replica (Optional)')
+    @args(
+        '--service', metavar='<service>', required=True,
         help='(sub-)service like a deployment split from a project')
-    @args('address', metavar='<address>',
-          help='Address of env, which you are already authorized, '
-               'or an os-in-os')
-    def put(self, address=None, service=None):
+    @args(
+        '--address', metavar='<address>', required=True,
+        help='Address of env, or an os-in-os, which you are already '
+             'authorized')
+    def put(self, address=None, service=None, node=None):
         """Upload the patch changes to a running env"""
         try:
-            put_patch.run(address, service)
+            put_patch.run(address, service, node)
         except Exception:
             raise
 

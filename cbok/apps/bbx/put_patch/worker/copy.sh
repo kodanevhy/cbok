@@ -1,9 +1,6 @@
 #!/bin/bash
 set -ex
 
-# brew install coreutils
-# brew install hudochenkov/sshpass/sshpass
-
 target='/tmp/zztestcbok/'
 
 function copy() {
@@ -26,10 +23,12 @@ for f in files:
                 scp "$src" root@$address:"$target"
 
                 filename=$(basename "$src")
+                remote_tmp="/tmp/$filename"
                 remote_dir=$(dirname "$dst")
-                gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- mkdir -p $remote_dir"
 
-                gtimeout -s KILL 10 ssh -n root@$address "kubectl cp $target$filename -n openstack $pod_name:$dst -c $container"
+                gtimeout -s KILL 10 ssh -n root@$address "kubectl cp $target$filename -n openstack $pod_name:$remote_tmp -c $container"
+                gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- mkdir -p $remote_dir"
+                gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- sudo mv $remote_tmp $dst"
                 ;;
 
             D)
@@ -80,12 +79,15 @@ for f in files:
                 gtimeout -s KILL 10 sshpass -p "easystack" scp "$src" root@$address:"$target"
 
                 filename=$(basename "$src")
+                remote_tmp="/tmp/$filename"
                 remote_dir=$(dirname "$dst")
 
-                remote_exec_via_jump $address mkdir -p "$target"
-                sshpass -p "easystack" ssh -n root@$address "scp -i ~/.ssh/id_rsa.roller $target$filename root@10.20.0.3:$target$filename"
-                remote_exec_via_jump "$address" kubectl exec -n openstack "$pod_name" -c "$container" -- mkdir -p $remote_dir
-                remote_exec_via_jump $address kubectl cp "$target$filename" -n openstack "$pod_name:$dst" -c $container
+                # 1. 先拷贝到 /tmp
+                remote_exec_via_jump $address kubectl cp "$target$filename" -n openstack "$pod_name:$remote_tmp" -c $container
+
+                # 2. 再 mv 到最终目录
+                remote_exec_via_jump $address kubectl exec -n openstack "$pod_name" -c "$container" -- mkdir -p $remote_dir
+                remote_exec_via_jump $address kubectl exec -n openstack "$pod_name" -c "$container" -- sudo mv $remote_tmp $dst
                 ;;
 
             D)

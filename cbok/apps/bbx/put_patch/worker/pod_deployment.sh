@@ -14,18 +14,18 @@ function init_pod(){
     gtimeout -s KILL 10 ssh root@$address "
         kubectl scale $controller/$replica --replicas=1 -n openstack
     "
-    gtimeout -s KILL 10 ssh root@$address "
+    ssh root@$address "
         set -e
         kubectl get cm -n openstack nova-bin -oyaml > /tmp/$replica
 
-        sed -i '
-        /^  nova-dashboard-api\.sh: |$/{
+        sed -i \"
+        /^  $(basename $start_script): |$/{
             :loop
             n
             /^    #!/{
                 # 检查下一行是否为 sleep infinity
                 n
-                /^[[:space:]]*sleep infinity$/! i\    sleep infinity
+                /^[[:space:]]*sleep infinity\$/! i\\    sleep infinity
                 b done
             }
             # 如果到下一个块或者文件末尾，跳出
@@ -33,7 +33,7 @@ function init_pod(){
             b loop
         }
         :done
-        ' /tmp/$replica
+        \" /tmp/$replica
 
         kubectl apply -f /tmp/$replica
     "
@@ -83,6 +83,14 @@ function init_pod(){
 }
 
 
+function remote_exec_via_jump() {
+    local jump=$1
+    shift
+    ssh_key="ssh -i ~/.ssh/id_rsa.roller root@10.20.0.3"
+    sshpass -p "easystack" ssh root@"$jump" $ssh_key $@
+}
+
+
 function init_pod_os_in_os(){
     address=$1
     controller=$2
@@ -92,29 +100,26 @@ function init_pod_os_in_os(){
     gtimeout -s KILL 10 sshpass -p "easystack" ssh root@$address "ssh -i ~/.ssh/id_rsa.roller root@10.20.0.3 \"
         kubectl scale $controller/$replica --replicas=1 -n openstack
     \""
-    gtimeout -s KILL 10 sshpass -p "easystack" ssh root@$address "ssh -i ~/.ssh/id_rsa.roller root@10.20.0.3 \"
-        set -e
-        kubectl get cm -n openstack nova-bin -oyaml > /tmp/$replica
+    remote_exec_via_jump "$address" bash -s <<EOF
+kubectl get cm -n openstack nova-bin -oyaml > /tmp/$replica
 
-        sed -i '
-        /^  nova-dashboard-api\.sh: |$/{
-            :loop
-            n
-            /^    #!/{
-                # 检查下一行是否为 sleep infinity
-                n
-                /^[[:space:]]*sleep infinity$/! i\    sleep infinity
-                b done
-            }
-            # 如果到下一个块或者文件末尾，跳出
-            /^[^[:space:]]/ b done
-            b loop
-        }
-        :done
-        ' /tmp/$replica
+sed -i "/^  $(basename $start_script): |\$/{
+    :loop
+    n
+    /^    #!/{
+        # 检查下一行是否为 sleep infinity
+        n
+        /^[[:space:]]*sleep infinity\$/! i\    sleep infinity
+        b done
+    }
+    # 如果到下一个块或者文件末尾，跳出
+    /^[^[:space:]]/ b done
+    b loop
+}
+:done" /tmp/$replica
 
-        kubectl apply -f /tmp/$replica
-    \""
+kubectl apply -f /tmp/$replica
+EOF
 
     for i in {1..30}; do
         num=$(gtimeout -s KILL 10 sshpass -p "easystack" ssh root@$address "ssh -i ~/.ssh/id_rsa.roller root@10.20.0.3 \"
