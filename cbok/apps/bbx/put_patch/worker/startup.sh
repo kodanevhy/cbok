@@ -4,11 +4,11 @@ set -ex
 
 function finalize_startup() {
     address="$1"
-    pod_name="$2"
-    container="$3"
-    startup_script="$4"
+    pod_name=$2
+    container=$3
+    startup_script=$4
     filename=$(basename "$startup_script")
-    gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- cp "$startup_script" /opt/$filename"
+    gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- cp $startup_script /opt/$filename"
     gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- sudo chmod 777 /opt/$filename"
     gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- sed -i '2d' /opt/$filename"
 }
