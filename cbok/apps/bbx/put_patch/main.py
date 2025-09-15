@@ -144,7 +144,8 @@ def run(address, service):
         return
 
     pod_name = init_pod(address, service_meta)
-    copy_changes(address, changes, pod_name.strip(), service_meta)
+    pod_name = pod_name.strip()
+    copy_changes(address, changes, pod_name, service_meta)
     finalize_startup(address, pod_name, service_meta)
 
     print(pod_name)
