@@ -1,7 +1,7 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth import login
 
-from user import exceptions
+from user import exception
 from user import models
 
 
@@ -19,7 +19,7 @@ class UserManager:
         username = create_kwargs['username']
         password = create_kwargs['password']
         if models.UserProfile.objects.filter(username=username):
-            raise exceptions.UserExists(username=username)
+            raise exception.UserExists(username=username)
 
         user_profile = models.UserProfile()
         user_profile.username = username
