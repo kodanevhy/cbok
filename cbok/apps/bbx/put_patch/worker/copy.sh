@@ -82,10 +82,7 @@ for f in files:
                 remote_tmp="/tmp/$filename"
                 remote_dir=$(dirname "$dst")
 
-                # 1. 先拷贝到 /tmp
                 remote_exec_via_jump $address kubectl cp "$target$filename" -n openstack "$pod_name:$remote_tmp" -c $container
-
-                # 2. 再 mv 到最终目录
                 remote_exec_via_jump $address kubectl exec -n openstack "$pod_name" -c "$container" -- mkdir -p $remote_dir
                 remote_exec_via_jump $address kubectl exec -n openstack "$pod_name" -c "$container" -- sudo mv $remote_tmp $dst
                 ;;
