@@ -36,6 +36,7 @@ CBoK_APPS = [
     'crispy_forms',
     'bbx',  # 百宝箱
     'user',
+    'alert',
 ]
 INSTALLED_APPS = [
     'django.contrib.admin',
