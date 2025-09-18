@@ -4,7 +4,6 @@ import os
 import shlex
 import sys
 
-
 from cbok.apps.bbx import exception
 from cbok import utils as cbok_utils
 from cbok import settings
@@ -91,8 +90,6 @@ def init_pod(address, service_meta, node=None):
                        f"{service_meta['start_script']} "
                        f"{node if controller == 'DaemonSet' else ''} "])
 
-    print(result.stdout)
-    print(result.stderr)
     if result.returncode != 0 or "Done;" not in result.stdout:
         LOG.error(result.stderr)
         raise exception.InitPodFailed(service=service_meta["replica"])
@@ -123,8 +120,6 @@ def copy_changes(address, changes, pod_name, service_meta):
         ["bash", "-c", f"source {worker}; {func} {shlex.quote(address)} "
                        f"{shlex.quote(pod_name)} {shlex.quote(container)} "
                        f"{shlex.quote(files_args)}"])
-    print(result.stdout)
-    print(result.stderr)
     if result.returncode != 0:
         LOG.error(result.stderr)
         raise exception.CopyChangesFailed()
