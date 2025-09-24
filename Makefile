@@ -1,1 +1,1 @@
-# TODO: execute tools/purify.sh
+# TODO: execute tools/purify.py
