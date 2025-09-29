@@ -79,6 +79,9 @@ for f in files:
                 gtimeout -s KILL 10 sshpass -p "easystack" scp "$src" root@$address:"$target"
 
                 filename=$(basename "$src")
+                remote_exec_via_jump $address mkdir -p "$target"
+                sshpass -p "easystack" ssh root@$address "scp -i /root/.ssh/id_rsa.roller $target$filename root@10.20.0.3:$target"
+
                 remote_tmp="/tmp/$filename"
                 remote_dir=$(dirname "$dst")
 
