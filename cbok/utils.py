@@ -32,8 +32,15 @@ def locate_project_path(ide, company, name):
     return os.path.join(workspace, ide, company, name)
 
 
-def execute(cmd, capture_output=True):
-    if capture_output:
-        return subprocess.run(cmd, capture_output=True, text=True)
-    else:
-        return subprocess.run(cmd, shell=True)
+def execute(cmd, cwd=None):
+    stash_cwd = None
+    if cwd:
+        stash_cwd = os.getcwd()
+        os.chdir(cwd)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    finally:
+        if stash_cwd:
+            os.chdir(stash_cwd)
+
+    return result

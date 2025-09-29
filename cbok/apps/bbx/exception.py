@@ -19,3 +19,7 @@ class CopyChangesFailed(CBoKException):
 
 class FinalizeStartupFailed(CBoKException):
     msg_fmt = 'Failed to finalize startup'
+
+
+class NoSuchImage(CBoKException):
+    msg_fmt = 'No such image: %(image)s'

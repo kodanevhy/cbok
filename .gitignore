@@ -8,6 +8,7 @@ cbok/apps/bbx/virt_devel/local/*
 cbok/apps/bbx/virt_devel/example/*
 cbok/apps/bbx/kernel/local/*
 !cbok/apps/bbx/kernel/local/README.md
+cbok/apps/bbx/ut/images/*
 review/*
 !review/README.md
 personnel/*
