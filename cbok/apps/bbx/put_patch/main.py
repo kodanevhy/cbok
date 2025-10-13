@@ -23,6 +23,16 @@ service_supported = {
         "config_map": "nova-bin",
         "start_script": "/tmp/nova-api.sh"
     },
+    "nova-conductor": {
+        "parent": "nova",
+        "package": "nova",
+        "site": "/usr/local/lib/python3.6/site-packages/nova/",
+        "controller": "Deployment",
+        "replica": "nova-conductor",
+        "container": "nova-conductor",
+        "config_map": "nova-bin",
+        "start_script": "/tmp/nova-conductor.sh"
+    },
     "nova-compute": {
         "parent": "nova",
         "package": "nova",
