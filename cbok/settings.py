@@ -140,6 +140,7 @@ STATICFILES_DIRS = [
 ]
 
 BASE_LOG_DIR = os.path.join(BASE_DIR, 'log')
+os.makedirs(BASE_LOG_DIR, exist_ok=True)
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

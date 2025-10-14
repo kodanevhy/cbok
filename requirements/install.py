@@ -15,16 +15,22 @@ for i, package in enumerate(packages):
 with open('requirements.txt', 'w') as requirements:
     requirements.writelines(packages)
 
+install_cmd = 'pip3 install -r requirements.txt'
+
 try:
-    install_cmd = 'pip3 install -r requirements.txt'
-    completed_process = subprocess.run(install_cmd, shell=True, check=True,
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.PIPE, text=True)
-
-    print('Command output:', completed_process.stdout)
+    completed_process = subprocess.run(
+        install_cmd,
+        shell=True,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    print(completed_process.stdout)
 except subprocess.CalledProcessError as e:
-    print('Error:', e)
-    print('Command output:', e.output)
-
-with open('requirements.txt', 'w') as requirements:
-    requirements.writelines(origin_packages)
+    print("STDOUT:\n", e.stdout)
+    print("STDERR:\n", e.stderr)
+    exit(1)
+else:
+    with open('requirements.txt', 'w') as f:
+        f.writelines(origin_packages)

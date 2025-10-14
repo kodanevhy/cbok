@@ -33,6 +33,6 @@ typing_extensions==4.12.2
 tzdata==2024.2
 urllib3==2.3.0
 wrapt==1.17.0
-xadmin @ file:///Users/mizar/Workspace/PycharmProjects/me/cbok/requirements/xadmin-django2.zip
+./requirements/xadmin-django2.zip
 xlrd==2.0.1
 xlwt==1.3.0

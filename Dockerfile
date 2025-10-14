@@ -2,19 +2,39 @@ FROM redhat/ubi9:latest
 
 USER root
 
-RUN yum -y install sudo wget gcc-c++ pcre pcre-devel zlib zlib-devel openssl openssl-devel procps-ng net-tools file
+RUN mkdir -p ~/.pip/
+RUN cat > ~/.pip/pip.conf <<EOF
+[global]
+index-url = https://pypi.doubanio.com/simple
+trusted-host = pypi.doubanio.com
+EOF
+
+RUN yum -y install tk-devel sqlite-devel ncurses-devel \
+    xz-devel libffi-devel bzip2-devel sudo wget gcc-c++ pcre pcre-devel zlib zlib-devel \
+    openssl openssl-devel procps-ng net-tools file xz xz-libs
 
 # You can download from https://www.python.org/ftp/python/3.9.6/Python-3.9.6.tar.xz
 ADD Python-3.9.6.tar.xz /opt/
 
 RUN cd /opt/Python-3.9.6/ && \
-    ./configure --prefix=/ && make && make install && \
-    rm -f /opt/Python-3.9.6.tar.xz
+    ./configure --prefix=/opt/python3.9.6 --enable-optimizations && make -j$(nproc) && make altinstall && \
+    rm -f /opt/Python-3.9.6.tar.xz && rm -rf /opt/Python-3.9.6/
 
 WORKDIR /root/cbok/
 
 COPY . .
 
+RUN ln -sf /opt/python3.9.6/bin/python3.9 /usr/bin/python3
+RUN ln -sf /opt/python3.9.6/bin/pip3.9 /usr/bin/pip3
+
 RUN python3 requirements/install.py
 
-CMD ["python3", "manage.py", "runserver"]
+RUN python3 manage.py makemigrations user && \
+    python3 manage.py makemigrations xadmin && \
+    python3 manage.py makemigrations bbx && \
+    python3 manage.py makemigrations alert && \
+    python3 manage.py migrate
+
+CMD ["python3", "manage.py", "runserver", "0.0.0.0:8000"]
+
+EXPOSE 8000
