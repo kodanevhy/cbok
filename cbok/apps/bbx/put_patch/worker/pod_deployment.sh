@@ -37,9 +37,14 @@ function init_pod(){
 
         kubectl apply -f /tmp/$replica
     "
+    if [ $replica = "nova-conductor" ];then
+        grep_flag="conductor"
+    else
+        grep_flag="$replica"
+    fi
     for i in {1..30}; do
         num=$(gtimeout -s KILL 10 ssh root@$address "
-            kubectl get pod -n openstack -l component=$replica --field-selector=status.phase=Running --no-headers | wc -l
+            kubectl get pod -n openstack -l component=$grep_flag --field-selector=status.phase=Running --no-headers | wc -l
         ")
         if [[ "$num" -eq 1 ]]; then
             break
@@ -121,9 +126,14 @@ sed -i "/^  $(basename $start_script): |\$/{
 kubectl apply -f /tmp/$replica
 EOF
 
+    if [ $replica = "nova-conductor" ];then
+        grep_flag="conductor"
+    else
+        grep_flag="$replica"
+    fi
     for i in {1..30}; do
         num=$(gtimeout -s KILL 10 sshpass -p "easystack" ssh root@$address "ssh -i ~/.ssh/id_rsa.roller root@10.20.0.3 \"
-        kubectl get pod -n openstack -l component=$replica --field-selector=status.phase=Running --no-headers | wc -l
+        kubectl get pod -n openstack -l component=$grep_flag --field-selector=status.phase=Running --no-headers | wc -l
         \"")
         if [[ "$num" -eq 1 ]]; then
             break
