@@ -27,7 +27,7 @@ COPY . .
 RUN ln -sf /opt/python3.9.6/bin/python3.9 /usr/bin/python3
 RUN ln -sf /opt/python3.9.6/bin/pip3.9 /usr/bin/pip3
 
-RUN python3 requirements/install.py
+RUN pip3 install -r requirements.txt
 
 RUN python3 manage.py makemigrations user && \
     python3 manage.py makemigrations xadmin && \
