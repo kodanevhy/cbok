@@ -85,7 +85,7 @@ class LoginManager:
     @staticmethod
     def persistent(address, username, password):
         home = os.path.dirname(os.path.abspath(__file__))
-        target = os.path.join(home, 'static/passphrase')
+        target = os.path.join(home, 'passphrase')
         existing_data = []
         try:
             with open(target, 'r', encoding='utf-8') as t:
@@ -114,7 +114,7 @@ class LoginManager:
             return
 
         home = os.path.dirname(os.path.abspath(__file__))
-        target = os.path.join(home, 'static/passphrase')
+        target = os.path.join(home, 'passphrase')
         with open(target, 'r') as file:
             lines = file.readlines()
 
@@ -128,7 +128,7 @@ class LoginManager:
     def parse_current():
         parsed = dict()
         home = os.path.dirname(os.path.abspath(__file__))
-        target = os.path.join(home, 'static/passphrase')
+        target = os.path.join(home, 'passphrase')
         with open(target, 'r') as t:
             lines = t.readlines()
             for line in lines:

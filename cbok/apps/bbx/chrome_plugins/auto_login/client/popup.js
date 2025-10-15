@@ -2,28 +2,24 @@ window.onload = function () {
     displayPasswords();
 }
 
-function readPassword(address, all_known=false) {
-    return new Promise((resolve, reject) => {
-        fetch('passphrase')
-            .then(response => response.text())
-            .then(data => {
-                const lines = data.split('\n');
-                if (all_known) {
-                    resolve(lines);
-                    return;
-                }
-                for (const line of lines) {
-                    const parts = line.split(',');
-                    if (parts[0].trim() === address) {
-                        let password = parts[2].trim();
-                        resolve(password);
-                        return;
-                    }
-                }
-                resolve(null);
-            })
-            .catch(error => reject(error));
-    });
+async function readPassword(address, all_known=false) {
+    try {
+        const response = await fetch('http://127.0.0.1:80/bbx/chrome_passphrase/');
+        const data = await response.json();
+
+        console.log(data)
+        if (data.code == 200) {
+            if (all_known) {
+                return data.result
+            } else {
+                const match = data.result.find((entry) => entry.ip === address);
+                return match ? match.password : null;
+            }
+        }
+      } catch (error) {
+        console.error('Error fetching passwords:', error);
+        return null;
+      }
 }
 
 function displayPasswords() {
@@ -36,18 +32,14 @@ function displayPasswords() {
         readPassword(domain, true).then(password => {
             if (password) {
                 let parent = document.getElementById("knownPasswords");
-                for (const line of password) {
-                    if (!line) {
-                        continue;
-                    }
-                    const parts = line.split(',');
+                for (const item of password) {
                     let knownPasswordDiv = document.createElement("div");
                     knownPasswordDiv.className = "known-password";
-                    knownPasswordDiv.innerText = `${parts[0]}\t${parts[2]}`;
+                    knownPasswordDiv.innerText = `${item.ip}\t${item.password}`;
                     knownPasswordDiv.style.fontSize = "12px";
-                    if (domain === parts[0]) {
+                    if (domain === item.ip) {
                         knownPasswordDiv.style.fontWeight = "bold";
-                        document.getElementById("currentTabPassword").value = parts[2];
+                        document.getElementById("currentTabPassword").value = item.Password;
                     }
                     parent.appendChild(knownPasswordDiv);
                 }

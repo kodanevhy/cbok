@@ -198,7 +198,8 @@ LOGGING = {
 # python manage.py crontab show
 # python manage.py crontab remove
 CRONJOBS = [
-    ('0 12 * * *', 'bbx.chrome_plugins.auto_login.manager.run')
+    ('0 12 * * *',
+    'cbok.apps.bbx.chrome_plugins.auto_login.server.manager.run')
 ]
 
 Workspace = "/Users/mizar/Workspace/"
