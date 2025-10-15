@@ -1,4 +1,5 @@
 import base64
+import logging
 import os.path
 import re
 import time
@@ -7,6 +8,9 @@ import urllib3
 from urllib3 import exceptions
 from urllib3 import util
 from urllib import parse
+
+
+LOG = logging.getLogger(__name__)
 
 
 class LoginManager:
@@ -84,7 +88,7 @@ class LoginManager:
 
     @staticmethod
     def persistent(address, username, password):
-        home = os.path.dirname(os.path.abspath(__file__))
+        home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target = os.path.join(home, 'passphrase')
         existing_data = []
         try:
@@ -113,7 +117,7 @@ class LoginManager:
         if not address:
             return
 
-        home = os.path.dirname(os.path.abspath(__file__))
+        home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target = os.path.join(home, 'passphrase')
         with open(target, 'r') as file:
             lines = file.readlines()
@@ -127,7 +131,7 @@ class LoginManager:
     @staticmethod
     def parse_current():
         parsed = dict()
-        home = os.path.dirname(os.path.abspath(__file__))
+        home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target = os.path.join(home, 'passphrase')
         with open(target, 'r') as t:
             lines = t.readlines()
@@ -178,6 +182,7 @@ class LoginManager:
                 }
                 status_code = self.try_login(url, cookie, body)
                 if status_code == 405:
+                    LOG.info(f"Persisting {addr}")
                     self.persistent(addr, username, password)
                     break
             else:
@@ -187,7 +192,6 @@ class LoginManager:
 
 def run():
     manager = LoginManager()
-    # spend about 15 minutes
     manager.try_login_and_persistent()
 
 if __name__ == '__main__':

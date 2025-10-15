@@ -29,6 +29,8 @@ COPY requirements.txt .
 COPY requirements/ requirements
 RUN pip3 install -r requirements.txt
 
+ENV TZ=Asia/Shanghai
+
 COPY . .
 
 RUN python3 manage.py makemigrations user && \
@@ -39,6 +41,16 @@ RUN python3 manage.py makemigrations user && \
 
 RUN python3 manage.py crontab add
 
-CMD ["python3", "manage.py", "runserver", "0.0.0.0:8000"]
+RUN cat > /opt/cbok.sh <<EOF
+#!/bin/bash
+
+set -ex
+
+/usr/sbin/crond -n -x ext,sch,proc | tee /var/log/cron.log &
+
+python3 manage.py runserver 0.0.0.0:8000
+EOF
+
+CMD ["bash", "/opt/cbok.sh"]
 
 EXPOSE 8000
