@@ -39,7 +39,7 @@ function displayPasswords() {
                     knownPasswordDiv.style.fontSize = "12px";
                     if (domain === item.ip) {
                         knownPasswordDiv.style.fontWeight = "bold";
-                        document.getElementById("currentTabPassword").value = item.Password;
+                        document.getElementById("currentTabPassword").value = item.password;
                     }
                     parent.appendChild(knownPasswordDiv);
                 }
