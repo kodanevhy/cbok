@@ -42,7 +42,7 @@ async function sendLoginRecord(identity) {
     };
 
     try {
-        const response = await fetch('http://127.0.0.1:8000/bbx/chrome_login_record_create/', {
+        const response = await fetch('http://127.0.0.1/bbx/chrome_login_record_create/', {
             method: 'POST',
             headers: {
                 'Accept': '*/*',
