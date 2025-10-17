@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+import logging
 import os
 import subprocess
 
@@ -44,3 +46,14 @@ def execute(cmd, cwd=None):
             os.chdir(stash_cwd)
 
     return result
+
+
+@contextmanager
+def suppress_logs(package, level=logging.ERROR):
+    logger = logging.getLogger(package)
+    old_level = logger.level
+    logger.setLevel(level)
+    try:
+        yield
+    finally:
+        logger.setLevel(old_level)

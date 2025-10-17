@@ -25,9 +25,8 @@ class ChromePluginsView(base.View):
         address = cleaned_form.cleaned_data['address']
         password = cleaned_form.cleaned_data['password']
 
-        self.chrome_login_manager.ADDRESS = [address]
-        self.chrome_login_manager.POSSIBLE_PASSWORD = [password]
-        if not self.chrome_login_manager.try_login_and_persistent():
+        if not self.chrome_login_manager.try_login_and_persistent(
+            viewer_address=address, viewer_password=password):
             return http.HttpResponseBadRequest()
         return http.JsonResponse({'code': 200})
 
