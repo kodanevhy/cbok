@@ -70,9 +70,9 @@ showPasswordCheckbox.onclick = function () {
     let checkbox = document.getElementById("showPasswordCheckbox");
 
     if (checkbox.checked) {
-        passwordField.type = "text";
-    } else {
         passwordField.type = "password";
+    } else {
+        passwordField.type = "text";
     }
     // Ensure consistent styling after checkbox state change
     passwordField.style.width = passwordField.offsetWidth + "px";

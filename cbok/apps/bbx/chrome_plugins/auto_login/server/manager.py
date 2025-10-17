@@ -3,11 +3,12 @@ import logging
 import os.path
 import re
 import time
-
 import urllib3
 from urllib3 import exceptions
 from urllib3 import util
 from urllib import parse
+
+from cbok import utils as cbok_utils
 
 
 LOG = logging.getLogger(__name__)
@@ -34,8 +35,9 @@ class LoginManager:
             query_string = '&'.join([f'{k}={v}' for k, v in query.items()])
         url = f'{url}?{query_string}'
         try:
-            response = self.pool_manager.request(
-                'GET', url, timeout=self.timeout)
+            with cbok_utils.suppress_logs("urllib3", level=logging.ERROR):
+                response = self.pool_manager.request(
+                    'GET', url, timeout=self.timeout)
             status_code = response.status
             if 'Wrong URL' in response.data.decode('utf-8'):
                 return
@@ -57,13 +59,14 @@ class LoginManager:
         }
         try:
             body = parse.urlencode(body)
-            response = self.pool_manager.request(
-                'POST',
-                url,
-                body=body,
-                headers=headers,
-                timeout=self.timeout
-            )
+            with cbok_utils.suppress_logs("urllib3", level=logging.ERROR):
+                response = self.pool_manager.request(
+                    'POST',
+                    url,
+                    body=body,
+                    headers=headers,
+                    timeout=self.timeout
+                )
             return response.status
         except urllib3.exceptions.MaxRetryError:
             pass
@@ -88,6 +91,8 @@ class LoginManager:
 
     @staticmethod
     def persistent(address, username, password):
+        LOG.info(f"Persisting {address} by {password}")
+
         home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target = os.path.join(home, 'passphrase')
         existing_data = []
@@ -122,9 +127,14 @@ class LoginManager:
         with open(target, 'r') as file:
             lines = file.readlines()
 
+        matched = any(line.startswith(address + ",") for line in lines)
+        if not matched:
+            return
+
+        LOG.info(f"Removing {address}")
+
         filtered_lines = [line for line in lines
                           if not line.startswith(address)]
-
         with open(target, 'w') as file:
             file.writelines(filtered_lines)
 
@@ -143,30 +153,9 @@ class LoginManager:
                 parsed.update({address: {username: password}})
         return parsed
 
-    def try_login_and_persistent(self):
-        current_parsed = self.parse_current()
-        current_addresses = current_parsed.keys()
-        if len(self.ADDRESS) == 1:
-            # If it comes from viewer, no need to check current.
-            current_addresses = []
-
-        # We need to check current record first, if failed, remove.
-        addresses = set((list(current_addresses) + self.ADDRESS))
-        for addr in addresses:
-            url = 'https://%s/ems_dashboard_api/auth_login/' % addr
-            csrf = self._resolve_form_csrftoken(url)
-            if not csrf:
-                continue
-
-            possible_password = self.POSSIBLE_PASSWORD
-            if addr == '100.100.3.21':
-                possible_password.insert(0, 'Admin@Compute1')
-
-            username = 'admin@example.org'
-            if addr in current_addresses:
-                password = current_parsed.get(addr).get(username)
-                possible_password.insert(0, password)
-
+    def try_login_and_persistent(self, viewer_address=None,
+                                 viewer_password=None):
+        def _worker():
             for password in possible_password:
                 if password == 'test@passw%srd' and \
                         re.match(r'^172\.\d+\.0\.2$', addr):
@@ -182,17 +171,62 @@ class LoginManager:
                 }
                 status_code = self.try_login(url, cookie, body)
                 if status_code == 405:
-                    LOG.info(f"Persisting {addr}")
                     self.persistent(addr, username, password)
-                    break
-            else:
+                    return True
+
+        username = 'admin@example.org'
+        current_parsed = self.parse_current()
+        current_addresses = current_parsed.keys()
+
+        if viewer_address and viewer_password:
+            # If it comes from viewer, no need to check current.
+            addr = viewer_address
+            possible_password = [viewer_password]
+
+            url = 'https://%s/ems_dashboard_api/auth_login/' % viewer_address
+            csrf = self._resolve_form_csrftoken(url)
+            if not csrf:
+                self.remove(viewer_address)
+                return
+
+            if addr == '100.100.3.21':
+                possible_password = ["Admin@Compute1"]
+
+            if not _worker():
                 self.remove(addr)
+        else:
+            LOG.info("Running fully sync")
+            # We need to check current record first, if failed, remove.
+            addresses = sorted(set(list(current_addresses) + list(self.ADDRESS)))
+            possible_password = self.POSSIBLE_PASSWORD
+
+            for addr in addresses:
+                url = 'https://%s/ems_dashboard_api/auth_login/' % addr
+                csrf = self._resolve_form_csrftoken(url)
+                if not csrf:
+                    self.remove(addr)
+                    continue
+
+                if addr == '100.100.3.21':
+                    possible_password.insert(0, 'Admin@Compute1')
+
+                # Use stored password to verify first
+                if addr in current_addresses:
+                    password = current_parsed.get(addr).get(username)
+                    if password not in possible_password:
+                        possible_password.insert(0, password)
+
+                if not _worker():
+                    self.remove(addr)
+            LOG.info("Fully sync finished")
+
         return True
 
 
 def run():
     manager = LoginManager()
     manager.try_login_and_persistent()
+
 
 if __name__ == '__main__':
     while True:
