@@ -91,8 +91,6 @@ class LoginManager:
 
     @staticmethod
     def persistent(address, username, password):
-        LOG.info(f"Persisting {address} by {password}")
-
         home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target = os.path.join(home, 'passphrase')
         existing_data = []
@@ -106,12 +104,15 @@ class LoginManager:
 
         new_record = [address, username, password]
         if new_record not in existing_data:
+            LOG.info(f"Persisting {address} by {password}")
             existing_data.append(new_record)
             sorted_data = sorted(existing_data, key=lambda x: x[0])
 
             with open(target, 'w', encoding='utf-8') as file:
                 for record in sorted_data:
                     file.write(','.join(record) + '\n')
+        else:
+            LOG.info(f"{address} already ready")
 
     @staticmethod
     def base64_encode(s):
@@ -153,6 +154,27 @@ class LoginManager:
                 parsed.update({address: {username: password}})
         return parsed
 
+    @staticmethod
+    def pre_clean_passphrase():
+        """Pre clean passphrase before handle"""
+
+        home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        target = os.path.join(home, 'passphrase')
+        with open(target, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+
+        rows = [line.split(",") for line in lines]
+        counts = {}
+        for row in rows:
+            ip = row[0]
+            counts[ip] = counts.get(ip, 0) + 1
+
+        filtered_rows = [row for row in rows if counts[row[0]] == 1]
+
+        with open(target, "w", encoding="utf-8") as f:
+            for row in filtered_rows:
+                f.write(",".join(row) + "\n")
+
     def try_login_and_persistent(self, viewer_address=None,
                                  viewer_password=None):
         def _worker():
@@ -173,6 +195,8 @@ class LoginManager:
                 if status_code == 405:
                     self.persistent(addr, username, password)
                     return True
+
+        self.pre_clean_passphrase()
 
         username = 'admin@example.org'
         current_parsed = self.parse_current()
@@ -196,11 +220,14 @@ class LoginManager:
                 self.remove(addr)
         else:
             LOG.info("Running fully sync")
+            LOG.info(f"Starting view: {current_parsed}")
+
             # We need to check current record first, if failed, remove.
             addresses = sorted(set(list(current_addresses) + list(self.ADDRESS)))
-            possible_password = self.POSSIBLE_PASSWORD
 
             for addr in addresses:
+                possible_password = list(self.POSSIBLE_PASSWORD)
+
                 url = 'https://%s/ems_dashboard_api/auth_login/' % addr
                 csrf = self._resolve_form_csrftoken(url)
                 if not csrf:
