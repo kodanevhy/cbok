@@ -203,3 +203,9 @@ CRONJOBS = [
 ]
 
 Workspace = "/Users/mizar/Workspace/"
+
+
+# FIXME: use MySQL intead of SQLite to resolve green thead problem
+from django.core.signals import request_started
+from django.db import close_old_connections
+request_started.disconnect(close_old_connections)

@@ -48,7 +48,7 @@ set -ex
 
 /usr/sbin/crond -n -x ext,sch,proc | tee /var/log/cron.log &
 
-python3 manage.py runserver 0.0.0.0:8000
+python3 manage.py runserver 0.0.0.0:8000 --noreload
 EOF
 
 CMD ["bash", "/opt/cbok.sh"]
