@@ -1,4 +1,5 @@
 import base64
+import ipaddress
 import logging
 import os.path
 import re
@@ -160,6 +161,8 @@ class LoginManager:
 
         home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         target = os.path.join(home, 'passphrase')
+        if not os.path.exists(target):
+            open(target, "w").close()
         with open(target, "r", encoding="utf-8") as f:
             lines = [line.strip() for line in f if line.strip()]
 
@@ -223,7 +226,10 @@ class LoginManager:
             LOG.info(f"Starting view: {current_parsed}")
 
             # We need to check current record first, if failed, remove.
-            addresses = sorted(set(list(current_addresses) + list(self.ADDRESS)))
+            addresses = sorted(
+                        set(list(current_addresses) + list(self.ADDRESS)),
+                        key=lambda ip: ipaddress.ip_address(ip)
+                    )
 
             for addr in addresses:
                 possible_password = list(self.POSSIBLE_PASSWORD)
