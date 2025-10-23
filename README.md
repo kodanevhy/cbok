@@ -7,7 +7,7 @@
 宿主机推荐安装Python 3.9.6，配置虚拟环境后，在项目根目录执行如下命令。
 
 ```shell
-  python3 requirements/install.py
+  pip3 install -r requirements.txt
 ```
 
 安装成功后，检查关键依赖项如下：
