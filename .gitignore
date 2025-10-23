@@ -1,3 +1,4 @@
+static/*
 foundation/local/*
 !foundation/local/README.md
 !foundation/local/kubeadm.yaml

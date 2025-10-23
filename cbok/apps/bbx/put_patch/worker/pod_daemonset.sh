@@ -2,7 +2,7 @@
 set -ex
 
 base_path=$(python manage.py shell -c "from cbok import settings; print(settings.BASE_DIR)")
-source $base_path/cbok/apps/bbx/tools/common.sh
+source $base_path/utils.sh
 
 
 function init_pod(){

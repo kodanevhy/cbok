@@ -2,7 +2,7 @@
 
 set -ex
 
-HOSTNAME="workspace"
+HOSTNAME="cbok"
 HOST_IP=$1
 # Not only the Kubernetes version is, but also relates to all
 # the other toolkits version around it.
@@ -11,25 +11,41 @@ CNI_PLUGIN_VERSION="v1.1.1"
 LOCAL_DIRECTORY="local"
 TASK_TIMEOUT=120
 # Record the key step message.
-LOG_HOOK="Task started."
+echo "Started"
 
 # Execute and retry the operation in need which seems to be slow.
 function redo {
-    LOG_HOOK="Executing sub task: $1."
-    cmd="timeout -s SIGKILL $TASK_TIMEOUT "$1
+    command=$1
+    timeout=$2
+    echo "Executing sub task: $command"
+    if [ -z $timeout ];then
+        timeout=$TASK_TIMEOUT
+    fi
+    cmd=(timeout -s SIGKILL "$timeout" $command)
     for i in $(seq 1 3)
     do
-        $cmd
-        if [ $? -eq 0 ]; then
+        rc=0
+        "${cmd[@]}" || rc=$?
+        rc=${rc:-0}
+        if [ $rc -eq 0 ]; then
             break
         else
             if [ $i == 3 ]; then
-                LOG_HOOK="Looks so slow, result in executing sub task for 3 times failed: $1."
+                echo "Looks so slow: $command" >&2
                 exit 1
             fi
         fi
     done
 }
+
+
+function repo_set() {
+    rm -f /etc/yum.repos.d/*
+    curl -o /etc/yum.repos.d/CentOS-Base.repo \
+        https://mirrors.aliyun.com/repo/Centos-7.repo
+    yum makecache
+}
+
 
 function sys_set {
     systemctl stop firewalld && systemctl disable firewalld
@@ -55,26 +71,27 @@ EOF
 }
 
 function check_net {
-    num=$(echo "$1" | awk -F "." '{print NF}')
+    num=$(echo "$HOST_IP" | awk -F "." '{print NF}')
     if [ $num -ne 4 ]; then
-        LOG_HOOK="Not like IPv4: $1."
+        echo "Not like IPv4: $HOST_IP" >&2
         exit 1
     fi
     local_ip=$(ifconfig -a|grep inet|grep -v 127.0.0.1|grep -v inet6|awk '{print $2}')
-    if [[ $local_ip =~ $1 ]]; then
-        ping -c 3 114.114.114.114 &> /dev/null
-        if [  $? -ne 0 ]; then
-            LOG_HOOK="Check net failed."
+    if [[ $local_ip =~ $HOST_IP ]]; then
+        ping -c 3 -w 3 119.29.29.29 || rc119=$?
+        rc119=${rc119:-0}
+        if [ $rc119 -ne 0 ]; then
+            echo "Check net failed" >&2
             exit 1
         fi
     else
-        LOG_HOOK="IP $1 is not configured."
+        echo "$HOST_IP is not configured" >&2
         exit 1
     fi
 }
 
 function pre_ipvsadm {
-    redo "yum -y install ipvsadm ipset sysstat conntrack libseccomp"
+    redo "yum -y install ipvsadm ipset sysstat conntrack libseccomp" 600
     cat >> /etc/modules-load.d/ipvs.conf << EOF
 ip_vs
 ip_vs_rr
@@ -93,11 +110,18 @@ EOF
 }
 
 function pre {
+    export HOSTNAME=$HOSTNAME
+    host_exists=$(cat /etc/hosts | grep "$HOST_IP $HOSTNAME" || true)
+    if [ -z $host_exists ];then
+        echo $HOST_IP $HOSTNAME >> /etc/hosts
+    fi
+    echo "nameserver 119.29.29.29" > /etc/resolv.conf
+
     check_net
+    repo_set
     sys_set
     pre_ipvsadm
     hostnamectl set-hostname $HOSTNAME
-    echo $HOST_IP $HOSTNAME >> /etc/hosts
 }
 
 function c_crictl {
@@ -112,14 +136,14 @@ disable-pull-on-run: false
 EOF
     systemctl restart containerd
     if [ $? -ne 0 ]; then
-        LOG_HOOK="The runtime containerd start failed after all configurations finished."
+        echo "The runtime containerd start failed after all configurations finished"  >&2
         exit 1
     fi
 }
 
 function c_runtime {
-    yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-    redo "yum -y install containerd.io"
+    redo "yum-config-manager --add-repo https://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo"
+    redo "yum -y install containerd.io" 600
     containerd config default | tee /etc/containerd/config.toml
 
     sed -i "s#SystemdCgroup\ \=\ false#SystemdCgroup\ \=\ true#g" /etc/containerd/config.toml
@@ -139,19 +163,22 @@ baseurl=https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el7-x86_64
 enabled=1
 gpgcheck=0
 repo_gpgcheck=0
-gpgkey=https://mirrors.aliyun.com/kubernetes/yum/doc/yum-key.gpg https://mirrors.aliyun.com/kubernetes/yum/doc/rpm-package-key.gpg
 EOF
 
     toolkit_version=$(echo $VERSION | sed "s/v//g")
-    redo "yum -y install kubelet-$toolkit_version kubeadm-$toolkit_version kubectl-$toolkit_version --disableexcludes=kubernetes"
+    redo "yum -y install kubelet-$toolkit_version kubeadm-$toolkit_version kubectl-$toolkit_version --disableexcludes=kubernetes" 600
     systemctl restart kubelet && systemctl enable --now kubelet
     if [ $? -ne 0 ]; then
-        LOG_HOOK="Toolkit especially kubelet start failed."
+        echo "Toolkit especially kubelet start failed" >&2
         exit 1
     fi
 }
 
 function ensure_kubeadm_ip {
+    exists=$(cat $LOCAL_DIRECTORY/kubeadm.yaml | grep "advertiseAddress: $HOST_IP" || true)
+    if [ -n "$exists" ];then
+        return
+    fi
     py_code=$(cat << EOF
 import yaml
 
@@ -172,7 +199,8 @@ EOF
     python -c "$py_code"
 
     # The dump yaml will add a redundant line '---' at $.
-    sed -i "$d" $LOCAL_DIRECTORY/dump_kubeadm.yaml
+    sed -i '${/^---$/d}' $LOCAL_DIRECTORY/dump_kubeadm.yaml
+    mv $LOCAL_DIRECTORY/dump_kubeadm.yaml $LOCAL_DIRECTORY/kubeadm.yaml
 }
 
 function main {
@@ -181,23 +209,32 @@ function main {
     toolkits
 
     ensure_kubeadm_ip $HOST_IP
-    kubeadm init --config $LOCAL_DIRECTORY/dump_kubeadm.yaml
+
+    ctr -n k8s.io image import --base-name docker.io/calico/cni:v3.24.1 $LOCAL_DIRECTORY/calico-cni-v3.24.1-amd64.tar
+    ctr -n k8s.io image import --base-name docker.io/calico/node:v3.24.1 $LOCAL_DIRECTORY/calico-node-v3.24.1-amd64.tar
+    ctr -n k8s.io image import --base-name docker.io/calico/kube-controllers:v3.24.1 $LOCAL_DIRECTORY/calico-kube-controllers-v3.24.1-amd64.tar
+
+    kubeadm config images pull --config local/kubeadm.yaml --kubernetes-version $VERSION
+    ctr -n k8s.io images tag registry.aliyuncs.com/google_containers/pause:3.7 registry.k8s.io/pause:3.6
+    kubeadm init --config $LOCAL_DIRECTORY/kubeadm.yaml
     if [ $? -ne 0 ]; then
-        LOG_HOOK="kubeadm init server failed."
+        echo "kubeadm init server failed" >&2
         exit 1
     fi
+
     mkdir -p $HOME/.kube && \
         cp -i /etc/kubernetes/admin.conf $HOME/.kube/config && \
         chown $(id -u):$(id -g) $HOME/.kube/config
     kubectl apply -f $LOCAL_DIRECTORY/calico.yaml
+
+    kubectl wait --for=condition=Ready pods --all -n kube-system --timeout=300s
+
     if [ $? -ne 0 ]; then
-        LOG_HOOK="Apply calico network failed."
+        echo "Apply calico network failed" >&2
         exit 1
     fi
 
-    kubectl taint node $HOSTNAME node-role.kubernetes.io/control-plane-
-
-    LOG_HOOK="Task success."
+    echo "Success"
 }
 
 main

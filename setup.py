@@ -2,11 +2,11 @@ from setuptools import setup, find_packages
 
 setup(
     name="CBoK",
-    version="0.1",
+    version="0.2",
     packages=find_packages(),
     entry_points={
         'console_scripts': [
-            'cbok-bbx=cbok.cmd.bbx_manage:main',
+            'cbok=cbok.cmd.base:main',
         ],
     },
 )
