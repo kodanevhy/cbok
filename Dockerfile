@@ -14,7 +14,7 @@ RUN yum -y install tk-devel sqlite-devel ncurses-devel \
     openssl openssl-devel procps-ng net-tools file xz xz-libs cronie
 
 # You can download from https://www.python.org/ftp/python/3.9.6/Python-3.9.6.tar.xz
-ADD Python-3.9.6.tar.xz /opt/
+ADD static/Python-3.9.6.tar.xz /opt/
 
 RUN cd /opt/Python-3.9.6/ && \
     ./configure --prefix=/opt/python3.9.6 --enable-optimizations && make -j$(nproc) && make altinstall && \

@@ -14,8 +14,7 @@ localAPIEndpoint:
 nodeRegistration:
   criSocket: unix:///var/run/containerd/containerd.sock
   imagePullPolicy: IfNotPresent
-  name: workspace
-  taints: null
+  taints: []
 ---
 apiServer:
   timeoutForControlPlane: 4m0s
