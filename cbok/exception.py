@@ -14,3 +14,7 @@ class MalformedURL(base_exception.CBoKException):
 class CannotLocateProject(base_exception.CBoKException):
     msg_fmt = 'Cannot locate project'
     code = 400
+
+
+class ShouldNotVirtualEnv(base_exception.CBoKException):
+    msg_fmt = "Shouldn't be in virtual environment"
