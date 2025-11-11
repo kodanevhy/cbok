@@ -70,8 +70,6 @@ class BinCommands:
         seen = set()
         python_versions = {}
 
-        paths.append("/Library/Frameworks/Python.framework/Versions/2.7/bin")
-
         for path in paths:
             if not os.path.isdir(path):
                 continue
