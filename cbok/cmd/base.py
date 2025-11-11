@@ -9,7 +9,8 @@ from cbok.cmd import foundation
 LOG = logging.getLogger("cbok-cli")
 
 CATEGORIES = {
-    'bbx': bbx.PatchCommands,
+    'patch': bbx.PatchCommands,
+    'bin': bbx.BinCommands,
     'foundation': foundation.FoundationCommands,
 }
 
