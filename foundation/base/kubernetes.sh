@@ -3,15 +3,27 @@
 set -ex
 
 HOSTNAME="cbok"
-HOST_IP=$1
+mgmt_eth=$1
 # Not only the Kubernetes version is, but also relates to all
 # the other toolkits version around it.
 VERSION="v1.24.2"
 CNI_PLUGIN_VERSION="v1.1.1"
-LOCAL_DIRECTORY="local"
 TASK_TIMEOUT=120
 # Record the key step message.
 echo "Started"
+
+
+get_ipv4() {
+    if ! ip link show "$mgmt_eth" >/dev/null 2>&1; then
+        echo "Error: interface $mgmt_eth not found" >&2
+        exit 1
+    fi
+
+    ip -4 addr show "$mgmt_eth" | grep -oP '(?<=inet\s)\d+(\.\d+){3}'
+}
+
+HOST_IP=$(get_ipv4 $mgmt_eth)
+
 
 # Execute and retry the operation in need which seems to be slow.
 function redo {
@@ -44,6 +56,27 @@ function repo_set() {
     curl -o /etc/yum.repos.d/CentOS-Base.repo \
         https://mirrors.aliyun.com/repo/Centos-7.repo
     yum makecache
+}
+
+
+function config_ssh() {
+
+    SSH_CONFIG="/etc/ssh/sshd_config"
+
+    if grep -q "^UseDNS" "$SSH_CONFIG"; then
+        sed -i 's/^UseDNS.*/UseDNS no/' "$SSH_CONFIG"
+    else
+        echo "UseDNS no" >> "$SSH_CONFIG"
+    fi
+
+    if grep -q "^GSSAPIAuthentication" "$SSH_CONFIG"; then
+        sed -i 's/^GSSAPIAuthentication.*/GSSAPIAuthentication no/' "$SSH_CONFIG"
+    else
+        echo "GSSAPIAuthentication no" >> "$SSH_CONFIG"
+    fi
+
+    systemctl restart sshd
+    echo "sshd config updated and restarted."
 }
 
 
@@ -110,6 +143,8 @@ EOF
 }
 
 function pre {
+    config_ssh
+
     export HOSTNAME=$HOSTNAME
     host_exists=$(cat /etc/hosts | grep "$HOST_IP $HOSTNAME" || true)
     if [ -z $host_exists ];then
@@ -125,7 +160,7 @@ function pre {
 }
 
 function c_crictl {
-    tar zxvf $LOCAL_DIRECTORY/crictl-$VERSION-linux-amd64.tar.gz -C /usr/local/bin
+    tar zxvf crictl-$VERSION-linux-amd64.tar.gz -C /usr/local/bin
     cat <<EOF | tee /etc/crictl.yaml
 runtime-endpoint: "unix:///run/containerd/containerd.sock"
 image-endpoint: "unix:///run/containerd/containerd.sock"
@@ -149,7 +184,7 @@ function c_runtime {
     sed -i "s#SystemdCgroup\ \=\ false#SystemdCgroup\ \=\ true#g" /etc/containerd/config.toml
     sed -i "s#k8s.gcr.io#registry.aliyuncs.com/google_containers#g"  /etc/containerd/config.toml
 
-    mkdir -p /opt/cni/bin && tar zxvf $LOCAL_DIRECTORY/cni-plugins-linux-amd64-$CNI_PLUGIN_VERSION.tgz -C /opt/cni/bin
+    mkdir -p /opt/cni/bin && tar zxvf cni-plugins-linux-amd64-$CNI_PLUGIN_VERSION.tgz -C /opt/cni/bin
     systemctl daemon-reload && systemctl enable --now containerd
 
     c_crictl
@@ -175,7 +210,7 @@ EOF
 }
 
 function ensure_kubeadm_ip {
-    exists=$(cat $LOCAL_DIRECTORY/kubeadm.yaml | grep "advertiseAddress: $HOST_IP" || true)
+    exists=$(cat kubeadm.yaml | grep "advertiseAddress: $HOST_IP" || true)
     if [ -n "$exists" ];then
         return
     fi
@@ -187,20 +222,20 @@ def read_yaml(filepath):
         return yaml.load_all(f.read(), yaml.Loader)
 
 dump_kubeadm = ""
-kubeadm = read_yaml("$LOCAL_DIRECTORY/kubeadm.yaml")
+kubeadm = read_yaml("kubeadm.yaml")
 for doc in kubeadm:
     if "localAPIEndpoint" in doc:
         doc["localAPIEndpoint"]["advertiseAddress"] = "$1"
     new_doc = yaml.dump(doc, default_flow_style=False)
-    with open("$LOCAL_DIRECTORY/dump_kubeadm.yaml", "a+") as f:
+    with open("dump_kubeadm.yaml", "a+") as f:
         f.write(new_doc + "---\n")
 EOF
     )
     python -c "$py_code"
 
     # The dump yaml will add a redundant line '---' at $.
-    sed -i '${/^---$/d}' $LOCAL_DIRECTORY/dump_kubeadm.yaml
-    mv $LOCAL_DIRECTORY/dump_kubeadm.yaml $LOCAL_DIRECTORY/kubeadm.yaml
+    sed -i '${/^---$/d}' dump_kubeadm.yaml
+    mv dump_kubeadm.yaml kubeadm.yaml
 }
 
 function main {
@@ -210,13 +245,13 @@ function main {
 
     ensure_kubeadm_ip $HOST_IP
 
-    ctr -n k8s.io image import --base-name docker.io/calico/cni:v3.24.1 $LOCAL_DIRECTORY/calico-cni-v3.24.1-amd64.tar
-    ctr -n k8s.io image import --base-name docker.io/calico/node:v3.24.1 $LOCAL_DIRECTORY/calico-node-v3.24.1-amd64.tar
-    ctr -n k8s.io image import --base-name docker.io/calico/kube-controllers:v3.24.1 $LOCAL_DIRECTORY/calico-kube-controllers-v3.24.1-amd64.tar
+    ctr -n k8s.io image import --base-name docker.io/calico/cni:v3.24.1 calico-cni-v3.24.1-amd64.tar
+    ctr -n k8s.io image import --base-name docker.io/calico/node:v3.24.1 calico-node-v3.24.1-amd64.tar
+    ctr -n k8s.io image import --base-name docker.io/calico/kube-controllers:v3.24.1 calico-kube-controllers-v3.24.1-amd64.tar
 
-    kubeadm config images pull --config local/kubeadm.yaml --kubernetes-version $VERSION
+    kubeadm config images pull --config kubeadm.yaml --kubernetes-version $VERSION
     ctr -n k8s.io images tag registry.aliyuncs.com/google_containers/pause:3.7 registry.k8s.io/pause:3.6
-    kubeadm init --config $LOCAL_DIRECTORY/kubeadm.yaml
+    kubeadm init --config kubeadm.yaml
     if [ $? -ne 0 ]; then
         echo "kubeadm init server failed" >&2
         exit 1
@@ -225,7 +260,7 @@ function main {
     mkdir -p $HOME/.kube && \
         cp -i /etc/kubernetes/admin.conf $HOME/.kube/config && \
         chown $(id -u):$(id -g) $HOME/.kube/config
-    kubectl apply -f $LOCAL_DIRECTORY/calico.yaml
+    kubectl apply -f calico.yaml
 
     kubectl wait --for=condition=Ready pods --all -n kube-system --timeout=300s
 
@@ -233,6 +268,8 @@ function main {
         echo "Apply calico network failed" >&2
         exit 1
     fi
+
+    kubectl create namespace cbok
 
     echo "Success"
 }
