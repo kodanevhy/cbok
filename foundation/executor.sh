@@ -22,7 +22,7 @@ function apply_service() {
     local service_name="$2"
     local foundation_home="/opt/foundation"
 
-    if [ "$server_name" = "base" ];then
+    if [[ "$service_name" = "base" ]];then
         die "Not allowed: base"
     fi
 

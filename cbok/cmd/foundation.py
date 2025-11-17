@@ -106,9 +106,14 @@ class FoundationCommands:
             LOG.error(result.stderr)
             LOG.error("Failed to copy resource")
             sys.exit(1)
+        elif "Not allowed: base" in result.stderr:
+            LOG.error(result.stderr)
+            LOG.error("Not allowed: base")
+            sys.exit(1)
         elif result.returncode == 0 and "APPLY SUCCESS" in result.stdout:
             LOG.info("Success")
         else:
+            LOG.error(result.stderr)
             LOG.error("Unexpected error, Please trace log remote "
                       "workspace home for details")
             sys.exit(1)
