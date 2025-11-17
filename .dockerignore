@@ -1,4 +1,5 @@
 static/*
+!static/Python-3.9.6.tar.xz
 foundation/base/*
 foundation/address
 !foundation/base/README.md
