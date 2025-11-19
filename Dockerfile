@@ -1,6 +1,8 @@
-FROM redhat/ubi9:latest
+FROM redhat/ubi9:latest AS base
 
 USER root
+
+ENV TZ=Asia/Shanghai
 
 RUN mkdir -p ~/.pip/
 RUN cat > ~/.pip/pip.conf <<EOF
@@ -23,13 +25,13 @@ RUN cd /opt/Python-3.9.6/ && \
 RUN ln -sf /opt/python3.9.6/bin/python3.9 /usr/bin/python3 && \
     ln -sf /opt/python3.9.6/bin/pip3.9 /usr/bin/pip3
 
+FROM base AS cbok
+
 WORKDIR /root/cbok/
 
 COPY requirements.txt .
 COPY requirements/ requirements
 RUN pip3 install -r requirements.txt
-
-ENV TZ=Asia/Shanghai
 
 COPY . .
 
