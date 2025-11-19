@@ -1,4 +1,13 @@
-FROM redhat/ubi9:latest AS base
+# NOTE:
+# *base* is used to build whole image: docker build --platform linux/amd64 --build-arg STAGE_SECOND_BASE_IMAGE=base -t docker.io/kodanevhy/cbok:latest .
+# stage 1: docker build --target base --platform linux/amd64 -t docker.io/kodanevhy/cbok-base:latest .
+# stage 2: docker build --platform linux/amd64 --build-arg STAGE_SECOND_BASE_IMAGE=docker.io/kodanevhy/cbok-base:latest -t docker.io/kodanevhy/cbok:latest .
+
+
+ARG STAGE_FIRST_BASE_IMAGE=redhat/ubi9:latest
+ARG STAGE_SECOND_BASE_IMAGE=cbok-base:latest
+
+FROM ${STAGE_FIRST_BASE_IMAGE} AS base
 
 USER root
 
@@ -25,7 +34,7 @@ RUN cd /opt/Python-3.9.6/ && \
 RUN ln -sf /opt/python3.9.6/bin/python3.9 /usr/bin/python3 && \
     ln -sf /opt/python3.9.6/bin/pip3.9 /usr/bin/pip3
 
-FROM base AS cbok
+FROM ${STAGE_SECOND_BASE_IMAGE} AS cbok
 
 WORKDIR /root/cbok/
 
