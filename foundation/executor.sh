@@ -28,22 +28,23 @@ function apply_service() {
 
     echo "Copying resource '$service_name' to $foundation_home ..."
 
-    if ! copy_resource_to "$address" "$foundation_home" "foundation/$service_name"; then
+    if [[ "$service_name" = "cbok" ]]; then
+        exclude=cbok-base-amd64.tar
+    fi
+    if ! copy_resource_to "$address" "$foundation_home" "foundation/$service_name" "$exclude"; then
         die "Failed to copy resource to $address"
     fi
 
-    local hook_dir="$foundation_home/$service_name/hook"
+    local hook_dir="foundation/$service_name/hook"
 
     # Pre hook
-    ssh -n root@"$address" "
-        if [ -d '$hook_dir' ] && [ -f '$hook_dir/pre.sh' ]; then
-            echo 'Running pre-hook for $service_name' >> $foundation_home/log 2>&1
-            if ! bash '$hook_dir/pre.sh' >> $foundation_home/log 2>&1; then
-                echo 'Pre-hook failed for $service_name' >> $foundation_home/log 2>&1
-                exit 1
-            fi
+    if [ -d "$hook_dir" ] && [ -f "$hook_dir/pre.sh" ]; then
+        echo "Running pre-hook for $service_name"
+        if ! bash "$hook_dir/pre.sh" "$address"; then
+            echo "Pre-hook failed for $service_name"
+            exit 1
         fi
-    "
+    fi
 
     # Installation
     ssh -n root@"$address" "
@@ -67,14 +68,15 @@ function apply_service() {
     "
 
     # Post hook
-    ssh -n root@"$address" "
-        if [ -d '$hook_dir' ] && [ -f '$hook_dir/post.sh' ]; then
-            echo 'Running post-hook for $service_name' >> $foundation_home/log 2>&1
-            if ! bash '$hook_dir/post.sh' >> $foundation_home/log 2>&1; then
-                echo 'Post-hook failed for $service_name' >> $foundation_home/log 2>&1
-                exit 1
-            fi
+    if [ -d "$hook_dir" ] && [ -f "$hook_dir/post.sh" ]; then
+        echo "Running post-hook for $service_name"
+        if ! bash "$hook_dir/post.sh" "$address"; then
+            echo "Post-hook failed for $service_name"
+            exit 1
         fi
+    fi
+
+    ssh -n root@"$address" "
         echo 'Service $service_name applied successfully.' >> $foundation_home/log 2>&1
     "
     echo "APPLY SUCCESS"
@@ -82,13 +84,20 @@ function apply_service() {
 
 
 function copy_resource_to() {
-    address=$1
-    remote_target_dir=$2   # absolute path
-    source_resource_dir=$3 # may be a relative path
+    local address=$1
+    local remote_target_dir=$2   # absolute path
+    local source_resource_dir=$3 # may be a relative path
+    shift 3
+    local excludes=("$@")
 
-    ssh -n root@$address "mkdir -p $remote_target_dir"
+    ssh -n root@$address "mkdir -p '$remote_target_dir'"
 
-    rsync -avz --progress --delete "$source_resource_dir" root@$address:"$remote_target_dir"
+    local exclude_args=()
+    for e in "${excludes[@]}"; do
+        exclude_args+=(--exclude "$e")
+    done
+
+    rsync -avz --progress --delete "${exclude_args[@]}" "$source_resource_dir" root@$address:"$remote_target_dir"
 }
 
 

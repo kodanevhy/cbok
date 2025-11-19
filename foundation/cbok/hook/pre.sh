@@ -1,0 +1,55 @@
+#!/bin/bash
+
+set -ex
+
+address=$1
+foundation_home="/opt/foundation"
+
+
+function copy_base_image() {
+    remote_base_tar="$foundation_home/cbok/cbok-base-amd64.tar"
+    if ssh -n root@$address "[ -f '$remote_base_tar' ]"; then
+        remote_exists=0
+        return 0
+    else
+        remote_exists=1
+    fi
+
+    local_tar="foundation/cbok/cbok-base-amd64.tar"
+
+    if [ $remote_exists -ne 0 ]; then
+        if [ ! -f "$local_tar" ]; then
+            echo "Building base image locally..."
+            docker build --target base --platform linux/amd64 -t docker.io/kodanevhy/cbok-base:latest .
+            docker save docker.io/kodanevhy/cbok-base:latest -o "$local_tar"
+        fi
+
+        echo "Copying base image to remote..."
+        rsync -avz --progress "$local_tar" root@$address:"$foundation_home/cbok/"
+    else
+        echo "Remote base image already exists. Skipping copy."
+    fi
+}
+
+
+function build_cbok {
+    ssh -n root@$address "
+        docker load -i $foundation_home/cbok/cbok-base-amd64.tar
+
+        cd $foundation_home/cbok && git clone https://github.com/kodanevhy/cbok.git && cd cbok
+        docker build --platform linux/amd64 --build-arg STAGE_SECOND_BASE_IMAGE=docker.io/kodanevhy/cbok-base:latest -t docker.io/kodanevhy/cbok:latest .
+
+        docker save docker.io/kodanevhy/cbok:latest -o $foundation_home/cbok/cbok-amd64.tar
+
+        ctr -n k8s.io i import $foundation_home/cbok/cbok-amd64.tar
+    "
+}
+
+
+remote_has_image=$(ssh -n root@$address "ctr -n k8s.io images ls | grep -q 'docker.io/kodanevhy/cbok:latest' && echo 1 || echo 0")
+if [ "$remote_has_image" -eq 0 ]; then
+    copy_base_image
+    build_cbok
+else
+    echo CBoK image already stashed
+fi

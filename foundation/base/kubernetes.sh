@@ -8,6 +8,7 @@ mgmt_eth=$1
 # the other toolkits version around it.
 VERSION="v1.24.2"
 CNI_PLUGIN_VERSION="v1.1.1"
+BUILDKit_VERSION="v0.12.3"
 TASK_TIMEOUT=120
 # Record the key step message.
 echo "Started"
@@ -142,6 +143,56 @@ EOF
     systemctl restart systemd-modules-load.service
 }
 
+function setup_nerdctl() {
+    if ! getent group containerd >/dev/null; then
+        groupadd containerd
+    fi
+
+    BUILDKit_DIR="/usr/local/buildkit"
+
+    if [ ! -d "$BUILDKit_DIR" ]; then
+        curl -L -o buildkit.tgz "https://github.com/moby/buildkit/releases/download/$BUILDKit_VERSION/buildkit-$BUILDKit_VERSION.linux-amd64.tar.gz"
+        mkdir -p $BUILDKit_DIR
+        tar -xzf buildkit.tgz -C $BUILDKit_DIR
+        rm -f buildkit.tgz
+        ln -sf $BUILDKit_DIR/bin/buildkitd /usr/local/bin/buildkitd
+        ln -sf $BUILDKit_DIR/bin/buildctl /usr/local/bin/buildctl
+    fi
+
+    SERVICE_FILE="/etc/systemd/system/buildkit.service"
+    cat <<EOF > $SERVICE_FILE
+[Unit]
+Description=BuildKit
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/buildkitd
+Restart=always
+User=root
+Group=containerd
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable --now buildkit
+
+    systemctl status buildkit --no-pager
+
+    curl -L -o nerdctl-full-1.7.6-linux-amd64.tar.gz https://github.com/containerd/nerdctl/releases/download/v1.7.6/nerdctl-full-1.7.6-linux-amd64.tar.gz
+    tar zxvf nerdctl-full-1.7.6-linux-amd64.tar.gz -C /usr/local
+    ln -s /usr/local/bin/nerdctl /usr/bin/nerdctl
+}
+
+
+function setup_docker() {
+    yum -y install docker-ce
+    systemctl restart docker
+    systemctl enable docker
+}
+
+
 function pre {
     config_ssh
 
@@ -157,6 +208,8 @@ function pre {
     sys_set
     pre_ipvsadm
     hostnamectl set-hostname $HOSTNAME
+
+    yum -y install git wget
 }
 
 function c_crictl {
@@ -238,9 +291,27 @@ EOF
     mv dump_kubeadm.yaml kubeadm.yaml
 }
 
+
+function apply_ingress {
+    kubectl apply -f ingress-deploy.yaml
+    while true; do
+        sleep 3
+        ingress_nginx_controller=$(kubectl get pod -n kube-system -o wide | grep ingress-nginx-controller || true)
+        if [ -n "$ingress_nginx_controller" ]; then
+            break
+        fi
+    done
+    kubectl wait --for=condition=Ready pod -l app.kubernetes.io/name=ingress-nginx -l app.kubernetes.io/component=controller -n kube-system --timeout=300s
+    kubectl delete job ingress-nginx-admission-create -n kube-system
+    kubectl delete job ingress-nginx-admission-patch -n kube-system
+}
+
+
 function main {
     pre
     c_runtime
+    # setup_nerdctl
+    setup_docker    # Most usage for build image at remote target
     toolkits
 
     ensure_kubeadm_ip $HOST_IP
@@ -250,7 +321,8 @@ function main {
     ctr -n k8s.io image import --base-name docker.io/calico/kube-controllers:v3.24.1 calico-kube-controllers-v3.24.1-amd64.tar
 
     kubeadm config images pull --config kubeadm.yaml --kubernetes-version $VERSION
-    ctr -n k8s.io images tag registry.aliyuncs.com/google_containers/pause:3.7 registry.k8s.io/pause:3.6
+    ctr -n k8s.io images pull registry.aliyuncs.com/google_containers/pause:3.6
+    ctr -n k8s.io images tag registry.aliyuncs.com/google_containers/pause:3.6 registry.k8s.io/pause:3.6
     kubeadm init --config kubeadm.yaml
     if [ $? -ne 0 ]; then
         echo "kubeadm init server failed" >&2
@@ -261,6 +333,8 @@ function main {
         cp -i /etc/kubernetes/admin.conf $HOME/.kube/config && \
         chown $(id -u):$(id -g) $HOME/.kube/config
     kubectl apply -f calico.yaml
+
+    apply_ingress
 
     kubectl wait --for=condition=Ready pods --all -n kube-system --timeout=300s
 

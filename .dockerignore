@@ -6,6 +6,7 @@ foundation/address
 !foundation/base/kubeadm.yaml
 !foundation/base/calico.yaml
 !foundation/base/kubernetes.sh
+!foundation/base/ingress-deploy.yaml
 cbok/apps/bbx/chrome_plugins/auto_login/passphrase
 cbok/apps/bbx/virt_devel/base/*
 !cbok/apps/bbx/virt_devel/base/README.md
@@ -24,3 +25,4 @@ venv/
 __pycache__/
 log/
 CBoK.egg-info/
+cbok-base-amd64.tar

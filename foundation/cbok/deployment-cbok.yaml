@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cbok
+  namespace: cbok
+  labels:
+    app: cbok
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cbok
+  template:
+    metadata:
+      labels:
+        app: cbok
+    spec:
+      containers:
+        - name: cbok
+          image: docker.io/kodanevhy/cbok:latest  # Not a real link, please build by yourself, NOTE referring in Dockerfile
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DB_HOST
+              value: "mariadb"
+            - name: DB_PORT
+              value: "3306"
+            - name: DB_USER
+              value: "root"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cbok-db-secret
+                  key: password
