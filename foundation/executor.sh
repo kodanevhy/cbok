@@ -30,7 +30,9 @@ function apply_service() {
     echo "Copying resource '$service_name' to $foundation_home ..."
 
     if [[ "$service_name" = "cbok" ]]; then
-        exclude=cbok-base-amd64.tar
+        excludes=("cbok-base-amd64.tar" "cbok-amd64.tar")
+    else
+        excludes=()
     fi
     if ! copy_resource_to "$address" "$foundation_home" "foundation/$service_name" "$exclude"; then
         die "Failed to copy resource to $address"
