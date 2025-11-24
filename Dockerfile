@@ -44,12 +44,6 @@ RUN pip3 install -r requirements.txt
 
 COPY . .
 
-RUN python3 manage.py makemigrations user && \
-    python3 manage.py makemigrations xadmin && \
-    python3 manage.py makemigrations bbx && \
-    python3 manage.py makemigrations alert && \
-    python3 manage.py migrate
-
 RUN python3 manage.py crontab add
 
 EXPOSE 8000

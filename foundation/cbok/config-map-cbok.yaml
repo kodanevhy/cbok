@@ -16,4 +16,10 @@ data:
     DJANGO_PATH=$(python3 -c "import django; import os; print(os.path.dirname(django.__file__))")
     cd $Django_PATH && patch -p1 < /tmp/a41b09266dcdd01036d59d76fe926fe0386aaade.patch
 
+    python3 manage.py makemigrations user && \
+    python3 manage.py makemigrations xadmin && \
+    python3 manage.py makemigrations bbx && \
+    python3 manage.py makemigrations alert && \
+    python3 manage.py migrate
+
     cd /root/cbok/ && python3 manage.py runserver 0.0.0.0:8000 --noreload

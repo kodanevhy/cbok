@@ -73,23 +73,22 @@ ssh -n root@$address "
 NAMESPACE=cbok
 JOB_NAME=cbok-db-init
 
-if ! kubectl get job -n "$NAMESPACE" "$JOB_NAME" &> /dev/null; then
-    echo "Job $JOB_NAME not found in namespace $NAMESPACE"
-    exit 1
-fi
-
 echo "Waiting for Job $JOB_NAME to complete..."
 timeout=300
 interval=5
 elapsed=0
 while true; do
-    status=$(kubectl get job -n "$NAMESPACE" "$JOB_NAME" -o jsonpath='{.status.succeeded}')
+    if ! ssh -n root@$address "kubectl get job -n $NAMESPACE $JOB_NAME &> /dev/null"; then
+        sleep 3
+        continue
+    fi
+    status=$(ssh -n root@$address "kubectl get job -n $NAMESPACE $JOB_NAME -o jsonpath='{.status.succeeded}'")
     if [[ "$status" == "1" ]]; then
         echo "Job $JOB_NAME completed successfully."
         break
     fi
 
-    failed=$(kubectl get job -n "$NAMESPACE" "$JOB_NAME" -o jsonpath='{.status.failed}')
+    failed=$(ssh -n root@$address "kubectl get job -n $NAMESPACE $JOB_NAME -o jsonpath='{.status.failed}'")
     if [[ "$failed" != "" && "$failed" -ge 1 ]]; then
         echo "Job $JOB_NAME failed."
         exit 1
@@ -103,5 +102,5 @@ while true; do
     fi
 done
 
-kubectl delete job -n "$NAMESPACE" "$JOB_NAME"
+ssh -n root@$address "kubectl delete job -n $NAMESPACE $JOB_NAME"
 echo "Job $JOB_NAME deleted."

@@ -2,6 +2,8 @@ import logging
 import os
 import sys
 
+from oslo_utils import strutils
+
 from cbok.cmd import args
 from cbok import utils
 
@@ -102,7 +104,7 @@ class FoundationCommands:
         LOG.info(f"Applying {service} to {address}")
 
         result = utils.execute(
-            ["bash", "-c", f"source {self.executor}; apply_service {address} {service} {rebuild_base}"]
+            ["bash", "-c",f"source {self.executor}; apply_service {address} {service} {strutils.bool_from_string(rebuild_base)}"]
         )
 
         if "Failed to copy resource" in result.stderr:
