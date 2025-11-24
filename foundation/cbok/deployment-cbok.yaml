@@ -43,7 +43,6 @@ spec:
               subPath: start.sh
             - name: django-mysql-patch
               mountPath: /tmp/a41b09266dcdd01036d59d76fe926fe0386aaade.patch
-              subPath: a41b09266dcdd01036d59d76fe926fe0386aaade.patch
       volumes:
         - name: startup-script
           configMap:
