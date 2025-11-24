@@ -14,7 +14,7 @@ data:
     # now workaround
     python3 -c "import django; print(django.__path__)"
     DJANGO_PATH=$(python3 -c "import django; import os; print(os.path.dirname(os.path.dirname(django.__file__)))")
-    cd $DJANGO_PATH && patch -p1 < /tmp/a41b09266dcdd01036d59d76fe926fe0386aaade.patch
+    cd $DJANGO_PATH && patch -p1 < /tmp/a41b09266dcdd01036d59d76fe926fe0386aaade.patch && cd -
 
     python3 manage.py makemigrations user && \
     python3 manage.py makemigrations xadmin && \

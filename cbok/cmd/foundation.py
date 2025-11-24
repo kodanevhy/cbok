@@ -66,7 +66,7 @@ class FoundationCommands:
     @args.action_description("Apply service")
     @args.args(
         '--rebuild-base', metavar='<rebuild_base>', default=False, required=False,
-        help="Optional. Whether to rebuild base image")
+        help="Optional. Whether to rebuild base image of cbok service")
     @args.args(
         '--address', metavar='<address>', default=None, required=False,
         help="Optional. The address to apply and reflag the CBoK success if "
@@ -76,6 +76,10 @@ class FoundationCommands:
         help='service name')
     def apply(self, service=None, address=None, rebuild_base=False):
         """Apply service"""
+        if rebuild_base and service != "cbok":
+            LOG.error("--rebuild-base only used for cbok service")
+            sys.exit(1)
+
         try:
             with open("foundation/address", "r") as f:
                 address=f.readline()
