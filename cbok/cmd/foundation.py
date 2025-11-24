@@ -63,13 +63,16 @@ class FoundationCommands:
 
     @args.action_description("Apply service")
     @args.args(
+        '--rebuild-base', metavar='<rebuild_base>', default=False, required=False,
+        help="Optional. Whether to rebuild base image")
+    @args.args(
         '--address', metavar='<address>', default=None, required=False,
         help="Optional. The address to apply and reflag the CBoK success if "
              "its address not exists")
     @args.args(
         '--service', metavar='<service>', required=True,
         help='service name')
-    def apply(self, service=None, address=None):
+    def apply(self, service=None, address=None, rebuild_base=False):
         """Apply service"""
         try:
             with open("foundation/address", "r") as f:
@@ -99,7 +102,7 @@ class FoundationCommands:
         LOG.info(f"Applying {service} to {address}")
 
         result = utils.execute(
-            ["bash", "-c", f"source {self.executor}; apply_service {address} {service}"]
+            ["bash", "-c", f"source {self.executor}; apply_service {address} {service} {rebuild_base}"]
         )
 
         if "Failed to copy resource" in result.stderr:

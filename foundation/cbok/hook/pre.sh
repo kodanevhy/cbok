@@ -3,6 +3,7 @@
 set -ex
 
 address=$1
+rebuild_base_image=$2
 foundation_home="/opt/foundation"
 
 
@@ -33,10 +34,11 @@ function copy_base_image() {
 
 
 function build_cbok {
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
     ssh -n root@$address "
         docker load -i $foundation_home/cbok/cbok-base-amd64.tar
 
-        cd $foundation_home/cbok && git clone https://github.com/kodanevhy/cbok.git && cd cbok
+        cd $foundation_home/cbok && git clone -b $current_branch --single-branch https://github.com/kodanevhy/cbok.git && cd cbok
         docker build --platform linux/amd64 --build-arg STAGE_SECOND_BASE_IMAGE=docker.io/kodanevhy/cbok-base:latest -t docker.io/kodanevhy/cbok:latest .
 
         docker save docker.io/kodanevhy/cbok:latest -o $foundation_home/cbok/cbok-amd64.tar
@@ -45,6 +47,17 @@ function build_cbok {
     "
 }
 
+if [ "$rebuild_base_image" = "True" ]; then
+    remote_base_tar="$foundation_home/cbok/cbok-base-amd64.tar"
+
+    ssh -n root@$address "
+        ctr -n k8s.io images delete docker.io/kodanevhy/cbok:latest || echo true
+        rm -f $remote_base_tar || echo true
+    "
+
+    local_tar="foundation/cbok/cbok-base-amd64.tar"
+    rm -f $local_tar
+fi
 
 remote_has_image=$(ssh -n root@$address "ctr -n k8s.io images ls | grep -q 'docker.io/kodanevhy/cbok:latest' && echo 1 || echo 0")
 if [ "$remote_has_image" -eq 0 ]; then
@@ -53,3 +66,42 @@ if [ "$remote_has_image" -eq 0 ]; then
 else
     echo CBoK image already stashed
 fi
+
+ssh -n root@$address "
+    kubectl apply -f $foundation_home/cbok/job-mariadb.yaml
+"
+NAMESPACE=cbok
+JOB_NAME=cbok-db-init
+
+if ! kubectl get job -n "$NAMESPACE" "$JOB_NAME" &> /dev/null; then
+    echo "Job $JOB_NAME not found in namespace $NAMESPACE"
+    exit 1
+fi
+
+echo "Waiting for Job $JOB_NAME to complete..."
+timeout=300
+interval=5
+elapsed=0
+while true; do
+    status=$(kubectl get job -n "$NAMESPACE" "$JOB_NAME" -o jsonpath='{.status.succeeded}')
+    if [[ "$status" == "1" ]]; then
+        echo "Job $JOB_NAME completed successfully."
+        break
+    fi
+
+    failed=$(kubectl get job -n "$NAMESPACE" "$JOB_NAME" -o jsonpath='{.status.failed}')
+    if [[ "$failed" != "" && "$failed" -ge 1 ]]; then
+        echo "Job $JOB_NAME failed."
+        exit 1
+    fi
+
+    sleep $interval
+    elapsed=$((elapsed + interval))
+    if [[ $elapsed -ge $timeout ]]; then
+        echo "Timeout waiting for Job $JOB_NAME"
+        exit 1
+    fi
+done
+
+kubectl delete job -n "$NAMESPACE" "$JOB_NAME"
+echo "Job $JOB_NAME deleted."

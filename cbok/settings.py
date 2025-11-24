@@ -34,9 +34,9 @@ CORS_ORIGIN_ALLOW_ALL = True
 CBoK_APPS = [
     'xadmin',
     'crispy_forms',
-    'bbx',  # 百宝箱
-    'user',
-    'alert',
+    'cbok.apps.bbx.apps.BbxConfig',  # 百宝箱
+    'cbok.apps.user',
+    'cbok.apps.alert',
 ]
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -92,8 +92,15 @@ WSGI_APPLICATION = 'cbok.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': os.environ.get('DB_NAME'),
+        'USER': os.environ.get('DB_USER'),
+        'PASSWORD': os.environ.get('DB_PASSWORD'),
+        'HOST': os.environ.get('DB_HOST'),
+        'PORT': os.environ.get('DB_PORT', '3306'),
+        'OPTIONS': {
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+        },
     }
 }
 
@@ -203,9 +210,3 @@ CRONJOBS = [
 ]
 
 Workspace = "/Users/mizar/Workspace/"
-
-
-# FIXME: use MySQL intead of SQLite to resolve green thead problem
-from django.core.signals import request_started
-from django.db import close_old_connections
-request_started.disconnect(close_old_connections)

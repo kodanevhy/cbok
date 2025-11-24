@@ -20,6 +20,7 @@ function is_ready() {
 function apply_service() {
     local address="$1"
     local service_name="$2"
+    local rebuild_cbok_base="$3"
     local foundation_home="/opt/foundation"
 
     if [[ "$service_name" = "base" ]];then
@@ -40,7 +41,7 @@ function apply_service() {
     # Pre hook
     if [ -d "$hook_dir" ] && [ -f "$hook_dir/pre.sh" ]; then
         echo "Running pre-hook for $service_name"
-        if ! bash "$hook_dir/pre.sh" "$address"; then
+        if ! bash "$hook_dir/pre.sh" "$address" "$rebuild_cbok_base"; then
             echo "Pre-hook failed for $service_name"
             exit 1
         fi

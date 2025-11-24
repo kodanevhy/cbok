@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cbok
+  namespace: cbok
+data:
+  start.sh: |
+    #!/bin/bash
+    set -ex
+    
+    /usr/sbin/crond -n -x ext,sch,proc | tee /var/log/cron.log &
+
+    # Here's a bug in Django 2.2.27, see https://github.com/django/django/commit/a41b09266dcdd01036d59d76fe926fe0386aaade
+    # now workaround
+    python3 -c "import django; print(django.__path__)"
+    DJANGO_PATH=$(python3 -c "import django; import os; print(os.path.dirname(django.__file__))")
+    cd $Django_PATH && patch -p1 < /tmp/a41b09266dcdd01036d59d76fe926fe0386aaade.patch
+
+    cd /root/cbok/ && python3 manage.py runserver 0.0.0.0:8000 --noreload

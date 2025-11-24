@@ -22,7 +22,7 @@ EOF
 
 RUN yum -y install tk-devel sqlite-devel ncurses-devel \
     xz-devel libffi-devel bzip2-devel sudo wget gcc-c++ pcre pcre-devel zlib zlib-devel \
-    openssl openssl-devel procps-ng net-tools file xz xz-libs cronie
+    openssl openssl-devel procps-ng net-tools file xz xz-libs cronie patch
 
 # You can download from https://www.python.org/ftp/python/3.9.6/Python-3.9.6.tar.xz
 ADD static/Python-3.9.6.tar.xz /opt/
@@ -51,17 +51,5 @@ RUN python3 manage.py makemigrations user && \
     python3 manage.py migrate
 
 RUN python3 manage.py crontab add
-
-RUN cat > /opt/cbok.sh <<EOF
-#!/bin/bash
-
-set -ex
-
-/usr/sbin/crond -n -x ext,sch,proc | tee /var/log/cron.log &
-
-python3 manage.py runserver 0.0.0.0:8000 --noreload
-EOF
-
-CMD ["bash", "/opt/cbok.sh"]
 
 EXPOSE 8000

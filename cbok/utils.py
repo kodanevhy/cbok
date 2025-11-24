@@ -8,7 +8,13 @@ from cbok import settings
 
 
 def applications():
-    return settings.CBoK_APPS
+    install_apps = []
+    for app in settings.CBoK_APPS:
+        if app.startswith("cbok.apps."):
+            install_apps.append(app.split(".")[2])
+        else:
+            install_apps.append(app)
+    return install_apps
 
 
 def locate_project_path(ide, company, name):

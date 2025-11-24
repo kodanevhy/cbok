@@ -1,16 +1,14 @@
 import base64
 import ipaddress
 import logging
-import os.path
 import re
 import time
-import urllib3
-from urllib3 import exceptions
-from urllib3 import util
 from urllib import parse
+import urllib3
+from urllib3 import exceptions, util
 
+from cbok.apps.bbx.models import ChromePluginAutoLoginHostInfo
 from cbok import utils as cbok_utils
-
 
 LOG = logging.getLogger(__name__)
 
@@ -31,10 +29,8 @@ class LoginManager:
         self.timeout = util.timeout.Timeout(connect=3, read=3)
 
     def get_login_page(self, url, query=None):
-        query_string = None
-        if query:
-            query_string = '&'.join([f'{k}={v}' for k, v in query.items()])
-        url = f'{url}?{query_string}'
+        query_string = '&'.join([f'{k}={v}' for k, v in query.items()]) if query else None
+        url = f'{url}?{query_string}' if query_string else url
         try:
             with cbok_utils.suppress_logs("urllib3", level=logging.ERROR):
                 response = self.pool_manager.request(
@@ -42,7 +38,7 @@ class LoginManager:
             status_code = response.status
             if 'Wrong URL' in response.data.decode('utf-8'):
                 return
-            if status_code == 200 and type(response.data) == bytes:
+            if status_code == 200 and isinstance(response.data, bytes):
                 return response.data
         except exceptions.MaxRetryError:
             pass
@@ -69,190 +65,98 @@ class LoginManager:
                     timeout=self.timeout
                 )
             return response.status
-        except urllib3.exceptions.MaxRetryError:
+        except exceptions.MaxRetryError:
             pass
-        except urllib3.exceptions.RequestError:
+        except exceptions.RequestError:
             pass
 
     def _resolve_form_csrftoken(self, url):
         html_byte = self.get_login_page(url)
         if not html_byte:
-            # Request error means no such environment for test or
-            # network unreachable, just ignore the address and use
-            # default passphrase.
             return
         html_str = html_byte.decode('utf-8')
-
-        index_str = '<input type=\'hidden\' name=\'csrfmiddlewaretoken\' ' \
-                    'value=\''
+        index_str = "<input type='hidden' name='csrfmiddlewaretoken' value='"
         start = html_str.find(index_str) + len(index_str)
         end = start + 32
-        csrf = html_str[start: end]
-        return csrf
-
-    @staticmethod
-    def persistent(address, username, password):
-        home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        target = os.path.join(home, 'passphrase')
-        existing_data = []
-        try:
-            with open(target, 'r', encoding='utf-8') as t:
-                for line in t.readlines():
-                    parts = line.strip().split(',')
-                    existing_data.append(parts)
-        except FileNotFoundError:
-            pass
-
-        new_record = [address, username, password]
-        if new_record not in existing_data:
-            LOG.info(f"Persisting {address} by {password}")
-            existing_data.append(new_record)
-            sorted_data = sorted(existing_data, key=lambda x: x[0])
-
-            with open(target, 'w', encoding='utf-8') as file:
-                for record in sorted_data:
-                    file.write(','.join(record) + '\n')
-        else:
-            LOG.info(f"{address} already ready")
+        return html_str[start:end]
 
     @staticmethod
     def base64_encode(s):
         return base64.b64encode(s.encode('utf-8')).decode('utf-8')
 
     @staticmethod
-    def remove(address):
-        if not address:
-            return
-
-        home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        target = os.path.join(home, 'passphrase')
-        with open(target, 'r') as file:
-            lines = file.readlines()
-
-        matched = any(line.startswith(address + ",") for line in lines)
-        if not matched:
-            return
-
-        LOG.info(f"Removing {address}")
-
-        filtered_lines = [line for line in lines
-                          if not line.startswith(address)]
-        with open(target, 'w') as file:
-            file.writelines(filtered_lines)
-
-    @staticmethod
-    def parse_current():
-        parsed = dict()
-        home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        target = os.path.join(home, 'passphrase')
-        with open(target, 'r') as t:
-            lines = t.readlines()
-            for line in lines:
-                line = line.rstrip('\n')
-                address = line.split(',')[0]
-                username = line.split(',')[1]
-                password = line.split(',')[2]
-                parsed.update({address: {username: password}})
+    def get_current_hosts():
+        parsed = {}
+        hosts = ChromePluginAutoLoginHostInfo.objects.all()
+        for h in hosts:
+            parsed[h.ip_address] = {h.username: h.password}
         return parsed
 
     @staticmethod
-    def pre_clean_passphrase():
-        """Pre clean passphrase before handle"""
+    def save_host(ip_address, username, password):
+        obj, created = ChromePluginAutoLoginHostInfo.objects.update_or_create(
+            ip_address=ip_address,
+            username=username,
+            defaults={'password': password}
+        )
+        if created:
+            LOG.info(f"Created host {ip_address} with password {password}")
+        else:
+            LOG.info(f"Updated host {ip_address} with password {password}")
 
-        home = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        target = os.path.join(home, 'passphrase')
-        if not os.path.exists(target):
-            open(target, "w").close()
-        with open(target, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f if line.strip()]
+    @staticmethod
+    def remove_host(ip_address):
+        if ChromePluginAutoLoginHostInfo.objects.filter(ip_address=ip_address).exists():
+            ChromePluginAutoLoginHostInfo.objects.filter(ip_address=ip_address).delete()
+            LOG.info(f"Removed host {ip_address}")
 
-        rows = [line.split(",") for line in lines]
-        counts = {}
-        for row in rows:
-            ip = row[0]
-            counts[ip] = counts.get(ip, 0) + 1
-
-        filtered_rows = [row for row in rows if counts[row[0]] == 1]
-
-        with open(target, "w", encoding="utf-8") as f:
-            for row in filtered_rows:
-                f.write(",".join(row) + "\n")
-
-    def try_login_and_persistent(self, viewer_address=None,
-                                 viewer_password=None):
-        def _worker():
+    def try_login_and_persistent(self, viewer_address=None, viewer_password=None):
+        def _worker(addr, username, csrf, possible_password, url):
             for password in possible_password:
-                if password == 'test@passw%srd' and \
-                        re.match(r'^172\.\d+\.0\.2$', addr):
+                if password == 'test@passw%srd' and re.match(r'^172\.\d+\.0\.2$', addr):
                     env_id = addr.split('.')[1]
                     password = password % env_id
-                cookie = {
-                    'csrftoken': csrf
-                }
-                body = {
-                    'username': username,
-                    'password': self.base64_encode(password),
-                    'csrfmiddlewaretoken': csrf
-                }
+                cookie = {'csrftoken': csrf}
+                body = {'username': username, 'password': self.base64_encode(password), 'csrfmiddlewaretoken': csrf}
                 status_code = self.try_login(url, cookie, body)
                 if status_code == 405:
-                    self.persistent(addr, username, password)
+                    self.save_host(addr, username, password)
                     return True
-
-        self.pre_clean_passphrase()
+            return False
 
         username = 'admin@example.org'
-        current_parsed = self.parse_current()
+        current_parsed = self.get_current_hosts()
         current_addresses = current_parsed.keys()
 
+        addresses = []
         if viewer_address and viewer_password:
-            # If it comes from viewer, no need to check current.
-            addr = viewer_address
-            possible_password = [viewer_password]
+            addresses = [(viewer_address, [viewer_password])]
+        else:
+            addresses = [(addr, list(self.POSSIBLE_PASSWORD)) for addr in sorted(
+                set(list(current_addresses) + list(self.ADDRESS)),
+                key=lambda ip: ipaddress.ip_address(ip)
+            )]
 
-            url = 'https://%s/ems_dashboard_api/auth_login/' % viewer_address
+        for addr, possible_password in addresses:
+            url = f'https://{addr}/ems_dashboard_api/auth_login/'
             csrf = self._resolve_form_csrftoken(url)
             if not csrf:
-                self.remove(viewer_address)
-                return
+                self.remove_host(addr)
+                continue
 
             if addr == '100.100.3.21':
-                possible_password = ["Admin@Compute1"]
+                possible_password.insert(0, 'Admin@Compute1')
 
-            if not _worker():
-                self.remove(addr)
-        else:
-            LOG.info("Running fully sync")
-            LOG.info(f"Starting view: {current_parsed}")
+            # Use stored password first
+            if addr in current_addresses:
+                password = current_parsed.get(addr).get(username)
+                if password not in possible_password:
+                    possible_password.insert(0, password)
 
-            # We need to check current record first, if failed, remove.
-            addresses = sorted(
-                        set(list(current_addresses) + list(self.ADDRESS)),
-                        key=lambda ip: ipaddress.ip_address(ip)
-                    )
+            if not _worker(addr, username, csrf, possible_password, url):
+                self.remove_host(addr)
 
-            for addr in addresses:
-                possible_password = list(self.POSSIBLE_PASSWORD)
-
-                url = 'https://%s/ems_dashboard_api/auth_login/' % addr
-                csrf = self._resolve_form_csrftoken(url)
-                if not csrf:
-                    self.remove(addr)
-                    continue
-
-                if addr == '100.100.3.21':
-                    possible_password.insert(0, 'Admin@Compute1')
-
-                # Use stored password to verify first
-                if addr in current_addresses:
-                    password = current_parsed.get(addr).get(username)
-                    if password not in possible_password:
-                        possible_password.insert(0, password)
-
-                if not _worker():
-                    self.remove(addr)
-            LOG.info("Fully sync finished")
-
+        LOG.info("Fully sync finished")
         return True
 
 
