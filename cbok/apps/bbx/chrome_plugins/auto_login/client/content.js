@@ -35,14 +35,23 @@ function locateLoginButton() {
     return null;
 }
 
+async function getAddressFromFile() {
+    const response = await fetch(chrome.runtime.getURL('address')); 
+    const text = await response.text();
+    return text.trim();
+}
+
 async function sendLoginRecord(identity) {
+    const ipAddress = await getAddressFromFile();
     const requestData = {
         address: identity.Address,
         password: identity.Password
     };
 
+    const url = `http://${ipAddress}:30080/bbx/chrome_login_record_create/`;
+
     try {
-        const response = await fetch('http://127.0.0.1/bbx/chrome_login_record_create/', {
+        const response = await fetch(url, {
             method: 'POST',
             headers: {
                 'Accept': '*/*',
