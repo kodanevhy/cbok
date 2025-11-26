@@ -2,6 +2,8 @@ import logging
 import os
 import sys
 
+from oslo_utils import strutils
+
 from cbok.cmd import args
 from cbok import utils
 
@@ -63,14 +65,21 @@ class FoundationCommands:
 
     @args.action_description("Apply service")
     @args.args(
+        '--rebuild-base', metavar='<rebuild_base>', default=False, required=False,
+        help="Optional. Whether to rebuild base image of cbok service")
+    @args.args(
         '--address', metavar='<address>', default=None, required=False,
         help="Optional. The address to apply and reflag the CBoK success if "
              "its address not exists")
     @args.args(
         '--service', metavar='<service>', required=True,
         help='service name')
-    def apply(self, service=None, address=None):
+    def apply(self, service=None, address=None, rebuild_base=False):
         """Apply service"""
+        if rebuild_base and service != "cbok":
+            LOG.error("--rebuild-base only used for cbok service")
+            sys.exit(1)
+
         try:
             with open("foundation/address", "r") as f:
                 address=f.readline()
@@ -99,7 +108,7 @@ class FoundationCommands:
         LOG.info(f"Applying {service} to {address}")
 
         result = utils.execute(
-            ["bash", "-c", f"source {self.executor}; apply_service {address} {service}"]
+            ["bash", "-c",f"source {self.executor}; apply_service {address} {service} {strutils.bool_from_string(rebuild_base)}"]
         )
 
         if "Failed to copy resource" in result.stderr:

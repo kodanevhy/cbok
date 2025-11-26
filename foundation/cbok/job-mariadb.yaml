@@ -1,0 +1,24 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cbok-db-init
+  namespace: cbok
+spec:
+  template:
+    spec:
+      containers:
+      - name: init-db
+        image: m.daocloud.io/docker.io/mariadb:11.3
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cbok-db-secret
+              key: password
+        command: ["sh", "-c"]
+        args:
+        - |
+          mariadb -h mariadb.cbok.svc.cluster.local -u root -p"$MYSQL_ROOT_PASSWORD" -e "
+          CREATE DATABASE IF NOT EXISTS cbok;
+          "
+      restartPolicy: Never

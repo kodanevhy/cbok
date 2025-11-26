@@ -1,11 +1,12 @@
 import logging
-import os
 
 from django import http
 from django.views.generic import base
 
 from cbok.apps.bbx.chrome_plugins.auto_login.server import manager as \
     chrome_login_manager
+from cbok.apps.bbx.models import ChromePluginAutoLoginHostInfo
+
 
 LOG = logging.getLogger(__name__)
 
@@ -31,23 +32,16 @@ class ChromePluginsView(base.View):
         return http.JsonResponse({'code': 200})
 
     def get(self, request, **kwargs):
-        """Retreive passphrase"""
-        passphrase_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            'chrome_plugins/auto_login/passphrase')
-
+        """Retrieve passphrase"""
         result = []
 
-        if not os.path.exists(passphrase_path):
-            return http.JsonResponse({"code": 404, "result": result})
+        hosts = ChromePluginAutoLoginHostInfo.objects.all()
+        for host in hosts:
+            result.append({
+                "ip": host.ip_address,
+                "user": host.username,
+                "password": host.password
+            })
 
-        with open(passphrase_path, "r") as f:
-            for line in f:
-                parts = line.strip().split(",")
-                if len(parts) == 3:
-                    result.append({
-                        "ip": parts[0].strip(),
-                        "user": parts[1].strip(),
-                        "password": parts[2].strip()
-                    })
-        return http.JsonResponse({"code": 200, "result": result})
+        code = 200 if result else 404
+        return http.JsonResponse({"code": code, "result": result})

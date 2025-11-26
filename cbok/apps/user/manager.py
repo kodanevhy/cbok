@@ -1,8 +1,8 @@
 from django.contrib.auth import authenticate
 from django.contrib.auth import login
 
-from user import exception
-from user import models
+from cbok.apps.user import exception
+from cbok.apps.user import models
 
 
 class UserManager:

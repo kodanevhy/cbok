@@ -21,11 +21,15 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
+          command:
+            - /tmp/start.sh
           env:
             - name: DB_HOST
-              value: "mariadb"
+              value: "mariadb.cbok.svc.cluster.local"
             - name: DB_PORT
               value: "3306"
+            - name: DB_NAME
+              value: cbok
             - name: DB_USER
               value: "root"
             - name: DB_PASSWORD
@@ -33,3 +37,18 @@ spec:
                 secretKeyRef:
                   name: cbok-db-secret
                   key: password
+          volumeMounts:
+            - name: startup-script
+              mountPath: /tmp/start.sh
+              subPath: start.sh
+            - name: django-mysql-patch
+              mountPath: /tmp/a41b09266dcdd01036d59d76fe926fe0386aaade.patch
+      volumes:
+        - name: startup-script
+          configMap:
+            name: cbok
+            defaultMode: 0755
+        - name: django-mysql-patch
+          hostPath:
+              path: /opt/foundation/cbok/a41b09266dcdd01036d59d76fe926fe0386aaade.patch
+              type: File
