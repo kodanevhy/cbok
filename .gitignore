@@ -1,12 +1,12 @@
 static/*
 foundation/base/*
 foundation/address
+cbok/apps/bbx/chrome_plugins/auto_login/client/address
 !foundation/base/README.md
 !foundation/base/kubeadm.yaml
 !foundation/base/calico.yaml
 !foundation/base/kubernetes.sh
 !foundation/base/ingress-deploy.yaml
-cbok/apps/bbx/chrome_plugins/auto_login/passphrase
 cbok/apps/bbx/virt_devel/base/*
 !cbok/apps/bbx/virt_devel/base/README.md
 cbok/apps/bbx/virt_devel/example/*

@@ -2,9 +2,17 @@ window.onload = function () {
     displayPasswords();
 }
 
+async function getAddressFromFile() {
+    const response = await fetch(chrome.runtime.getURL('address')); 
+    const text = await response.text();
+    return text.trim();
+}
+
 async function readPassword(address, all_known=false) {
+    const ipAddress = await getAddressFromFile();
+    const url = `http://${ipAddress}:30080/bbx/chrome_passphrase/`;
     try {
-        const response = await fetch('http://127.0.0.1:80/bbx/chrome_passphrase/');
+        const response = await fetch(url);
         const data = await response.json();
 
         console.log(data)

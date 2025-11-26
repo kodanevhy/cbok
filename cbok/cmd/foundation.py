@@ -60,6 +60,8 @@ class FoundationCommands:
 
         with open("foundation/address", "w+") as f:
             f.write(address)
+        with open("cbok/apps/bbx/chrome_plugins/auto_login/client/address", "w+") as f:
+            f.write(address)
 
         LOG.info("Congradulations! deploy successfully")
 
