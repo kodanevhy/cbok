@@ -63,3 +63,16 @@ def suppress_logs(package, level=logging.ERROR):
         yield
     finally:
         logger.setLevel(old_level)
+
+
+def initial_task(func):
+    func.initial = True
+    return func
+
+
+def periodic_task(interval=60):
+    def decorator(func):
+        func.periodic = True
+        func.interval = interval
+        return func
+    return decorator

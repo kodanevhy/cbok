@@ -25,7 +25,7 @@ def setup_logging(debug=False):
 
 
 def main():
-    assert os.getcwd() == settings.BASE_DIR
+    assert os.getcwd().lower() == settings.BASE_DIR.lower()
 
     parser = argparse.ArgumentParser(prog="cbok", description="CBoK CLI")
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')

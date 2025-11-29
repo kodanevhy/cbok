@@ -22,7 +22,7 @@ EOF
 
 RUN yum -y install tk-devel sqlite-devel ncurses-devel \
     xz-devel libffi-devel bzip2-devel sudo wget gcc-c++ pcre pcre-devel zlib zlib-devel \
-    openssl openssl-devel procps-ng net-tools file xz xz-libs cronie patch
+    openssl openssl-devel procps-ng net-tools file xz xz-libs patch
 
 # You can download from https://www.python.org/ftp/python/3.9.6/Python-3.9.6.tar.xz
 ADD static/Python-3.9.6.tar.xz /opt/
@@ -43,7 +43,5 @@ COPY requirements/ requirements
 RUN pip3 install -r requirements.txt
 
 COPY . .
-
-RUN python3 manage.py crontab add
 
 EXPOSE 8000

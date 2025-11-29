@@ -3,7 +3,9 @@
 import logging
 import os
 import sys
+import threading
 
+from cbok import batch
 
 LOG = logging.getLogger()
 LOG.setLevel(logging.INFO)
@@ -33,6 +35,20 @@ def main():
             "available on your PYTHONPATH environment variable? Did you "
             "forget to activate a virtual environment?"
         ) from exc
+
+    if len(sys.argv) > 1 and sys.argv[1] == 'runserver':
+        try:
+            def start_tasks():
+                try:
+                    LOG.info("Starting gateway tasks for runserver...")
+                    processor = batch.BatchProcessor()
+                    processor.run_all()
+                except Exception as e:
+                    LOG.error(f"Failed to start gateway tasks: {e}")
+
+            threading.Timer(5, start_tasks).start()
+        except Exception as e:
+            LOG.error(f"Failed to start gateway tasks: {e}")
 
     execute_from_command_line(sys.argv)
 

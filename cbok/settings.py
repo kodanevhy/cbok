@@ -32,8 +32,6 @@ CORS_ORIGIN_ALLOW_ALL = True
 
 # Application definition
 CBoK_APPS = [
-    'xadmin',
-    'crispy_forms',
     'cbok.apps.bbx.apps.BbxConfig',  # 百宝箱
     'cbok.apps.user',
     'cbok.apps.alert',
@@ -46,7 +44,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
-    'django_crontab'
+    'django_crontab',
+    'xadmin',
+    'crispy_forms',
 ]
 INSTALLED_APPS += CBoK_APPS
 
@@ -93,10 +93,10 @@ WSGI_APPLICATION = 'cbok.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.environ.get('DB_NAME'),
-        'USER': os.environ.get('DB_USER'),
-        'PASSWORD': os.environ.get('DB_PASSWORD'),
-        'HOST': os.environ.get('DB_HOST'),
+        'NAME': os.environ.get('DB_NAME', 'cbok'),
+        'USER': os.environ.get('DB_USER', 'root'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', '000000'),
+        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
         'PORT': os.environ.get('DB_PORT', '3306'),
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
@@ -200,13 +200,5 @@ LOGGING = {
         },
     },
 }
-
-# python manage.py crontab add
-# python manage.py crontab show
-# python manage.py crontab remove
-CRONJOBS = [
-    ('0 12 * * *',
-    'cbok.apps.bbx.chrome_plugins.auto_login.server.manager.run')
-]
 
 Workspace = "/Users/mizar/Workspace/"
