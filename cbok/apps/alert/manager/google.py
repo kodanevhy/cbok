@@ -73,7 +73,6 @@ class GoogleAlertManager(base.BaseAlertManager):
 
         html = r.text.encode('utf-8')
 
-        import pdb; pdb.set_trace()
         soup = BeautifulSoup(html, 'html.parser')
 
         results = []
