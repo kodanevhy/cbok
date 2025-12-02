@@ -36,6 +36,7 @@ function copy_base_image() {
 function build_cbok {
     current_branch=$(git rev-parse --abbrev-ref HEAD)
     ssh -n root@$address "
+        set -ex
         docker load -i $foundation_home/cbok/cbok-base-amd64.tar
 
         cd $foundation_home/cbok && git clone -b $current_branch --single-branch https://github.com/kodanevhy/cbok.git && cd cbok
