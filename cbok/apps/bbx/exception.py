@@ -1,4 +1,4 @@
-from cbok.base_exception import CBoKException
+from cbok.exception import CBoKException
 
 
 class NoDiffBetweenHead(CBoKException):

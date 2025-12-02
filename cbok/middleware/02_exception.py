@@ -5,7 +5,7 @@ import logging
 from django import http
 from django.utils.deprecation import MiddlewareMixin
 
-from cbok.exception import base_exception
+from cbok import exception
 
 LOG = logging.getLogger(__name__)
 
@@ -82,9 +82,9 @@ class ExcMiddleware(MiddlewareMixin):
             # Only reserve subclasses of service base exception,
             # and except for base itself.
             if not issubclass(type(cls), type) or \
-                    not issubclass(cls, base_exception.CBoKException):
+                    not issubclass(cls, exception.CBoKException):
                 continue
-            if name == base_exception.CBoKException.__name__:
+            if name == exception.CBoKException.__name__:
                 continue
 
             if isinstance(exc, cls):
@@ -93,6 +93,6 @@ class ExcMiddleware(MiddlewareMixin):
         # Already iterated all exceptions from the current and main
         # application, but still not be captured.
         if exc_module == self.main_exc_module:
-            if issubclass(type(exc), base_exception.CBoKException):
+            if issubclass(type(exc), exception.CBoKException):
                 self._log_uncontrollable(exc)
             return self._map_http_resp(exc)
