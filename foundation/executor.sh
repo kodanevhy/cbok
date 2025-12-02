@@ -41,10 +41,10 @@ function apply_service() {
     local hook_dir="foundation/$service_name/hook"
 
     # Pre hook
-    if [ -d "$hook_dir" ] && [ -f "$hook_dir/pre.sh" ]; then
+    if [ -d "$hook_dir" ] && [ -f "$hook_dir/apply/pre.sh" ]; then
         echo "Running pre-hook for $service_name"
-        if ! bash "$hook_dir/pre.sh" "$address" "$rebuild_cbok_base"; then
-            echo "Pre-hook failed for $service_name"
+        if ! bash "$hook_dir/apply/pre.sh" "$address" "$rebuild_cbok_base"; then
+            echo "Applying service pre-hook failed for $service_name"
             exit 1
         fi
     fi
@@ -71,10 +71,10 @@ function apply_service() {
     "
 
     # Post hook
-    if [ -d "$hook_dir" ] && [ -f "$hook_dir/post.sh" ]; then
+    if [ -d "$hook_dir" ] && [ -f "$hook_dir/apply/post.sh" ]; then
         echo "Running post-hook for $service_name"
-        if ! bash "$hook_dir/post.sh" "$address"; then
-            echo "Post-hook failed for $service_name"
+        if ! bash "$hook_dir/apply/post.sh" "$address"; then
+            echo "Applying service post-hook failed for $service_name"
             exit 1
         fi
     fi
@@ -85,6 +85,57 @@ function apply_service() {
     echo "APPLY SUCCESS"
 }
 
+
+function remove_service() {
+    local address="$1"
+    local service_name="$2"
+    local foundation_home="/opt/foundation"
+
+    echo "Removing service '$service_name' from $foundation_home ..."
+
+    local hook_dir="foundation/$service_name/hook"
+
+    # Pre hook
+    if [ -d "$hook_dir" ] && [ -f "$hook_dir/remove/pre.sh" ]; then
+        echo "Running pre-hook for $service_name"
+        if ! bash "$hook_dir/remove/pre.sh" "$address"; then
+            echo "Removing service pre-hook failed for $service_name"
+            exit 1
+        fi
+    fi
+
+    # Deletion
+    ssh -n root@"$address" "
+        echo 'Deleting manifests for $service_name ...' >> $foundation_home/log 2>&1
+        sh -c 'for f in $foundation_home/$service_name/*.yaml; do
+            echo \"Deleting \$f ...\" >> $foundation_home/log 2>&1
+            if ! kubectl delete -f \"\$f\" >> $foundation_home/log 2>&1; then
+                echo \"Failed to delete \$f\" >> $foundation_home/log 2>&1
+                exit 1
+            fi
+        done'
+    "
+
+    # Waiting
+    ssh -n root@"$address" "
+        echo 'Waiting for pods of $service_name to be Ready ...' >> $foundation_home/log 2>&1
+        if ! kubectl wait --for=delete pod -l app='$service_name' -n cbok --timeout=300s; then
+            echo 'Warning: some pods of $service_name may not be Ready in cbok' >> $foundation_home/log 2>&1
+            exit 1
+        fi
+    "
+
+    # Post hook
+    if [ -d "$hook_dir" ] && [ -f "$hook_dir/remove/post.sh" ]; then
+        echo "Running post-hook for $service_name"
+        if ! bash "$hook_dir/remove/post.sh" "$address"; then
+            echo "Removing service post-hook failed for $service_name"
+            exit 1
+        fi
+    fi
+
+    echo "REMOVE SUCCESS"
+}
 
 function copy_resource_to() {
     local address=$1

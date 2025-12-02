@@ -128,3 +128,57 @@ class FoundationCommands:
             LOG.error("Unexpected error, Please trace log remote "
                       "workspace home for details")
             sys.exit(1)
+
+    @args.action_description("Uninstall service")
+    @args.args(
+        '--address', metavar='<address>', default=None, required=False,
+        help="Optional. The address to apply and reflag the CBoK success if "
+             "its address not exists")
+    @args.args(
+        '--service', metavar='<service>', required=True,
+        help='service name')
+    def remove(self, service=None, address=None):
+        """Uninstall service"""
+
+        try:
+            with open("foundation/address", "r") as f:
+                address=f.readline()
+        except FileNotFoundError:
+            if not address:
+                LOG.error("No CBoK found in foundation/address, if you "
+                          "confirm that cluster is ready, please use --address and "
+                          "its success will be reflaged")
+                sys.exit(1)
+
+        result = utils.execute(
+            ["bash", "-c", f"source {self.executor}; is_ready {address}"]
+        )
+        if result.returncode != 0:
+            LOG.error("Unreachable, or not a CBoK target")
+            sys.exit(1)
+        elif address and not os.path.exists("foundation/address"):
+            LOG.info("Regenerate the CBoK success flag")
+            with open("foundation/address", "w+") as f:
+                f.write(address)
+
+        if not os.path.isdir(os.path.join("foundation", service)):
+            LOG.error(f"No such service: {service}")
+            sys.exit(1)
+
+        LOG.info(f"Removing {service} from {address}")
+
+        result = utils.execute(
+            ["bash", "-c",f"source {self.executor}; remove_service {address} {service}"]
+        )
+
+        if "Not allowed: base" in result.stderr:
+            LOG.error(result.stderr)
+            LOG.error("Not allowed: base")
+            sys.exit(1)
+        elif result.returncode == 0 and "REMOVE SUCCESS" in result.stdout:
+            LOG.info("Success")
+        else:
+            LOG.error(result.stderr)
+            LOG.error("Unexpected error, Please trace log remote "
+                      "workspace home for details")
+            sys.exit(1)
