@@ -68,7 +68,7 @@ else
 fi
 
 ssh -n root@$address "
-    kubectl apply -f $foundation_home/cbok/job-mariadb.yaml
+    kubectl apply -f $foundation_home/cbok/03-job-mariadb.yaml
 "
 NAMESPACE=cbok
 JOB_NAME=cbok-db-init
