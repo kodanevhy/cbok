@@ -3,3 +3,4 @@
     2.Finish alert application
     3.Fix cbok main app delete job bug
     4.re-freeze requirements.txt because maybe have many redunrants dependencies
+    5.Flexible configure workspace
