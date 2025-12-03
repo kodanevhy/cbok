@@ -16,11 +16,13 @@
 
 二、Patch Django
 
-CBoK使用的Django版本比较老，需要适配Python 3.9.6，详情请看：https://github.com/django/django/commit/a41b09266dcdd01036d59d76fe926fe0386aaade
+CBoK使用的Django版本比较老，需要适配Python 3.9.6，详情请看：[Handled bytes in MySQL backend for PyMySQL support](https://github.com/django/django/commit/a41b09266dcdd01036d59d76fe926fe0386aaade)
+
+确保虚拟环境已启用，执行：
 ```shell
   DJANGO_PATH=$(python3 -c "import django; import os; print(os.path.dirname(os.path.dirname(django.__file__)))")
   cd $DJANGO_PATH
-  patch -p1 < ../../../foundation/cbok/a41b09266dcdd01036d59d76fe926fe0386aaade.patch
+  patch -p1 < ../../../../foundation/cbok/a41b09266dcdd01036d59d76fe926fe0386aaade.patch
   cd -
 ```
 
