@@ -45,8 +45,6 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'corsheaders',
     'django_crontab',
-    'xadmin',
-    'crispy_forms',
 ]
 INSTALLED_APPS += CBoK_APPS
 

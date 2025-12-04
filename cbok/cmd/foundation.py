@@ -154,6 +154,7 @@ class FoundationCommands:
             ["bash", "-c", f"source {self.executor}; is_ready {address}"]
         )
         if result.returncode != 0:
+            LOG.error(result.stderr)
             LOG.error("Unreachable, or not a CBoK target")
             sys.exit(1)
         elif address and not os.path.exists("foundation/address"):

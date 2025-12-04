@@ -4,7 +4,6 @@ import logging
 import threading
 
 from django.apps import apps
-import eventlet
 
 from cbok import utils as cbok_utils
 
@@ -13,8 +12,7 @@ LOG = logging.getLogger(__name__)
 
 class BatchProcessor:
 
-    def __init__(self, use_eventlet=False):
-        self.use_eventlet = use_eventlet
+    def __init__(self):
         self.initial_tasks = []
         self.periodic_tasks = []
 
@@ -54,10 +52,7 @@ class BatchProcessor:
             try:
                 task_name = f"{task_info['app']}.{task_info['name']}"
                 LOG.info(f"{task_name} spawned")
-                if self.use_eventlet:
-                    eventlet.spawn_n(task_info['func'])
-                else:
-                    threading.Thread(target=task_info['func'], daemon=True).start()
+                threading.Thread(target=task_info['func'], daemon=True).start()
             except Exception as e:
                 LOG.error(f"Failed to run initial task {task_name}: {e}")
 
@@ -80,10 +75,7 @@ class BatchProcessor:
                         time.sleep(interval)
 
                 LOG.info(f"{task_name} spawned")
-                if self.use_eventlet:
-                    eventlet.spawn_n(run_periodic)
-                else:
-                    threading.Thread(target=run_periodic, daemon=True).start()
+                threading.Thread(target=run_periodic, daemon=True).start()
 
             except Exception as e:
                 LOG.error(f"Failed to start periodic task {task_name}: {e}")

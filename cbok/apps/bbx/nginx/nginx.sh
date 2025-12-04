@@ -4,8 +4,8 @@
 
 set -ex
 
-base_path=$(python manage.py shell -c "from cbok import settings; print(settings.BASE_DIR)")
-source $base_path/utils.sh
+base_path=$(python -c "from cbok import settings; print(settings.BASE_DIR)")
+source "$base_path/utils.sh"
 
 NAMESPACE="cbok"
 target="/data/${NAMESPACE}/"
