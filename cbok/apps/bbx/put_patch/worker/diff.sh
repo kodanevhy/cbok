@@ -3,10 +3,10 @@
 set -ex
 
 
-base_path=$(python manage.py shell -c "from cbok import settings; print(settings.BASE_DIR)")
-source $base_path/utils.sh
+base_path=$(python -c "from cbok import settings; print(settings.BASE_DIR)")
+source "$base_path/utils.sh"
 
-workspace=$(python manage.py shell -c "from cbok import settings; print(settings.Workspace)")
+workspace=$(python -c "from cbok import settings; print(settings.Workspace)")
 
 function check_if_committed() {
     project_name=$1

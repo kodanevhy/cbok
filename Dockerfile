@@ -24,15 +24,15 @@ RUN yum -y install tk-devel sqlite-devel ncurses-devel \
     xz-devel libffi-devel bzip2-devel sudo wget gcc-c++ pcre pcre-devel zlib zlib-devel \
     openssl openssl-devel procps-ng net-tools file xz xz-libs patch
 
-# You can download from https://www.python.org/ftp/python/3.9.6/Python-3.9.6.tar.xz
-ADD static/Python-3.9.6.tar.xz /opt/
+# You can download from https://www.python.org/ftp/python/3.12.10/Python-3.12.10.tar.xz
+ADD static/Python-3.12.10.tar.xz /opt/
 
-RUN cd /opt/Python-3.9.6/ && \
-    ./configure --prefix=/opt/python3.9.6 --enable-optimizations && make -j$(nproc) && make altinstall && \
-    rm -f /opt/Python-3.9.6.tar.xz && rm -rf /opt/Python-3.9.6/
+RUN cd /opt/Python-3.12.10/ && \
+    ./configure --prefix=/opt/python3.12.10 --enable-optimizations && make -j$(nproc) && make altinstall && \
+    rm -f /opt/Python-3.12.10.tar.xz && rm -rf /opt/Python-3.12.10/
 
-RUN ln -sf /opt/python3.9.6/bin/python3.9 /usr/bin/python3 && \
-    ln -sf /opt/python3.9.6/bin/pip3.9 /usr/bin/pip3
+RUN ln -sf /opt/python3.12.10/bin/python3.12 /usr/bin/python3 && \
+    ln -sf /opt/python3.12.10/bin/pip3.12 /usr/bin/pip3
 
 FROM ${STAGE_SECOND_BASE_IMAGE} AS cbok
 

@@ -1,8 +1,8 @@
 #!/bin/bash
 set -ex
 
-base_path=$(python manage.py shell -c "from cbok import settings; print(settings.BASE_DIR)")
-source $base_path/utils.sh
+base_path=$(python -c "from cbok import settings; print(settings.BASE_DIR)")
+source "$base_path/utils.sh"
 
 
 function init_pod(){

@@ -51,7 +51,7 @@ def main():
     args = parser.parse_args()
 
     setup_logging(debug=args.debug)
-    LOG.info("Starting CBoK CLI (debug=%s)", args.debug)
+    LOG.debug("Starting CBoK CLI (debug=%s)", args.debug)
 
     try:
         func = getattr(args, 'func', None)
