@@ -4,7 +4,7 @@
 
 一、安装依赖
 
-宿主机推荐安装Python 3.9.6，配置虚拟环境后，在项目根目录执行如下命令。
+宿主机推荐安装Python 3.12.10，配置虚拟环境后，在项目根目录执行如下命令。
 
 ```shell
   pip3 install -r requirements.txt
