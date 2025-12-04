@@ -65,7 +65,8 @@ if [ "$remote_has_image" -eq 0 ]; then
     copy_base_image
     build_cbok
 else
-    echo CBoK image already stashed
+    echo CBoK image already stashed, rebuild cbok
+    build_cbok
 fi
 
 ssh -n root@$address "
