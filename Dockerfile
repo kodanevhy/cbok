@@ -39,7 +39,6 @@ FROM ${STAGE_SECOND_BASE_IMAGE} AS cbok
 WORKDIR /root/cbok/
 
 COPY requirements.txt .
-COPY requirements/ requirements
 RUN pip3 install -r requirements.txt
 
 COPY . .
