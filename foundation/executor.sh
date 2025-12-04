@@ -64,6 +64,9 @@ function apply_service() {
     # Waiting
     ssh -n root@"$address" "
         echo 'Waiting for pods of $service_name to be Ready ...' >> $foundation_home/log 2>&1
+        until kubectl get pod -l app='$service_name' -n cbok 2>/dev/null | grep -q -v NAME; do
+            sleep 2
+        done
         if ! kubectl wait --for=condition=Ready pod -l app='$service_name' -n cbok --timeout=300s; then
             echo 'Warning: some pods of $service_name may not be Ready in cbok' >> $foundation_home/log 2>&1
             exit 1
@@ -119,6 +122,9 @@ function remove_service() {
     # Waiting
     ssh -n root@"$address" "
         echo 'Waiting for pods of $service_name to be Ready ...' >> $foundation_home/log 2>&1
+        until kubectl get pod -l app='$service_name' -n cbok 2>/dev/null | grep -q -v NAME; do
+            sleep 2
+        done
         if ! kubectl wait --for=delete pod -l app='$service_name' -n cbok --timeout=300s; then
             echo 'Warning: some pods of $service_name may not be Ready in cbok' >> $foundation_home/log 2>&1
             exit 1
