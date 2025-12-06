@@ -210,7 +210,36 @@ function pre {
     hostnamectl set-hostname $HOSTNAME
 
     yum -y install epel-release
-    yum -y install git wget yum-utils python-pip
+    yum -y install git wget yum-utils python-pip net-tools screen
+
+    if [ -f "proxy" ]; then
+        echo "Building proxy client(go-shadowsocks2)"
+        cipher=$(cat proxy | grep cipher | awk -F "=" '{print $2}')
+        password=$(cat proxy | grep password | awk -F "=" '{print $2}')
+        vps_server=$(cat proxy | grep vps_server | awk -F "=" '{print $2}')
+        port=$(cat proxy | grep port | awk -F "=" '{print $2}')
+        chmod 777 ./shadowsocks2-linux
+        already_build=""
+        if screen -ls | grep -q "shadowsocks";then
+            echo "ss client was already rebuild before"
+        else
+            # server end:
+            #   go install github.com/shadowsocks/go-shadowsocks2@latest
+            #   screen -dmS shadowsocks /root/go/bin/go-shadowsocks2 \
+            #   -s 'ss://$cipher:$password@:$port' \
+            #   -verbose
+            screen -dmS shadowsocks ./shadowsocks2-linux \
+                -c "ss://$cipher:$password@$vps_server:$port" -verbose -socks :1080
+
+            echo "Shadowsocks started in screen session"
+            screen -ls | grep shadowsocks
+            git config --global http.proxy "socks5://127.0.0.1:1080"
+            git config --global https.proxy "socks5://127.0.0.1:1080"
+        fi
+    else
+        echo "No config found, skipping proxy build"
+    fi
+
 }
 
 function c_crictl {
@@ -326,12 +355,16 @@ function main {
 
     kubeadm config images pull --config kubeadm.yaml --kubernetes-version $VERSION
     ctr -n k8s.io images pull registry.aliyuncs.com/google_containers/pause:3.6
+    ctr -n k8s.io images delete registry.k8s.io/pause:3.6 || true
     ctr -n k8s.io images tag registry.aliyuncs.com/google_containers/pause:3.6 registry.k8s.io/pause:3.6
     kubeadm init --config kubeadm.yaml
     if [ $? -ne 0 ]; then
         echo "kubeadm init server failed" >&2
         exit 1
     fi
+
+    # To ensure calico can visit etcd
+    sleep 5
 
     mkdir -p $HOME/.kube && \
         cp -i /etc/kubernetes/admin.conf $HOME/.kube/config && \

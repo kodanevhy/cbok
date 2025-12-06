@@ -12,3 +12,4 @@ You need to download first and place into `base` directory in foundation home.
 | calico-kube-controllers-v3.24.1-amd64.tar | docker save docker.io/calico/kube-controllers:v3.24.1 -o calico-kube-controllers-v3.24.1-amd64.tar | |
 | calico-node-v3.24.1-amd64.tar | docker save docker.io/calico/node:v3.24.1 -o calico-node-v3.24.1-amd64.tar | |
 | calico-cni-v3.24.1-amd64.tar | docker save calico/cni:v3.24.1 -o calico-cni-v3.24.1-amd64.tar | |
+| shadowsocks2-linux | https://github.com/shadowsocks/go-shadowsocks2/releases/download/v0.1.5/shadowsocks2-linux.gz | ss客户端 |
