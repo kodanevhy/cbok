@@ -5,15 +5,15 @@ import sys
 from oslo_utils import strutils
 
 from cbok.cmd import args
-from cbok import utils
 
 
 LOG = logging.getLogger(__name__)
 
 
-class FoundationCommands:
+class FoundationCommands(args.BaseCommand):
 
     def __init__(self):
+        super().__init__()
         self.executor = os.path.join(
             os.path.dirname(
                 os.path.dirname(
@@ -29,33 +29,36 @@ class FoundationCommands:
         help='Running address of cbok')
     def deploy(self, address=None, mgmt_eth=None):
         """Let cbok running into product"""
-        result = utils.execute(
+        result = self.p_runner.run_command(
             ["bash", "-c", f"source {self.executor}; is_ready {address}"]
         )
-        if result.returncode == 0:
+        if result.returncode == 0 and "Already deployed" in result.stdout:
             LOG.error("CBoK is already ready")
             sys.exit(1)
 
-        LOG.info("Starting deploy CBoK base")
+        LOG.info("Detached clean host, starting deploy CBoK base")
+
+        result = self.p_runner.run_command(
+            ["bash", "-c", f"source {self.executor}; install_rsync {address}"]
+        )
+        LOG.debug(f"rsync installed to {address}")
+
         LOG.debug("Copying resource, be patient if network seems slow")
-        
+
         resource_target = "/opt/foundation/"
-        result = utils.execute(
-            ["bash", "-c", f"source {self.executor}; copy_resource_to \
-                {address} {resource_target} foundation/base"]
+        result = self.p_runner.run_command(
+            ["bash", "-c", f"source {self.executor}; copy_resource_to "
+             f"{address} {resource_target} foundation/base"]
         )
         if result.returncode != 0:
-            LOG.error(result.stderr)
             sys.exit(1)
         else:
             LOG.info("Resource copied")
 
         LOG.info("Building foundation")
-        result = utils.execute(
+        result = self.p_runner.run_command(
             ["bash", "-c", f"source {self.executor}; execute {address} {mgmt_eth}"])
         if result.returncode != 0:
-            LOG.error("Unexpected error, Please trace log remote "
-                        "workspace home for details")
             sys.exit(1)
 
         with open("foundation/address", "w+") as f:
@@ -63,9 +66,12 @@ class FoundationCommands:
         with open("cbok/apps/bbx/chrome_plugins/auto_login/client/address", "w+") as f:
             f.write(address)
 
-        LOG.info("Congradulations! deploy successfully")
+        LOG.info("Deploy successfully ;)")
 
     @args.action_description("Apply service")
+    @args.args(
+        '--dev', metavar='<dev>', default=False, required=False,
+        help="Optional. Whether to build current working branch")
     @args.args(
         '--rebuild-base', metavar='<rebuild_base>', default=False, required=False,
         help="Optional. Whether to rebuild base image of cbok service")
@@ -76,7 +82,7 @@ class FoundationCommands:
     @args.args(
         '--service', metavar='<service>', required=True,
         help='service name')
-    def apply(self, service=None, address=None, rebuild_base=False):
+    def apply(self, service=None, address=None, rebuild_base=False, dev=False):
         """Apply service"""
         if rebuild_base and service != "cbok":
             LOG.error("--rebuild-base only used for cbok service")
@@ -92,11 +98,11 @@ class FoundationCommands:
                           "its success will be reflaged")
                 sys.exit(1)
 
-        result = utils.execute(
-            ["bash", "-c", f"source {self.executor}; is_ready {address}"]
+        result=self.p_runner.run_command(
+            ["bash", "-c",
+             f"source {self.executor}; is_ready {address}"]
         )
-        if result.returncode != 0:
-            LOG.error("Unreachable, or not a CBoK target")
+        if result.returncode == 0 and "Already deployed" in result.stdout:
             sys.exit(1)
         elif address and not os.path.exists("foundation/address"):
             LOG.info("Regenerate the CBoK success flag")
@@ -109,25 +115,17 @@ class FoundationCommands:
 
         LOG.info(f"Applying {service} to {address}")
 
-        result = utils.execute(
-            ["bash", "-c",f"source {self.executor}; apply_service {address} {service} {strutils.bool_from_string(rebuild_base)}"]
+        result = self.p_runner.run_command(
+            ["bash", "-c",
+            f"source {self.executor}; apply_service "
+            f"{address} {service} {strutils.bool_from_string(rebuild_base)} "
+            f"{dev}"]
         )
 
-        if "Failed to copy resource" in result.stderr:
-            LOG.error(result.stderr)
-            LOG.error("Failed to copy resource")
-            sys.exit(1)
-        elif "Not allowed: base" in result.stderr:
-            LOG.error(result.stderr)
-            LOG.error("Not allowed: base")
+        if result.returncode != 0:
             sys.exit(1)
         elif result.returncode == 0 and "APPLY SUCCESS" in result.stdout:
             LOG.info("Success")
-        else:
-            LOG.error(result.stderr)
-            LOG.error("Unexpected error, Please trace log remote "
-                      "workspace home for details")
-            sys.exit(1)
 
     @args.action_description("Uninstall service")
     @args.args(
@@ -150,12 +148,10 @@ class FoundationCommands:
                           "its success will be reflaged")
                 sys.exit(1)
 
-        result = utils.execute(
+        result = self.p_runner.run_command(
             ["bash", "-c", f"source {self.executor}; is_ready {address}"]
         )
-        if result.returncode != 0:
-            LOG.error(result.stderr)
-            LOG.error("Unreachable, or not a CBoK target")
+        if result.returncode == 0 and "Already deployed" in result.stdout:
             sys.exit(1)
         elif address and not os.path.exists("foundation/address"):
             LOG.info("Regenerate the CBoK success flag")
@@ -168,18 +164,11 @@ class FoundationCommands:
 
         LOG.info(f"Removing {service} from {address}")
 
-        result = utils.execute(
+        result = self.p_runner.run_command(
             ["bash", "-c",f"source {self.executor}; remove_service {address} {service}"]
         )
 
-        if "Not allowed: base" in result.stderr:
-            LOG.error(result.stderr)
-            LOG.error("Not allowed: base")
+        if result.returncode != 0:
             sys.exit(1)
         elif result.returncode == 0 and "REMOVE SUCCESS" in result.stdout:
             LOG.info("Success")
-        else:
-            LOG.error(result.stderr)
-            LOG.error("Unexpected error, Please trace log remote "
-                      "workspace home for details")
-            sys.exit(1)

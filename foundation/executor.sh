@@ -8,12 +8,11 @@ source "$base_path/utils.sh"
 
 function is_ready() {
     address=$1
-    pods=$(ssh -n root@$address "kubectl get nodes")
-    if [ $? -eq 0 ];then
-        echo Already deployed
-        exit 0
+    pods=$(ssh -n root@$address "kubectl get pods" || true)
+    if [ -n "$pods" ];then
+        echo Already deployed, or not a clean env
     fi
-    exit 1
+    echo Not deployed
 }
 
 
@@ -21,6 +20,7 @@ function apply_service() {
     local address="$1"
     local service_name="$2"
     local rebuild_cbok_base="$3"
+    local dev="$4"
     local foundation_home="/opt/foundation"
 
     if [[ "$service_name" = "base" ]];then
@@ -45,7 +45,7 @@ function apply_service() {
     if [ -d "$hook_dir" ] && [ -f "$hook_dir/apply/pre.sh" ]; then
         echo "Running pre-hook for $service_name"
 
-        pre_output=$(bash "$hook_dir/apply/pre.sh" "$address" "$rebuild_cbok_base")
+        pre_output=$(bash "$hook_dir/apply/pre.sh" "$address" "$rebuild_cbok_base" "$dev")
         pre_status=$?
 
         if [[ "$pre_output" =~ "CBOK_REBUILD" ]]; then
@@ -60,11 +60,11 @@ function apply_service() {
 
     # Installation
     ssh -n root@"$address" "
-        echo 'Applying manifests for $service_name ...' >> $foundation_home/log 2>&1
+        echo 'Applying manifests for $service_name ...'
         sh -c 'for f in $foundation_home/$service_name/*.yaml; do
-            echo \"Applying \$f ...\" >> $foundation_home/log 2>&1
-            if ! kubectl apply -f \"\$f\" >> $foundation_home/log 2>&1; then
-                echo \"Failed to apply \$f\" >> $foundation_home/log 2>&1
+            echo \"Applying \$f ...\"
+            if ! kubectl apply -f \"\$f\"; then
+                echo \"Failed to apply \$f\"
                 exit 1
             fi
         done'
@@ -72,12 +72,12 @@ function apply_service() {
 
     # Waiting
     ssh -n root@"$address" "
-        echo 'Waiting for pods of $service_name to be Ready ...' >> $foundation_home/log 2>&1
+        echo 'Waiting for pods of $service_name to be Ready ...'
         until kubectl get pod -l app='$service_name' -n cbok 2>/dev/null | grep -q -v NAME; do
             sleep 2
         done
         if ! kubectl wait --for=condition=Ready pod -l app='$service_name' -n cbok --timeout=300s; then
-            echo 'Warning: some pods of $service_name may not be Ready in cbok' >> $foundation_home/log 2>&1
+            echo 'Warning: some pods of $service_name may not be Ready in cbok'
             exit 1
         fi
     "
@@ -93,18 +93,18 @@ function apply_service() {
 
     # Waiting again, the service maybe upgraded and trigger the pods rebuild
     ssh -n root@"$address" "
-        echo 'Waiting for pods of $service_name to be Ready ...' >> $foundation_home/log 2>&1
+        echo 'Waiting for pods of $service_name to be Ready ...'
         until kubectl get pod -l app='$service_name' -n cbok 2>/dev/null | grep -q -v NAME; do
             sleep 2
         done
         if ! kubectl wait --for=condition=Ready pod -l app='$service_name' -n cbok --timeout=300s; then
-            echo 'Warning: some pods of $service_name may not be Ready in cbok' >> $foundation_home/log 2>&1
+            echo 'Warning: some pods of $service_name may not be Ready in cbok'
             exit 1
         fi
     "
 
     ssh -n root@"$address" "
-        echo 'Service $service_name applied successfully.' >> $foundation_home/log 2>&1
+        echo 'Service $service_name applied successfully.'
     "
     echo "APPLY SUCCESS"
 }
@@ -130,11 +130,11 @@ function remove_service() {
 
     # Deletion
     ssh -n root@"$address" "
-        echo 'Deleting manifests for $service_name ...' >> $foundation_home/log 2>&1
+        echo 'Deleting manifests for $service_name ...'
         sh -c 'for f in $foundation_home/$service_name/*.yaml; do
-            echo \"Deleting \$f ...\" >> $foundation_home/log 2>&1
-            if ! kubectl delete -f \"\$f\" >> $foundation_home/log 2>&1; then
-                echo \"Failed to delete \$f\" >> $foundation_home/log 2>&1
+            echo \"Deleting \$f ...\"
+            if ! kubectl delete -f \"\$f\"; then
+                echo \"Failed to delete \$f\"
                 exit 1
             fi
         done'
@@ -142,12 +142,12 @@ function remove_service() {
 
     # Waiting
     ssh -n root@"$address" "
-        echo 'Waiting for pods of $service_name to be Ready ...' >> $foundation_home/log 2>&1
+        echo 'Waiting for pods of $service_name to be Ready ...'
         until kubectl get pod -l app='$service_name' -n cbok 2>/dev/null | grep -q -v NAME; do
             sleep 2
         done
         if ! kubectl wait --for=delete pod -l app='$service_name' -n cbok --timeout=300s; then
-            echo 'Warning: some pods of $service_name may not be Ready in cbok' >> $foundation_home/log 2>&1
+            echo 'Warning: some pods of $service_name may not be Ready in cbok'
             exit 1
         fi
     "
@@ -163,6 +163,19 @@ function remove_service() {
 
     echo "REMOVE SUCCESS"
 }
+
+
+function install_rsync() {
+    local address=$1
+
+    ssh root@$address "
+        rm -f /etc/yum.repos.d/*
+        curl -o /etc/yum.repos.d/CentOS-Base.repo \
+            https://mirrors.aliyun.com/repo/Centos-7.repo
+        yum makecache
+        yum -y install rsync"
+}
+
 
 function copy_resource_to() {
     local address=$1
@@ -185,5 +198,5 @@ function copy_resource_to() {
 function execute() {
     floating_address="$1"
     mgmt_eth="$2"
-    ssh -n root@$floating_address "cd /opt/foundation/base; bash kubernetes.sh $mgmt_eth >> /opt/foundation/log 2>&1"
+    ssh -n root@$floating_address "cd /opt/foundation/base; bash kubernetes.sh $mgmt_eth"
 }

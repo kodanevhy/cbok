@@ -6,7 +6,6 @@ from cbok.apps.bbx.put_patch import main as put_patch
 from cbok.apps.bbx.ut import main as ut
 from cbok.cmd import args
 from cbok import exception
-from cbok import utils
 
 LOG = logging.getLogger(__name__)
 
@@ -46,17 +45,19 @@ class PatchCommands:
             raise
 
 
-class BinCommands:
+class BinCommands(args.BaseCommand):
 
-    @staticmethod
-    def _get_version(cmd):
+    def __init__(self):
+        super().__init__()
+
+    def _get_version(self, cmd):
         try:
-            result = utils.execute(cmd)
-            output = result.stdout.strip()
-            stderr = result.stderr.strip()
-            if stderr:
+            result = self.p_runner.run_command(cmd)
+            if result.stderr:
+                stderr = result.stderr.strip()
                 return stderr.splitlines()[0]
-            if output:
+            if result.stdout:
+                output = result.stdout.strip()
                 return output.splitlines()[0]
         except FileNotFoundError:
             return ""
@@ -64,8 +65,7 @@ class BinCommands:
             return ""
         return ""
 
-    @staticmethod
-    def _find_all_pythons():
+    def _find_all_pythons(self):
         paths = os.environ.get("PATH", "").split(os.pathsep)
         seen = set()
         python_versions = {}
@@ -80,15 +80,14 @@ class BinCommands:
                     if full_path in seen or not os.access(full_path, os.X_OK):
                         continue
                     seen.add(full_path)
-                    version = BinCommands._get_version([full_path, "--version"])
+                    version = self._get_version([full_path, "--version"])
                     if version:
                         python_versions[full_path] = version
         return python_versions
 
-    @staticmethod
-    def _find_go():
+    def _find_go(self):
         go_path = shutil.which("go")
-        version = BinCommands._get_version([go_path, "version"]) if go_path else ""
+        version = self._get_version([go_path, "version"]) if go_path else ""
         return (go_path, version if version else "not found")
 
     def usage(self):
@@ -134,7 +133,7 @@ class BinCommands:
         elif venv_path and not skip_venv:
             raise exception.ShouldNotVirtualEnv()
 
-        result = utils.execute(["which", binary])
+        result = self.p_runner.run_command(["which", binary])
         if result.returncode == 0:
             abs_path = result.stdout.strip()
             print(f"{binary}: {abs_path}")
