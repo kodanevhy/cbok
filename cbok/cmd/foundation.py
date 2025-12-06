@@ -34,7 +34,7 @@ class FoundationCommands(args.BaseCommand):
         )
         if result.returncode == 0 and "Already deployed" in result.stdout:
             LOG.error("CBoK is already ready")
-            # sys.exit(1)
+            sys.exit(1)
 
         LOG.info("Detached clean host, starting deploy CBoK base")
 
