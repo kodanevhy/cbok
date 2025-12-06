@@ -34,7 +34,7 @@ class FoundationCommands(args.BaseCommand):
         )
         if result.returncode == 0 and "Already deployed" in result.stdout:
             LOG.error("CBoK is already ready")
-            sys.exit(1)
+            # sys.exit(1)
 
         LOG.info("Detached clean host, starting deploy CBoK base")
 
@@ -102,7 +102,8 @@ class FoundationCommands(args.BaseCommand):
             ["bash", "-c",
              f"source {self.executor}; is_ready {address}"]
         )
-        if result.returncode == 0 and "Already deployed" in result.stdout:
+        if result.returncode == 0 and "Not deployed" in result.stdout:
+            LOG.error("Not a CBoK target")
             sys.exit(1)
         elif address and not os.path.exists("foundation/address"):
             LOG.info("Regenerate the CBoK success flag")
@@ -151,7 +152,8 @@ class FoundationCommands(args.BaseCommand):
         result = self.p_runner.run_command(
             ["bash", "-c", f"source {self.executor}; is_ready {address}"]
         )
-        if result.returncode == 0 and "Already deployed" in result.stdout:
+        if result.returncode == 0 and "Not deployed" in result.stdout:
+            LOG.error("Not a CBoK target")
             sys.exit(1)
         elif address and not os.path.exists("foundation/address"):
             LOG.info("Regenerate the CBoK success flag")

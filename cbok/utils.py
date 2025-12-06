@@ -156,6 +156,13 @@ class UnifiedProcessRunner:
                         LOG.info(f"[{self.log_prefix}] {line}")
                 proc.stdout.close()
 
+            # WARNING: DONOT use `sh/bash -c` to call remote in first shell
+            # Now we can capture the first shell output called by Python,
+            # but if the first shell still calls the remote shell by using
+            # `sh/bash -c`, we cannot record the exactly execution time of
+            # command in remote shell, because the remote script returned
+            # output until all the command finished. Unless we can impl the
+            # same thread catcher with Python from here to first shell
             output_thread = threading.Thread(target=read_output)
             output_thread.daemon = True
             output_thread.start()

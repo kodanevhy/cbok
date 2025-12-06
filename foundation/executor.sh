@@ -8,11 +8,12 @@ source "$base_path/utils.sh"
 
 function is_ready() {
     address=$1
-    pods=$(ssh -n root@$address "kubectl get pods" || true)
+    pods=$(ssh -n root@$address "kubectl get pods -A")
     if [ -n "$pods" ];then
-        echo Already deployed, or not a clean env
+        echo Already deployed
+    else
+        echo Not deployed
     fi
-    echo Not deployed
 }
 
 
@@ -60,14 +61,17 @@ function apply_service() {
 
     # Installation
     ssh -n root@"$address" "
-        echo 'Applying manifests for $service_name ...'
-        sh -c 'for f in $foundation_home/$service_name/*.yaml; do
-            echo \"Applying \$f ...\"
-            if ! kubectl apply -f \"\$f\"; then
-                echo \"Failed to apply \$f\"
+        echo Applying manifests for $service_name ...
+        for f in $foundation_home/$service_name/*.yaml; do
+            if [ $service_name = "cbok" ] && [[ "\$f" =~ "03-job-mariadb.yaml" ]]; then
+                continue
+            fi
+            echo "Applying \$f ..."
+            if ! kubectl apply -f "\$f"; then
+                echo "Failed to apply \$f"
                 exit 1
             fi
-        done'
+        done
     "
 
     # Waiting
@@ -90,18 +94,6 @@ function apply_service() {
             exit 1
         fi
     fi
-
-    # Waiting again, the service maybe upgraded and trigger the pods rebuild
-    ssh -n root@"$address" "
-        echo 'Waiting for pods of $service_name to be Ready ...'
-        until kubectl get pod -l app='$service_name' -n cbok 2>/dev/null | grep -q -v NAME; do
-            sleep 2
-        done
-        if ! kubectl wait --for=condition=Ready pod -l app='$service_name' -n cbok --timeout=300s; then
-            echo 'Warning: some pods of $service_name may not be Ready in cbok'
-            exit 1
-        fi
-    "
 
     ssh -n root@"$address" "
         echo 'Service $service_name applied successfully.'
@@ -130,22 +122,25 @@ function remove_service() {
 
     # Deletion
     ssh -n root@"$address" "
-        echo 'Deleting manifests for $service_name ...'
-        sh -c 'for f in $foundation_home/$service_name/*.yaml; do
-            echo \"Deleting \$f ...\"
-            if ! kubectl delete -f \"\$f\"; then
-                echo \"Failed to delete \$f\"
+        set -x
+        echo Deleting manifests for $service_name ...
+        for f in $foundation_home/$service_name/*.yaml; do
+            echo Deleting \$f ...
+            output=\$(kubectl delete -f \$f 2>&1 || true)
+            if [[ \$output =~ \"not found\" ]]; then
+                echo It already doesn\'t exist any more
+            elif [[ \$output =~ \"deleted\" ]]; then
+                echo Delete success
+            else
+                echo Failed to delete \$f
                 exit 1
             fi
-        done'
+        done
     "
 
     # Waiting
     ssh -n root@"$address" "
-        echo 'Waiting for pods of $service_name to be Ready ...'
-        until kubectl get pod -l app='$service_name' -n cbok 2>/dev/null | grep -q -v NAME; do
-            sleep 2
-        done
+        echo 'Waiting for pods of $service_name to be deleted ...'
         if ! kubectl wait --for=delete pod -l app='$service_name' -n cbok --timeout=300s; then
             echo 'Warning: some pods of $service_name may not be Ready in cbok'
             exit 1
