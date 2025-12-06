@@ -4,6 +4,7 @@ set -ex
 
 address=$1
 rebuild_base_image=$2
+dev=$3
 foundation_home="/opt/foundation"
 
 
@@ -34,7 +35,12 @@ function copy_base_image() {
 
 
 function build_cbok {
-    current_branch=$(git rev-parse --abbrev-ref HEAD)
+    current_branch=""
+    if [ "$dev" = "True" ]; then
+        current_branch=$(git rev-parse --abbrev-ref HEAD)
+    else
+        current_branch="master"
+    fi
     ssh -n root@$address "
         set -ex
         docker load -i $foundation_home/cbok/cbok-base-amd64.tar
@@ -47,6 +53,14 @@ function build_cbok {
         ctr -n k8s.io i import $foundation_home/cbok/cbok-amd64.tar
     "
 }
+
+mariadb=$(ssh -n root@$address "
+    kubectl get pod -A | grep mariadb || true
+")
+if [ ! -n "$mariadb" ];then
+    echo "MariaDB should be applied first"
+    exit 1
+fi
 
 if [ "$rebuild_base_image" = "True" ]; then
     remote_base_tar="$foundation_home/cbok/cbok-base-amd64.tar"

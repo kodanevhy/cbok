@@ -31,7 +31,7 @@ function redo {
     command=$1
     timeout=$2
     echo "Executing sub task: $command"
-    if [ -z $timeout ];then
+    if [ -z "$timeout" ];then
         timeout=$TASK_TIMEOUT
     fi
     cmd=(timeout -s SIGKILL "$timeout" $command)
@@ -110,7 +110,7 @@ function check_net {
         echo "Not like IPv4: $HOST_IP" >&2
         exit 1
     fi
-    local_ip=$(ifconfig -a|grep inet|grep -v 127.0.0.1|grep -v inet6|awk '{print $2}')
+    local_ip=$(ip a|grep inet|grep -v 127.0.0.1|grep -v inet6|awk '{print $2}'|cut -d'/' -f1)
     if [[ $local_ip =~ $HOST_IP ]]; then
         ping -c 3 -w 3 119.29.29.29 || rc119=$?
         rc119=${rc119:-0}
@@ -198,7 +198,7 @@ function pre {
 
     export HOSTNAME=$HOSTNAME
     host_exists=$(cat /etc/hosts | grep "$HOST_IP $HOSTNAME" || true)
-    if [ -z $host_exists ];then
+    if [ -z "$host_exists" ];then
         echo $HOST_IP $HOSTNAME >> /etc/hosts
     fi
     echo "nameserver 119.29.29.29" > /etc/resolv.conf
@@ -209,7 +209,8 @@ function pre {
     pre_ipvsadm
     hostnamectl set-hostname $HOSTNAME
 
-    yum -y install git wget
+    yum -y install epel-release
+    yum -y install git wget yum-utils python-pip
 }
 
 function c_crictl {
@@ -267,6 +268,9 @@ function ensure_kubeadm_ip {
     if [ -n "$exists" ];then
         return
     fi
+    pip install "PyYAML<6.0" -i https://pypi.tuna.tsinghua.edu.cn/simple \
+        --trusted-host pypi.tuna.tsinghua.edu.cn
+
     py_code=$(cat << EOF
 import yaml
 
