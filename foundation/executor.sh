@@ -40,10 +40,19 @@ function apply_service() {
 
     local hook_dir="foundation/$service_name/hook"
 
+    pre_to_post=""
     # Pre hook
     if [ -d "$hook_dir" ] && [ -f "$hook_dir/apply/pre.sh" ]; then
         echo "Running pre-hook for $service_name"
-        if ! bash "$hook_dir/apply/pre.sh" "$address" "$rebuild_cbok_base"; then
+
+        pre_output=$(bash "$hook_dir/apply/pre.sh" "$address" "$rebuild_cbok_base")
+        pre_status=$?
+
+        if [[ "$pre_output" =~ "CBOK_REBUILD" ]]; then
+            pre_to_post="CBOK_REBUILD"
+        fi
+
+        if [ $pre_status -ne 0 ]; then
             echo "Applying service pre-hook failed for $service_name"
             exit 1
         fi
@@ -76,11 +85,23 @@ function apply_service() {
     # Post hook
     if [ -d "$hook_dir" ] && [ -f "$hook_dir/apply/post.sh" ]; then
         echo "Running post-hook for $service_name"
-        if ! bash "$hook_dir/apply/post.sh" "$address"; then
+        if ! bash "$hook_dir/apply/post.sh" "$address" "$pre_to_post"; then
             echo "Applying service post-hook failed for $service_name"
             exit 1
         fi
     fi
+
+    # Waiting again, the service maybe upgraded and trigger the pods rebuild
+    ssh -n root@"$address" "
+        echo 'Waiting for pods of $service_name to be Ready ...' >> $foundation_home/log 2>&1
+        until kubectl get pod -l app='$service_name' -n cbok 2>/dev/null | grep -q -v NAME; do
+            sleep 2
+        done
+        if ! kubectl wait --for=condition=Ready pod -l app='$service_name' -n cbok --timeout=300s; then
+            echo 'Warning: some pods of $service_name may not be Ready in cbok' >> $foundation_home/log 2>&1
+            exit 1
+        fi
+    "
 
     ssh -n root@"$address" "
         echo 'Service $service_name applied successfully.' >> $foundation_home/log 2>&1
