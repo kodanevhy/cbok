@@ -72,7 +72,7 @@ def commit_changes(project):
 
     files = [json.loads(line) for line in result.stdout.splitlines()]
     for file in files:
-        file_abs = os.path.join(settings.Workspace, 'PycharmProjects',
+        file_abs = os.path.join(settings.Workspace, 'Cursor',
                                 'es', project, file["path"])
         file["path"] = file_abs
 

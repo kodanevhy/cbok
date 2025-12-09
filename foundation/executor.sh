@@ -8,7 +8,7 @@ source "$base_path/utils.sh"
 
 function is_ready() {
     address=$1
-    pods=$(ssh -n root@$address "kubectl get pods -A")
+    pods=$(ssh -n root@$address "kubectl get pods -A" || true)
     if [ -n "$pods" ];then
         echo Already deployed
     else

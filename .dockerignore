@@ -27,3 +27,4 @@ __pycache__/
 log/
 CBoK.egg-info/
 cbok-base-amd64.tar
+*.pyc

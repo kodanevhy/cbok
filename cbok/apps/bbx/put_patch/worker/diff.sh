@@ -11,7 +11,7 @@ workspace=$(python -c "from cbok import settings; print(settings.Workspace)")
 function check_if_committed() {
     project_name=$1
     # Now we only support project from es.
-    pushd $workspace/PycharmProjects/es/$project_name > /dev/null
+    pushd $workspace/Cursor/es/$project_name > /dev/null
 
     output=$(git status)
     popd > /dev/null
@@ -26,7 +26,7 @@ function get_diff() {
     project_name=$1
     check_if_committed $project_name
 
-    pushd $workspace/PycharmProjects/es/$project_name > /dev/null
+    pushd $workspace/Cursor/es/$project_name > /dev/null
 
     git show --name-status --pretty="" | while read status oldpath newpath; do
         if [ -z "$status" ]; then
