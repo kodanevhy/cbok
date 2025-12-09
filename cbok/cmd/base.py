@@ -2,9 +2,10 @@ import argparse
 import logging
 import os
 import sys
-from cbok import settings
 from cbok.cmd import bbx
 from cbok.cmd import foundation
+from cbok import utils as cbok_utils
+
 
 LOG = logging.getLogger("cbok-cli")
 
@@ -25,7 +26,7 @@ def setup_logging(debug=False):
 
 
 def main():
-    assert os.getcwd().lower() == settings.BASE_DIR.lower()
+    os.chdir(cbok_utils.assert_cbok_home())
 
     parser = argparse.ArgumentParser(prog="cbok", description="CBoK CLI")
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')

@@ -6,6 +6,8 @@ import sys
 import threading
 
 from cbok import batch
+from cbok import utils as cbok_utils
+
 
 LOG = logging.getLogger()
 LOG.setLevel(logging.INFO)
@@ -26,6 +28,8 @@ if not LOG.handlers:
 
 
 def main():
+    os.chdir(cbok_utils.assert_cbok_home())
+
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cbok.settings')
     try:
         from django.core.management import execute_from_command_line

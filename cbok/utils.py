@@ -197,3 +197,22 @@ class UnifiedProcessRunner:
         except Exception as e:
             LOG.error(f"Unexpected error: {e}")
             raise
+
+
+def assert_cbok_home():
+    workspace = settings.Workspace
+    cbok_home = os.path.join(workspace, "Cursor", "me", "cbok")
+    if not os.path.exists(cbok_home):
+        print(f"CBoK command required: please re-define workspace root in "
+                f"settings.Workspace, and build source tree first "
+                f"and put CBoK into {os.path.dirname(cbok_home)}:")
+        print(f"*mkdir -p {os.path.dirname(cbok_home)}*")
+        sys.exit(1)
+
+    return cbok_home
+
+
+def assert_tree(path):
+    workspace = settings.Workspace
+    abs_path = os.path.join(workspace, path)
+    return True if os.path.exists(abs_path) else False

@@ -4,7 +4,6 @@ import sys
 
 from oslo_utils import fileutils
 
-import cbok.utils
 from cbok.apps.bbx import exception
 from cbok import settings
 from cbok import utils as cbok_utils
@@ -40,7 +39,7 @@ def run(project, command):
                           "worker.sh")
 
     workspace = settings.Workspace
-    project_home = os.path.join(workspace, 'PycharmProjects', 'es', project)
+    project_home = os.path.join(workspace, 'Cursor', 'es', project)
 
     result = cbok_utils.execute(
         ["bash", "-c", f"source {worker}; is_virtual_env_ready {project}"])

@@ -27,3 +27,4 @@ log/
 CBoK.egg-info/
 Python-3.9.6.tar.xz
 cbok-base-amd64.tar
+*.pyc

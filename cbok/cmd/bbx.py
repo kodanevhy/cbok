@@ -1,11 +1,15 @@
 import logging
 import os
 import shutil
+import sys
 
 from cbok.apps.bbx.put_patch import main as put_patch
 from cbok.apps.bbx.ut import main as ut
 from cbok.cmd import args
 from cbok import exception
+from cbok import settings
+from cbok import utils as cbok_utils
+
 
 LOG = logging.getLogger(__name__)
 
@@ -26,6 +30,12 @@ class PatchCommands:
     def put(self, address=None, service=None, node=None):
         """Upload the patch changes to a running env"""
         try:
+            project = put_patch.service_supported[service]["package"]
+            path = f"Cursor/es/{project}"
+            if not cbok_utils.assert_tree(path):
+                LOG.error(f"If you are es member, please claim project "
+                          f"{os.path.join(settings.Workspace, path)}")
+                sys.exit(1)
             put_patch.run(address, service, node)
         except Exception:
             raise
@@ -40,6 +50,11 @@ class PatchCommands:
     def ut(self, project, tox_command):
         """Solution of unit test """
         try:
+            path = f"Cursor/es/{project}"
+            if not cbok_utils.assert_tree(path):
+                LOG.error(f"If you are es member, please claim project "
+                          f"{os.path.join(settings.Workspace, path)}")
+                sys.exit(1)
             ut.run(project, tox_command)
         except Exception:
             raise

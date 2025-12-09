@@ -32,7 +32,7 @@ CORS_ORIGIN_ALLOW_ALL = True
 
 # Application definition
 CBoK_APPS = [
-    'cbok.apps.bbx.apps.BbxConfig',  # 百宝箱
+    'cbok.apps.bbx.apps.BbxConfig',
     'cbok.apps.user',
     'cbok.apps.alert',
 ]
@@ -164,7 +164,7 @@ LOGGING = {
     },
     'handlers': {
         'console': {
-            'level': 'DEBUG',   # 记录DEBUG及以上
+            'level': 'DEBUG',   # Recode DEBUG and above
             # that means once we are in product, you should trace the log in
             # log file.
             'filters': ['require_debug_true'],
@@ -172,7 +172,7 @@ LOGGING = {
             'formatter': 'standard'
         },
         'default': {
-            'level': 'INFO',    # 记录INFO、WARNING及以上
+            'level': 'INFO',    # Record INFO, WARNING and above
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': os.path.join(BASE_LOG_DIR, 'info.log'),
             'maxBytes': 1024 * 1024 * 50,
@@ -181,7 +181,7 @@ LOGGING = {
             'encoding': 'utf-8',
         },
         'error': {
-            'level': 'ERROR',   # 记录ERROR、FATAL、EXCEPTION等
+            'level': 'ERROR',   # Record ERROR, FATAL, EXCEPTION
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': os.path.join(BASE_LOG_DIR, 'error.log'),
             'maxBytes': 1024 * 1024 * 50,

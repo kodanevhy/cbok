@@ -20,6 +20,37 @@ class FoundationCommands(args.BaseCommand):
                     os.path.dirname(os.path.abspath(__file__)))),
                     "foundation/executor.sh")
 
+    def _check_and_reflag_success(self, address_arg):
+        stashed_address = None
+
+        try:
+            with open("foundation/address", "r") as f:
+                stashed_address=f.readline()
+                address = stashed_address
+        except FileNotFoundError:
+            if not address_arg:
+                LOG.error("No CBoK found in foundation/address, if you "
+                        "confirm that cluster is ready, please use --address and "
+                        "its success will be reflaged")
+                sys.exit(1)
+
+        if address_arg:
+            address = address_arg
+
+        result = self.p_runner.run_command(
+            ["bash", "-c", f"source {self.executor}; is_ready {address}"]
+        )
+        if "Not deployed" in result.stdout:
+            LOG.error(f"Not a CBoK target: {address}")
+            sys.exit(1)
+
+        if address != stashed_address:
+            LOG.info(f"Regenerate the CBoK success flag: {address}")
+            with open("foundation/address", "w+") as f:
+                f.write(address)
+
+        return address
+
     @args.action_description("Let cbok running into product")
     @args.args(
         '--mgmt-eth', metavar='<mgmt_eth>', required=True,
@@ -88,27 +119,7 @@ class FoundationCommands(args.BaseCommand):
             LOG.error("--rebuild-base only used for cbok service")
             sys.exit(1)
 
-        try:
-            with open("foundation/address", "r") as f:
-                address=f.readline()
-        except FileNotFoundError:
-            if not address:
-                LOG.error("No CBoK found in foundation/address, if you "
-                          "confirm that cluster is ready, please use --address and "
-                          "its success will be reflaged")
-                sys.exit(1)
-
-        result=self.p_runner.run_command(
-            ["bash", "-c",
-             f"source {self.executor}; is_ready {address}"]
-        )
-        if result.returncode == 0 and "Not deployed" in result.stdout:
-            LOG.error("Not a CBoK target")
-            sys.exit(1)
-        elif address and not os.path.exists("foundation/address"):
-            LOG.info("Regenerate the CBoK success flag")
-            with open("foundation/address", "w+") as f:
-                f.write(address)
+        address = self._check_and_reflag_success(address)
 
         if not os.path.isdir(os.path.join("foundation", service)):
             LOG.error(f"No such service: {service}")
@@ -122,6 +133,13 @@ class FoundationCommands(args.BaseCommand):
             f"{address} {service} {strutils.bool_from_string(rebuild_base)} "
             f"{dev}"]
         )
+
+        if service == "cbok":
+            LOG.info("Re-flagging auto login plugin address")
+            with open(
+                "cbok/apps/bbx/chrome_plugins/auto_login/client/address",
+                "w+") as f:
+                f.write(address)
 
         if result.returncode != 0:
             sys.exit(1)
@@ -139,26 +157,7 @@ class FoundationCommands(args.BaseCommand):
     def remove(self, service=None, address=None):
         """Uninstall service"""
 
-        try:
-            with open("foundation/address", "r") as f:
-                address=f.readline()
-        except FileNotFoundError:
-            if not address:
-                LOG.error("No CBoK found in foundation/address, if you "
-                          "confirm that cluster is ready, please use --address and "
-                          "its success will be reflaged")
-                sys.exit(1)
-
-        result = self.p_runner.run_command(
-            ["bash", "-c", f"source {self.executor}; is_ready {address}"]
-        )
-        if result.returncode == 0 and "Not deployed" in result.stdout:
-            LOG.error("Not a CBoK target")
-            sys.exit(1)
-        elif address and not os.path.exists("foundation/address"):
-            LOG.info("Regenerate the CBoK success flag")
-            with open("foundation/address", "w+") as f:
-                f.write(address)
+        address = self._check_and_reflag_success(address)
 
         if not os.path.isdir(os.path.join("foundation", service)):
             LOG.error(f"No such service: {service}")
