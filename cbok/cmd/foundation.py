@@ -127,6 +127,7 @@ class FoundationCommands(args.BaseCommand):
 
         LOG.info(f"Applying {service} to {address}")
 
+        dev = strutils.bool_from_string(dev)
         result = self.p_runner.run_command(
             ["bash", "-c",
             f"source {self.executor}; apply_service "
