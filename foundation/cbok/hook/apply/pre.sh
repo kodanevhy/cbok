@@ -78,47 +78,46 @@ remote_has_image=$(ssh -n root@$address "ctr -n k8s.io images ls | grep -q 'dock
 if [ "$remote_has_image" -eq 0 ]; then
     copy_base_image
     build_cbok
-
-    ssh -n root@$address "
-        kubectl apply -f $foundation_home/cbok/03-job-mariadb.yaml
-    "
-    NAMESPACE=cbok
-    JOB_NAME=cbok-db-init
-
-    echo "Waiting for Job $JOB_NAME to complete..."
-    timeout=300
-    interval=5
-    elapsed=0
-    while true; do
-        if ! ssh -n root@$address "kubectl get job -n $NAMESPACE $JOB_NAME &> /dev/null"; then
-            sleep 3
-            continue
-        fi
-        status=$(ssh -n root@$address "kubectl get job -n $NAMESPACE $JOB_NAME -o jsonpath='{.status.succeeded}'")
-        if [[ "$status" == "1" ]]; then
-            echo "Job $JOB_NAME completed successfully."
-            break
-        fi
-
-        failed=$(ssh -n root@$address "kubectl get job -n $NAMESPACE $JOB_NAME -o jsonpath='{.status.failed}'")
-        if [[ "$failed" != "" && "$failed" -ge 1 ]]; then
-            echo "Job $JOB_NAME failed."
-            exit 1
-        fi
-
-        sleep $interval
-        elapsed=$((elapsed + interval))
-        if [[ $elapsed -ge $timeout ]]; then
-            echo "Timeout waiting for Job $JOB_NAME"
-            exit 1
-        fi
-    done
-
-    ssh -n root@$address "kubectl delete job -n $NAMESPACE $JOB_NAME"
-    echo "Job $JOB_NAME deleted."
-
 else
     echo CBoK image already stashed, rebuild cbok
     build_cbok
     echo CBOK_REBUILD
 fi
+
+ssh -n root@$address "
+    kubectl apply -f $foundation_home/cbok/03-job-mariadb.yaml
+"
+NAMESPACE=cbok
+JOB_NAME=cbok-db-init
+
+echo "Waiting for Job $JOB_NAME to complete..."
+timeout=300
+interval=5
+elapsed=0
+while true; do
+    if ! ssh -n root@$address "kubectl get job -n $NAMESPACE $JOB_NAME &> /dev/null"; then
+        sleep 3
+        continue
+    fi
+    status=$(ssh -n root@$address "kubectl get job -n $NAMESPACE $JOB_NAME -o jsonpath='{.status.succeeded}'")
+    if [[ "$status" == "1" ]]; then
+        echo "Job $JOB_NAME completed successfully."
+        break
+    fi
+
+    failed=$(ssh -n root@$address "kubectl get job -n $NAMESPACE $JOB_NAME -o jsonpath='{.status.failed}'")
+    if [[ "$failed" != "" && "$failed" -ge 1 ]]; then
+        echo "Job $JOB_NAME failed."
+        exit 1
+    fi
+
+    sleep $interval
+    elapsed=$((elapsed + interval))
+    if [[ $elapsed -ge $timeout ]]; then
+        echo "Timeout waiting for Job $JOB_NAME"
+        exit 1
+    fi
+done
+
+ssh -n root@$address "kubectl delete job -n $NAMESPACE $JOB_NAME"
+echo "Job $JOB_NAME deleted."
