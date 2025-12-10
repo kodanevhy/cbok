@@ -59,6 +59,47 @@ class PatchCommands:
         except Exception:
             raise
 
+    def permanent_example(self):
+        print(
+            """
+            1.code:
+                apiVersion: v1
+                kind: ConfigMap
+                metadata:
+                name:
+                namespace: openstack
+                data:
+                client: |+
+                    # 修改后的代码
+
+            2.configmap:
+                kubectl edit -n openstack cm nova-bin
+
+                nova-api.sh: |
+                    #!/bin/bash
+                    kubectl get cm xx -n openstack -o jsonpath={".data.client"} |sudo tee /usr/local/lib/python3.6/site-packages/
+
+            3.kubectl:
+                volumes:
+                - hostPath:
+                    path: /usr/local/bin/kubectl
+                    type: ""
+                name: kubectl
+                - configMap:
+                    defaultMode: 365
+                    name: nova-bin
+                name: nova-bin
+
+                volumeMounts:
+                - mountPath: /usr/local/bin/kubectl
+                name: kubectl
+                - mountPath: /tmp/nova-api.sh
+                name: nova-bin
+                readOnly: true
+                subPath: nova-api.sh
+            """
+        )
+
 
 class BinCommands(args.BaseCommand):
 
