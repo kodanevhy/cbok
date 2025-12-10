@@ -30,7 +30,7 @@ class PatchCommands:
     def put(self, address=None, service=None, node=None):
         """Upload the patch changes to a running env"""
         try:
-            project = put_patch.service_supported[service]["package"]
+            project = put_patch.service_supported[service]["parent"]
             path = f"Cursor/es/{project}"
             if not cbok_utils.assert_tree(path):
                 LOG.error(f"If you are es member, please claim project "
