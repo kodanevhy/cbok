@@ -20,8 +20,15 @@ class AlertManager(object):
 
             article_content = self.google_crawler.fetch_article(h["url"])
 
-        # TODO: write to database
+            # TODO: write to database
 
+    def derive(self, email):
+        # get topic by email
+        # get has updates topic
+        # get not been derived article
+        # ask AI and generate Question and EvolvingAnswerForActiveQuestion
+        pass
 
-    def notify(self, email):
+    def notify(self, email, topic):
+        # notify according to EvolvingAnswerForActiveQuestion
         pass

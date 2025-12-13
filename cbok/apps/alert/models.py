@@ -4,6 +4,8 @@ from django.db import models
 class Topic(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     name = models.CharField(max_length=255, unique=True)
+    first_crawled = models.BooleanField(default=False)
+    has_evolving_answer = models.BooleanField(default=False)
 
     def __str__(self):
         return self.name
@@ -28,41 +30,55 @@ class Article(models.Model):
 
 
 class Question(models.Model):
-    # topic =
-    # status: active, complete, suspend, deleted
-    # 如果有新文章，遍历所有topic（可能后期会检查article直接和topic的相关性），还在active的问题，带问题去问AI这个article，去做document answer
-    pass
+    class _Status(models.TextChoices):
+        ACTIVE = 'active'
+        COMPLETE = 'complete'
+        SUSPEND = 'suspend'
+        DELETED = 'deleted'
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
+    status = models.CharField(
+        max_length=10,
+        choices=_Status.choices,
+        default=_Status.SUSPEND,
+    )
 
 
 class EvolvingAnswerForActiveQuestion(models.Model):
-    # question = id
-    # answer_item1 =
-    # answer_item2 =
-    pass
+    question = models.ForeignKey(Question, on_delete=models.CASCADE)
+    answer = models.TextField()
 
 
 class Conversation(models.Model):
-    # topic =
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
 
 
 class Message(models.Model):
-    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE)
-    index = models.IntegerField(help_text="对话中的序号")
-    role = models.CharField(
-        max_length=20,
-        choices=[("user", "user"), ("assistant", "assistant"), ("system", "system")],
-    )
+    class _Role(models.TextChoices):
+        USER = 'user'
+        ASSISTANT = 'assistant'
+        SYSTEM = 'system'
 
-    content = models.TextField(help_text="消息内容")
-    content_type = models.CharField(
-        max_length=20,
-        choices=[
-            ("article", "Article"),
-            ("question", "Question"),
-            ("article_question", "Article + Question"),
-            ("answer", "Answer"),
-        ]
-    )
+    class _ContentType(models.TextChoices):
+        ARTICLE = 'article'
+        QUESTION = 'question'
+        ARTICLE_QUESTION = 'article_question'
+        ANSWER = 'answer'
 
     created_at = models.DateTimeField(auto_now_add=True)
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE)
+    index = models.IntegerField(null=False)
+    role = models.CharField(
+        max_length=20,
+        choices=_Role.choices,
+        null=False,
+        blank=False,
+    )
+
+    content = models.TextField()
+    content_type = models.CharField(
+        max_length=20,
+        choices=_ContentType.choices,
+        null=False,
+        blank=False,
+    )
