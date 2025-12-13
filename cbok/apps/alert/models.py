@@ -2,20 +2,31 @@ from django.db import models
 
 
 class Topic(models.Model):
-    pass
+    created_at = models.DateTimeField(auto_now_add=True)
+    name = models.CharField(max_length=255, unique=True)
+
+    def __str__(self):
+        return self.name
 
 
-# 1.总结（最简单的用户交互）
-# 2.生出问题，跟踪问题，然后再和用户交互，把问题包装成在这个topic下用户关心的白话，然后携带答案，交给用户
-class Article(models.Manager):
-    # topic =
-    # title =
-    # publish_date =
-    # content =
-    pass
+class Article(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
+    title = models.CharField(max_length=512)
+    url = models.URLField(
+        max_length=2048,
+        unique=True,
+        db_index=True,
+        blank=False,
+        null=False,
+    )
+    publish_date = models.DateField(null=True, blank=True)
+    content = models.TextField()
+
+    def __str__(self):
+        return f"{self.topic: self.title}"
 
 
-# 把文章的问题问在topic下
 class Question(models.Model):
     # topic =
     # status: active, complete, suspend, deleted
@@ -23,9 +34,6 @@ class Question(models.Model):
     pass
 
 
-# This is OUTPUT
-# 会话取得的只是evolving answer，后面需要慢慢填充
-# evolving answer对会话保持有用吗？如果想要会话保持，可以直接从数据库读
 class EvolvingAnswerForActiveQuestion(models.Model):
     # question = id
     # answer_item1 =
@@ -33,31 +41,6 @@ class EvolvingAnswerForActiveQuestion(models.Model):
     pass
 
 
-# 最后交给AI总结输出（总结输出的时候，不要破坏原有的问题白话）
-# 再去拿新文章问的时候，只带 上一个问题的问题和答案行不行？不依赖大模型的会话进化能力。这样之前的文章的其他内容就作废了
-# 大模型的会话功能，有一点好处就是，不让之前文章回答完问题之后，其他的内容就作废，当前文章问出来的新问题，之前的文章可能也有答案
-# 但是这个session只是在客户端，服务端不帮你存这个session，一旦session断掉，就要重来，没有说可以get session这种操作，而且即使能在客户端get session，这个session也只会越来越长
-# 要不就让周期任务再去问，再去慢慢补充，先新问题根据当前已有的会话回答完，同步工作后期慢慢做（syncing from outdated article)
-
-
-# 周期拉取
-# 筛选（获取新鲜，剔除没用）
-# 来一个文章 就存数据库
-# g4f的会话功能，为话题新开会话，一个会话对应着一个什么样的model，一个会话需要什么样的model
-# 之前聊过的内容
-
-# 如果conversation是空的，那就启动一个conversion，然后把文章放进来
-# 每一次给文章：
-# 1.获取assistant role的若干个question
-# 2.为每一个question获取answer 1
-# 再来一个文章：
-# 1.能不能问出既有question（这个title下的所有），如果能，获取那个问题的answer 2
-# 2.获取assitant role的新的若干个question
-# 以此类推...
-
-# 所以，提示词：
-# 第一次，在一个兴趣爱好者来说，这个文章，你能问出什么问题，然后给出什么答案
-# 第二次，这个文章，这些问题和它有关系吗，如果有的话，帮我回答；以及你能不能问出新的问题，然后给我新问题的答案
 class Conversation(models.Model):
     # topic =
     created_at = models.DateTimeField(auto_now_add=True)

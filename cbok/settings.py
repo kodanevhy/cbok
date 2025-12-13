@@ -35,6 +35,7 @@ CBoK_APPS = [
     'cbok.apps.bbx.apps.BbxConfig',
     'cbok.apps.user',
     'cbok.apps.alert',
+    'cbok.apps.notification',
 ]
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -200,3 +201,10 @@ LOGGING = {
 }
 
 Workspace = "/Users/mizar/Workspace/"
+
+EMAIL_HOST = "smtp.163.com"
+EMAIL_PORT = 25
+EMAIL_HOST_USER = "yormng@163.com"
+EMAIL_HOST_PASSWORD = "JSPLWXPZQAWHEGHO"
+EMAIL_USE_TLS = False
+EMAIL_FROM = "yormng@163.com"
