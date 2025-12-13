@@ -16,21 +16,21 @@ class BatchProcessor:
         self.initial_tasks = []
         self.periodic_tasks = []
 
-    def discover_gateway_tasks(self):
+    def discover_gate_tasks(self):
         if not apps.ready:
             LOG.warning("Django apps not ready, skipping task discovery")
             return
 
         for app in cbok_utils.applications():
             try:
-                gateway_module = importlib.import_module(f'{app}.gateway')
+                gate_module = importlib.import_module(f'{app}.gate')
 
-                for name, func in inspect.getmembers(gateway_module, inspect.isfunction):
+                for name, func in inspect.getmembers(gate_module, inspect.isfunction):
                     task_info = {
                         'app': app,
                         'name': name,
                         'func': func,
-                        'module': gateway_module
+                        'module': gate_module
                     }
 
                     if name.startswith('periodic_') or getattr(func, 'periodic', False):
@@ -40,9 +40,9 @@ class BatchProcessor:
                         self.initial_tasks.append(task_info)
 
             except ModuleNotFoundError:
-                LOG.debug(f"No gateway module for {app}")
+                LOG.debug(f"No gate module for {app}")
             except Exception as e:
-                LOG.warning(f"Error loading gateway for {app}: {e}")
+                LOG.warning(f"Error loading gate for {app}: {e}")
 
     def run_initial_tasks(self):
         if not self.initial_tasks:
@@ -81,6 +81,6 @@ class BatchProcessor:
                 LOG.error(f"Failed to start periodic task {task_name}: {e}")
 
     def run_all(self):
-        self.discover_gateway_tasks()
+        self.discover_gate_tasks()
         self.run_initial_tasks()
         self.run_periodic_tasks()

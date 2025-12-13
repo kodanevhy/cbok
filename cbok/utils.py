@@ -2,8 +2,11 @@ from contextlib import contextmanager
 import logging
 import os
 from pathlib import Path
+import requests
+from requests.adapters import HTTPAdapter
 import subprocess
 import sys
+from urllib3.util.retry import Retry
 import threading
 
 from cbok import exception
@@ -234,3 +237,41 @@ def construct_headers():
     }
 
     return HEADERS
+
+
+def create_session(
+    timeout=10,
+    retries=3,
+    backoff_factor=0.5,
+):
+    def _wrap_timeout(func, timeout):
+        def wrapper(*args, **kwargs):
+            kwargs.setdefault("timeout", timeout)
+            return func(*args, **kwargs)
+        return wrapper
+
+    session = requests.Session()
+
+    retry = Retry(
+        total=retries,
+        read=retries,
+        connect=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0 Safari/537.36"
+        )
+    })
+
+    session.request = _wrap_timeout(session.request, timeout)
+    return session
