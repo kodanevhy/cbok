@@ -84,3 +84,4 @@ class BatchProcessor:
         self.discover_gate_tasks()
         self.run_initial_tasks()
         self.run_periodic_tasks()
+a
