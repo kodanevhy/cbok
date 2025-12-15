@@ -31,10 +31,12 @@ ALLOWED_HOSTS = ['*']
 CORS_ORIGIN_ALLOW_ALL = True
 
 # Application definition
+# WARNING: do not forget to update name in apps.config class,
+#          format like: name = 'cbok.apps.alert'
 CBoK_APPS = [
     'cbok.apps.bbx.apps.BbxConfig',
     'cbok.apps.user',
-    'cbok.apps.alert',
+    'cbok.apps.alert.apps.AlertConfig',
     'cbok.apps.notification',
 ]
 INSTALLED_APPS = [

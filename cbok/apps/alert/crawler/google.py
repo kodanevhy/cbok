@@ -5,8 +5,8 @@ import re
 import time
 from urllib import parse
 
+from cbok.apps.alert.crawler import base
 from cbok.apps.alert.login import google
-from cbok.apps.alert.manager import base
 from cbok import utils as cbok_utils
 
 LOG = logging.getLogger(__name__)

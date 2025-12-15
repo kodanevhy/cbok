@@ -9,6 +9,6 @@ class ChromePlugins():
         manager.run()
 
 
-@cbok_utils.periodic_task(interval=3600)
-def sync_auto_login():
-    ChromePlugins().auto_login_sync()
+# @cbok_utils.periodic_task(interval=3600)
+# def sync_auto_login():
+    # ChromePlugins().auto_login_sync()

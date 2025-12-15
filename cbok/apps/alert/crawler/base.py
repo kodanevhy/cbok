@@ -1,15 +1,19 @@
 from bs4 import BeautifulSoup
+import logging
 import re
 
 from cbok import utils as cbok_utils
-# from cbok.apps.alert import models
+from cbok.apps.alert import models
 
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
+logging.getLogger("charset_normalizer").setLevel(logging.WARNING)
 
 class BaseCrawler(object):
     INDEX = str()
 
     def __init__(self):
-        self.session = cbok_utils.create_session()
+        self.session = cbok_utils.create_session(retries=False)
         self.login_manager = None
 
     def login(self, username, password):
