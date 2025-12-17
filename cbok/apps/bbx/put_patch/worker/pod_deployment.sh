@@ -39,6 +39,8 @@ function init_pod(){
     "
     if [ $replica = "nova-conductor" ];then
         grep_flag="conductor"
+    elif [ $replica = "nova-api-osapi" ]; then
+        grep_flag="os-api"
     else
         grep_flag="$replica"
     fi
