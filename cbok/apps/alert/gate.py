@@ -12,16 +12,17 @@ def derive_and_notify():
     alert_manager = manager.AlertManager()
     topic, _ = models.Topic.objects.get_or_create(
         name="乒乓球",
-        initialized=False,
+        defaults={"initialized": False},
     )
-    if not topic.initialized:
-        LOG.info(f"Topic {topic.name} haven't been initialized")
-        return
+    alert_manager.init_topic(topic=topic)
+    # if not topic.initialized:
+    #     LOG.info(f"Topic {topic.name} haven't been initialized")
+    #     return
 
-    alert_manager.backfill(recent=1)
-    import pdb; pdb.set_trace()
-    alert_manager.derive(topic)
+    # alert_manager.backfill(recent=1)
+    # import pdb; pdb.set_trace()
+    # alert_manager.derive(topic)
 
-    if topic.has_evolving_answer:
-        # parse AnswerChunk and notify
-        pass
+    # if topic.has_evolving_answer:
+    #     # parse AnswerChunk and notify
+    #     pass

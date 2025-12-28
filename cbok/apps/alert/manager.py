@@ -4,6 +4,7 @@ import logging
 
 from django import db
 from g4f import client
+from g4f import models as g4f_models
 
 from cbok.apps.alert.crawler import google
 from cbok.apps.alert import models
@@ -22,12 +23,11 @@ class AlertManager:
             return
 
         self.backfill(topic, recent=7)
-
         self.derive(topic)
 
         topic.initialized = True
         topic.save(update_fields=["initialized"])
-        LOG.info(f"Topic {topic.name} has been initialized")
+        LOG.info(f"Topic {topic.uuid} has been initialized")
 
     def backfill(self, topic: models.Topic, recent=1):
         date = recent
@@ -75,8 +75,10 @@ class AlertManager:
             .order_by("created_at")
         )
 
+        self._derive_article("conversation", "")
+
         for article in articles:
-            if models.AnswerChunk.objects.filter(article=article).exists():
+            if models.Answer.objects.filter(article=article).exists():
                 continue
 
             self._derive_article(conversation, article)
@@ -87,45 +89,55 @@ class AlertManager:
             status=models.Question._Status.ACTIVE,
         )
 
-        # TODO: now we only use chunked answer as context to compress input
-        # for AI, next we maybe directly use history article content by g4f
-        # conversation. But we must have an idea to limit the conversation
-        # length
-        messages = self.build_llm_context_by_answer_chunk(
-            article, active_questions)
+        messages = self.build_llm_context(article, active_questions)
         response = self.ask_llm(messages)
 
         try:
             llm_result = json.loads(response)
         except Exception:
             LOG.error("LLM invalid json: %s", response)
+            # TODO: add notify to administrator? maybe we need to have an
+            # optmization on llm input
             return
 
         with db.transaction.atomic():
             self._apply_answers(article, active_questions, llm_result)
-            self._persist_messages(conversation, article, llm_result)
+            # TODO: now we only use chunked answer as context to compress input
+            # for AI, next we maybe directly use history article content by g4f
+            # conversation. But we must have an idea to limit the conversation
+            # length
+            # self._persist_messages(conversation, article, llm_result)
 
         if llm_result.get("answers") or llm_result.get("new_questions"):
             models.Topic.objects.filter(
-                id=article.topic.id
+                uuid=article.topic.uuid
             ).update(has_evolving_answer=True)
 
-    def build_llm_context_by_answer_chunk(self, article, active_questions):
+    def build_llm_context(self, article, active_questions):
+
         messages = []
 
-        messages.append({
-            "role": "system",
-            "content": (
-                f"你正在持续跟踪话题「{article.topic.name}」。\n"
-                "下面是你已经知道的事实，以及一篇新文章。"
-            )
-        })
+        def _build_fact_messages():
+            messages.append({
+                "role": "system",
+                "content": (
+                    f"你正在持续跟踪话题：{article.topic.name}。"
+                    "下面是你已经知道的事实，以及一篇新文章。"
+                )
+            })
+            if not active_questions.exists():
+                messages.append({
+                        "role": "user",
+                        "content": "已知事实: " + "暂无"
+                    })
+                return
 
-        if active_questions.exists():
-            facts = []
+            # data structure:
+            # ["问题：xxx，已知事实：1.xxx;2.xxx", "问题：xxx，已知事实：1.xxx;2.xxx"]
+            active_question_with_facts = []
             for q in active_questions:
                 chunks = (
-                    models.AnswerChunk.objects
+                    models.Answer.objects
                     .filter(question=q)
                     .order_by("created_at")
                     .values_list("content", flat=True)
@@ -133,30 +145,32 @@ class AlertManager:
                 if not chunks:
                     continue
 
-                joined = "\n".join(f"- {c}" for c in chunks)
-                facts.append(
-                    f"问题：{q.summary}\n已知事实：\n{joined}"
+                joined = [f"{i}.{c};" for i, c in enumerate(chunks)]
+                active_question_with_facts.append(
+                    f"问题：{q.summary}，已知事实：{joined}"
                 )
 
-            if facts:
+            if active_question_with_facts:
                 messages.append({
                     "role": "system",
-                    "content": "【已知事实】\n" + "\n\n".join(facts)
+                    "content": "你已知: " + "-".join(active_question_with_facts)
                 })
+
+        _build_fact_messages()
 
         messages.append({
             "role": "user",
             "content": (
-                f"【新文章】\n"
-                f"标题：{article.title}\n\n"
-                f"{article.content}\n\n"
-                "任务：\n"
-                "1. 如果新文章补充或修正了上述事实，请更新对应问题的答案\n"
-                "2. 如果新文章引出了新的重要问题，请提出并回答\n\n"
-                "请返回 JSON：\n"
-                "{\n"
-                '  "answers": [{"question": "...", "answer": "..."}],\n'
-                '  "new_questions": [{"question": "...", "answer": "..."}]\n'
+                f"下面是新文章："
+                f"标题：{article.title}"
+                f"内容：{article.content}"
+                "任务："
+                "1. 如果新文章补充或修正了上述事实，请更新对应问题的答案，如果暂无已知事实，请不要填充 fact_answers 字段"
+                "2. 如果新文章引出了新的重要问题，请提出并回答"
+                "请返回可以直接被解析的 JSON 数据："
+                "{"
+                '"fact_answers": [{"question": "...", "answer": "..."}],'
+                '"new_questions": [{"question": "...", "answer": "..."}]'
                 "}"
             )
         })
@@ -165,26 +179,27 @@ class AlertManager:
 
     def ask_llm(self, messages):
         resp = self.llm.chat.completions.create(
-            model="gpt-4o-mini",
+            model=g4f_models.deepseek_v3,
             messages=messages,
             web_search=False,
+            response_format={"type": "json_object"}
         )
         return resp.choices[0].message.content
 
     def _apply_answers(self, article, questions, result):
         for item in result.get("answers", []):
-            q = self._match_question(questions, item["question"])
-            if not q:
+            question = self._match_question(questions, item["question"])
+            if not question:
                 continue
 
-            models.AnswerChunk.objects.get_or_create(
-                question=q,
+            models.Answer.objects.get_or_create(
+                question=question,
                 article=article,
                 defaults={"content": item["answer"]},
             )
 
         for item in result.get("new_questions", []):
-            q, _ = models.Question.objects.get_or_create(
+            question, _ = models.Question.objects.get_or_create(
                 topic=article.topic,
                 summary=item["question"],
                 defaults={
@@ -192,8 +207,8 @@ class AlertManager:
                 },
             )
 
-            models.AnswerChunk.objects.get_or_create(
-                question=q,
+            models.Answer.objects.get_or_create(
+                question=question,
                 article=article,
                 defaults={"content": item["answer"]},
             )
@@ -237,9 +252,9 @@ class AlertManager:
             )
 
     def _match_question(self, questions, text):
-        for q in questions:
-            if q.summary and q.summary in text:
-                return q
+        for qst in questions:
+            if qst.summary and qst.summary in text:
+                return qst
         return None
 
     def _parse_publish_date(self, date_str):
