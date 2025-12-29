@@ -94,7 +94,7 @@ class FoundationCommands(args.BaseCommand):
 
         with open("foundation/address", "w+") as f:
             f.write(address)
-        with open("cbok/apps/bbx/chrome_plugins/auto_login/client/address", "w+") as f:
+        with open("cbok/bbx/chrome_plugins/auto_login/client/address", "w+") as f:
             f.write(address)
 
         LOG.info("Deploy successfully ;)")
@@ -138,7 +138,7 @@ class FoundationCommands(args.BaseCommand):
         if service == "cbok":
             LOG.info("Re-flagging auto login plugin address")
             with open(
-                "cbok/apps/bbx/chrome_plugins/auto_login/client/address",
+                "cbok/bbx/chrome_plugins/auto_login/client/address",
                 "w+") as f:
                 f.write(address)
 
