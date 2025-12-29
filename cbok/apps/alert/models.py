@@ -1,18 +1,22 @@
+import uuid
+
 from django.db import models
 
 
 class Topic(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     name = models.CharField(max_length=255, unique=True)
-    first_crawled = models.BooleanField(default=False)
+    initialized = models.BooleanField(default=False)
     has_evolving_answer = models.BooleanField(default=False)
 
     def __str__(self):
-        return self.name
+        return self.uuid
 
 
 class Article(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
     title = models.CharField(max_length=512)
     url = models.URLField(
@@ -26,7 +30,7 @@ class Article(models.Model):
     content = models.TextField()
 
     def __str__(self):
-        return f"{self.topic: self.title}"
+        return self.uuid
 
 
 class Question(models.Model):
@@ -35,37 +39,56 @@ class Question(models.Model):
         COMPLETE = 'complete'
         SUSPEND = 'suspend'
         DELETED = 'deleted'
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
     status = models.CharField(
         max_length=10,
         choices=_Status.choices,
         default=_Status.SUSPEND,
     )
+    summary = models.TextField()
+
+    def __str__(self):
+        return self.uuid
 
 
-class EvolvingAnswerForActiveQuestion(models.Model):
+class Answer(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    answer = models.TextField()
+    article = models.ForeignKey(Article, on_delete=models.CASCADE)
+    content = models.TextField()
+
+    class Meta:
+        unique_together = ('question', 'article')
+
+    def __str__(self):
+        return self.uuid
 
 
 class Conversation(models.Model):
-    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
+
+    def __str__(self):
+        return self.uuid
 
 
 class Message(models.Model):
     class _Role(models.TextChoices):
         USER = 'user'
-        ASSISTANT = 'assistant'
         SYSTEM = 'system'
 
     class _ContentType(models.TextChoices):
         ARTICLE = 'article'
         QUESTION = 'question'
-        ARTICLE_QUESTION = 'article_question'
         ANSWER = 'answer'
 
     created_at = models.DateTimeField(auto_now_add=True)
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE)
     index = models.IntegerField(null=False)
     role = models.CharField(

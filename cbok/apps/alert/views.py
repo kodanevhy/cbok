@@ -24,5 +24,5 @@ class TopicView(base.View):
 
         # TODO: create topic, if success then return
         # TODO: async
-        self.alert_manager.crawl(topic, first_track=True)
-        return http.JsonResponse({'Topic tracked': True})
+        # self.alert_manager.crawl(topic, first_track=True)
+        # return http.JsonResponse({'Topic tracked': True})

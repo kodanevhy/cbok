@@ -1,5 +1,5 @@
 from django.apps import AppConfig
 
 
-class AlertsConfig(AppConfig):
-    name = 'alert'
+class AlertConfig(AppConfig):
+    name = 'cbok.apps.alert'
