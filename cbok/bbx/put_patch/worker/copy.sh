@@ -20,15 +20,23 @@ for f in files:
             A|M)
                 echo "Processing $status $src -> $dst"
 
-                scp "$src" root@$address:"$target"
-
+                parent_dir=$(basename "$(dirname "$src")")
                 filename=$(basename "$src")
-                remote_tmp="/tmp/$filename"
+                tmp_name="${parent_dir}_${filename}"
+
+                scp "$src" root@$address:"$target/$tmp_name"
+
+                remote_tmp="/tmp/$tmp_name"
                 remote_dir=$(dirname "$dst")
 
-                gtimeout -s KILL 10 ssh -n root@$address "kubectl cp $target$filename -n openstack $pod_name:$remote_tmp -c $container"
-                gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- mkdir -p $remote_dir"
-                gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- sudo mv $remote_tmp $dst"
+                gtimeout -s KILL 10 ssh -n root@$address \
+                    "kubectl cp $target/$tmp_name -n openstack $pod_name:$remote_tmp -c $container"
+
+                gtimeout -s KILL 10 ssh -n root@$address \
+                    "kubectl exec -n openstack $pod_name -c $container -- mkdir -p $remote_dir"
+
+                gtimeout -s KILL 10 ssh -n root@$address \
+                    "kubectl exec -n openstack $pod_name -c $container -- sudo mv $remote_tmp $dst"
                 ;;
 
             D)
@@ -76,18 +84,29 @@ for f in files:
             A|M)
                 echo "Processing $status $src -> $dst"
 
-                gtimeout -s KILL 10 sshpass -p "easystack" scp "$src" root@$address:"$target"
-
+                parent_dir=$(basename "$(dirname "$src")")
                 filename=$(basename "$src")
-                remote_exec_via_jump $address mkdir -p "$target"
-                sshpass -p "easystack" ssh root@$address "scp -i /root/.ssh/id_rsa.roller $target$filename root@10.20.0.3:$target"
+                tmp_name="${parent_dir}_${filename}"
 
-                remote_tmp="/tmp/$filename"
+                gtimeout -s KILL 10 sshpass -p "easystack" \
+                    scp "$src" root@$address:"$target/$tmp_name"
+
+                remote_exec_via_jump $address mkdir -p "$target"
+
+                sshpass -p "easystack" ssh -n root@$address \
+                    "scp -i /root/.ssh/id_rsa.roller $target/$tmp_name root@10.20.0.3:$target/$tmp_name"
+
+                remote_tmp="/tmp/$tmp_name"
                 remote_dir=$(dirname "$dst")
 
-                remote_exec_via_jump $address kubectl cp "$target$filename" -n openstack "$pod_name:$remote_tmp" -c $container
-                remote_exec_via_jump $address kubectl exec -n openstack "$pod_name" -c "$container" -- mkdir -p $remote_dir
-                remote_exec_via_jump $address kubectl exec -n openstack "$pod_name" -c "$container" -- sudo mv $remote_tmp $dst
+                remote_exec_via_jump $address kubectl cp \
+                    "$target/$tmp_name" -n openstack "$pod_name:$remote_tmp" -c "$container"
+
+                remote_exec_via_jump $address kubectl exec -n openstack "$pod_name" -c "$container" -- \
+                    mkdir -p "$remote_dir"
+
+                remote_exec_via_jump $address kubectl exec -n openstack "$pod_name" -c "$container" -- \
+                    sudo mv "$remote_tmp" "$dst"
                 ;;
 
             D)
