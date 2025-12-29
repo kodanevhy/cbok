@@ -13,6 +13,7 @@ cbok/bbx/virt_devel/example/*
 cbok/bbx/kernel/base/*
 !cbok/bbx/kernel/base/README.md
 cbok/bbx/ut/images/*
+cbok/alert/login/cookie.json
 cbok/*/migrations/
 review/*
 !review/README.md

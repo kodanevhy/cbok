@@ -34,22 +34,27 @@ class GoogleLogin(base.BaseLogin):
         super().__init__(username, password)
         self.email = username
         self.password = password
-        self.driver = uc.Chrome(headless=False)
+        self.driver = None
         self.elem_action = ElementAction()
+
+    def init_driver(self):
+        self.driver = uc.Chrome(headless=False)
 
     def quit(self):
         self.driver.quit()
 
     def retrieve_cookies(self):
+        self.init_driver()
         self.login()
-        LOG.info(f'Login {self.target} successfully')
 
         # We'd better to sleep here, for entirely retrieving cookies
         time.sleep(20)
 
         cookies = self.driver.get_cookies()
         self.quit()
-        return cookies
+
+        self.persist_cookie(self.target, cookies)
+        return {cookie["name"]: cookie["value"] for cookie in cookies}
 
     def wait(self, by, value):
         try:
@@ -87,3 +92,5 @@ class GoogleLogin(base.BaseLogin):
         self.forward(try_o)
         password = self.wait(By.XPATH, '//input[@type="password" and @name="Passwd"]')
         self.forward(password, send_key=self.password)
+
+        LOG.info(f'Login {self.target} successfully')

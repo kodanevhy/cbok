@@ -75,8 +75,6 @@ class AlertManager:
             .order_by("created_at")
         )
 
-        self._derive_article("conversation", "")
-
         for article in articles:
             if models.Answer.objects.filter(article=article).exists():
                 continue
