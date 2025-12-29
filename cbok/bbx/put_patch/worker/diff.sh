@@ -22,6 +22,11 @@ function check_if_committed() {
 }
 
 
+is_test_path() {
+    [[ "$1" == *"/test/"* || "$1" == *"/tests/"* ]]
+}
+
+
 function get_diff() {
     project_name=$1
     check_if_committed $project_name
@@ -29,44 +34,28 @@ function get_diff() {
     pushd $workspace/Cursor/es/$project_name > /dev/null
 
     git show --name-status --pretty="" | while read status oldpath newpath; do
-        if [ -z "$status" ]; then
-            continue
-        fi
+        [ -z "$status" ] && continue
 
-        if [[ "$oldpath" == *"/test/"* ]] && [[ "$newpath" == *"/test/"* ]]; then
+        if is_test_path "$oldpath" && is_test_path "$newpath"; then
             continue
         fi
 
         case "$status" in
-            A)
-                if [[ "$oldpath" == *"/test/"* ]]; then
-                    continue
-                fi
-                printf '{"status":"A","path":"%s"}\n' "$oldpath"
-                ;;
-            M)
-                if [[ "$oldpath" == *"/test/"* ]]; then
-                    continue
-                fi
-                printf '{"status":"M","path":"%s"}\n' "$oldpath"
-                ;;
-            D)
-                if [[ "$oldpath" == *"/test/"* ]]; then
-                    continue
-                fi
-                printf '{"status":"D","path":"%s"}\n' "$oldpath"
+            A|M|D)
+                is_test_path "$oldpath" && continue
+                printf '{"status":"%s","path":"%s"}\n' "$status" "$oldpath"
                 ;;
             R*)
-                # 重命名时，先删除旧文件，再新增新文件
-                if [[ "$oldpath" != *"/test/"* ]]; then
+                if ! is_test_path "$oldpath"; then
                     printf '{"status":"D","path":"%s"}\n' "$oldpath"
                 fi
-                if [[ "$newpath" != *"/test/"* ]]; then
+                if ! is_test_path "$newpath"; then
                     printf '{"status":"A","path":"%s"}\n' "$newpath"
                 fi
                 ;;
             *)
-                printf '{"status":"UNKNOWN","status_code":"%s","old":"%s","new":"%s"}\n' "$status" "$oldpath" "$newpath"
+                printf '{"status":"UNKNOWN","status_code":"%s","old":"%s","new":"%s"}\n' \
+                    "$status" "$oldpath" "$newpath"
                 ;;
         esac
     done
