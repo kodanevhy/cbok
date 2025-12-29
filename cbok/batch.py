@@ -23,7 +23,7 @@ class BatchProcessor:
 
         for app in cbok_utils.applications():
             try:
-                gate_module = importlib.import_module(f'{app}.gate')
+                gate_module = importlib.import_module(f'cbok.{app}.gate')
 
                 for name, func in inspect.getmembers(gate_module, inspect.isfunction):
                     task_info = {

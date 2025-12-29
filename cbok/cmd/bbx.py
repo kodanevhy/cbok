@@ -3,8 +3,8 @@ import os
 import shutil
 import sys
 
-from cbok.apps.bbx.put_patch import main as put_patch
-from cbok.apps.bbx.ut import main as ut
+from cbok.bbx.put_patch import main as put_patch
+from cbok.bbx.ut import main as ut
 from cbok.cmd import args
 from cbok import exception
 from cbok import settings

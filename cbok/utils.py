@@ -19,8 +19,8 @@ LOG = logging.getLogger(__name__)
 def applications():
     install_apps = []
     for app in settings.CBoK_APPS:
-        if app.startswith("cbok.apps."):
-            install_apps.append(app.split(".")[2])
+        if app.startswith("cbok."):
+            install_apps.append(app.split(".")[1])
         else:
             install_apps.append(app)
     return install_apps
