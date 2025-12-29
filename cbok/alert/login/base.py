@@ -11,6 +11,10 @@ class BaseLogin(object):
     def target(self):
         return tldextract.extract(self.URL).domain
 
+    def ping(self):
+        # with open stashed cookie and try to ping
+        pass
+
     def login(self):
         pass
 

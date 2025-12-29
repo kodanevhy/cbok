@@ -70,6 +70,11 @@ class GoogleLogin(base.BaseLogin):
         elif action == self.elem_action.click:
             element.click()
 
+    def persist_cookie(self, cookies):
+        cookie_json = {cookie['name']: cookie['value'] for cookie in cookies}
+        with open("a", "w+") as f:
+            pass
+
     def login(self):
 
         self.driver.get(self.URL)
@@ -87,3 +92,5 @@ class GoogleLogin(base.BaseLogin):
         self.forward(try_o)
         password = self.wait(By.XPATH, '//input[@type="password" and @name="Passwd"]')
         self.forward(password, send_key=self.password)
+
+        self.persist_cookie(self.retrieve_cookies())
