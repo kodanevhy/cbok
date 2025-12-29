@@ -22,7 +22,7 @@ EOF
 
 RUN yum -y install tk-devel sqlite-devel ncurses-devel \
     xz-devel libffi-devel bzip2-devel sudo wget gcc-c++ pcre pcre-devel zlib zlib-devel \
-    openssl openssl-devel procps-ng net-tools file xz xz-libs patch
+    openssl openssl-devel procps-ng net-tools file xz xz-libs
 
 # You can download from https://www.python.org/ftp/python/3.12.10/Python-3.12.10.tar.xz
 ADD static/Python-3.12.10.tar.xz /opt/
