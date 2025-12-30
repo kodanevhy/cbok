@@ -5,3 +5,7 @@
     4.re-freeze requirements.txt because maybe have many redunrants dependencies
     5.Flexible configure workspace
     6.Remove assert and execute cbok command everywhere
+
+0.4-backlog:
+    1.security configuration
+    2.VPS for alert
