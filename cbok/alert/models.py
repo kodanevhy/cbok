@@ -4,12 +4,21 @@ from django.db import models
 
 
 class Topic(models.Model):
+
+    class _Status(models.TextChoices):
+        CREATED = "created"
+        INITIALIZED = "initialized"
+        EVOLVING = "evolving"
+
     uuid = models.UUIDField(primary_key=True,
                             default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     name = models.CharField(max_length=255, unique=True)
-    initialized = models.BooleanField(default=False)
-    has_evolving_answer = models.BooleanField(default=False)
+    status = models.CharField(
+        max_length=20,
+        choices=_Status.choices,
+        default=_Status.CREATED,
+    )
 
     def __str__(self):
         return self.uuid

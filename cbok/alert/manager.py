@@ -18,17 +18,17 @@ class AlertManager:
         self.g4f = llm.G4F()
 
     def init_topic(self, topic: models.Topic):
-        if topic.initialized:
+        if topic.status in ("initialized", "evolving"):
             return
 
         # TODO(koda): merge question in initial phrase
         # now in initial phrase, every question is fresh, even though the
         # answer derived is the same
         self.backfill(topic, recent=7)
-        self.derive(topic)
+        self.derive(topic, init_topic=True)
 
-        topic.initialized = True
-        topic.save(update_fields=["initialized"])
+        topic.status = "initialized"
+        topic.save(update_fields=["status"])
         LOG.info(f"Topic {topic.uuid} has been initialized")
 
     def backfill(self, topic: models.Topic, recent=1):
@@ -75,9 +75,14 @@ class AlertManager:
 
         LOG.info(f"Recent articles of {recent} day(s) are all backfilled, "
                  f"with {exists_article_num} exist and {new_article_num} "
-                 f"update")
+                 f"insert")
 
-    def derive(self, topic: models.Topic):
+    def derive(self, topic: models.Topic, init_topic=False):
+
+        if not init_topic:
+            models.Topic.objects.filter(
+                uuid=article.topic.uuid
+            ).update(status="evolving")
 
         conversation, _ = models.Conversation.objects.get_or_create(
             topic=topic
@@ -125,11 +130,6 @@ class AlertManager:
             # conversation. But we must have an idea to limit the conversation
             # length
             # self._persist_messages(conversation, article, llm_result)
-
-        if llm_result.get("answers") or llm_result.get("new_questions"):
-            models.Topic.objects.filter(
-                uuid=article.topic.uuid
-            ).update(has_evolving_answer=True)
 
     def _apply_answers(self, article, questions, result):
         for item in result.get("answers", []):

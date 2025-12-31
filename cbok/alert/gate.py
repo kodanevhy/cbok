@@ -12,7 +12,7 @@ def derive_and_notify():
     alert_manager = manager.AlertManager()
     topic, _ = models.Topic.objects.get_or_create(
         name="乒乓球",
-        defaults={"initialized": False},
+        defaults={"status": "created"},
     )
     alert_manager.init_topic(topic=topic)
     # if not topic.initialized:
