@@ -27,8 +27,12 @@ class BaseCrawler(object):
 
         session_cookies = \
             lm.ensure_cookies(page_site=self.INDEX)
+        domain = tldextract.extract(self.INDEX).domain
+        if session_cookies:
+            LOG.debug(f"Found stashed cookie of {domain}")
+
         if not session_cookies or session_cookies == -1:
-            LOG.info(f"No valid cookie found, logging to "
+            LOG.debug(f"No valid cookie found, logging to "
                      f"{tldextract.extract(self.INDEX).domain}")
             session_cookies = lm.retrieve_cookies()
 
