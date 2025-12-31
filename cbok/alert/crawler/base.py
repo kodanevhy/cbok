@@ -33,7 +33,7 @@ class BaseCrawler(object):
 
         if not session_cookies or session_cookies == -1:
             LOG.debug(f"No valid cookie found, logging to "
-                     f"{tldextract.extract(self.INDEX).domain}")
+                     f"{domain}")
             session_cookies = lm.retrieve_cookies()
 
         return session_cookies
