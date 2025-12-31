@@ -4,8 +4,9 @@ from django.db import models
 
 
 class Topic(models.Model):
+    uuid = models.UUIDField(primary_key=True,
+                            default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     name = models.CharField(max_length=255, unique=True)
     initialized = models.BooleanField(default=False)
     has_evolving_answer = models.BooleanField(default=False)
@@ -15,8 +16,9 @@ class Topic(models.Model):
 
 
 class Article(models.Model):
+    uuid = models.UUIDField(primary_key=True,
+                            default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
     title = models.CharField(max_length=512)
     url = models.URLField(
@@ -40,8 +42,9 @@ class Question(models.Model):
         SUSPEND = 'suspend'
         DELETED = 'deleted'
 
+    uuid = models.UUIDField(primary_key=True,
+                            default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
     status = models.CharField(
         max_length=10,
@@ -55,8 +58,9 @@ class Question(models.Model):
 
 
 class Answer(models.Model):
+    uuid = models.UUIDField(primary_key=True,
+                            default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     question = models.ForeignKey(Question, on_delete=models.CASCADE)
     article = models.ForeignKey(Article, on_delete=models.CASCADE)
     content = models.TextField()
@@ -69,8 +73,9 @@ class Answer(models.Model):
 
 
 class Conversation(models.Model):
+    uuid = models.UUIDField(primary_key=True,
+                            default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
 
     def __str__(self):
@@ -87,8 +92,9 @@ class Message(models.Model):
         QUESTION = 'question'
         ANSWER = 'answer'
 
+    uuid = models.UUIDField(primary_key=True,
+                            default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
-    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE)
     index = models.IntegerField(null=False)
     role = models.CharField(
