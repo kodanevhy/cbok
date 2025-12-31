@@ -22,6 +22,9 @@ class AlertManager:
         if topic.initialized:
             return
 
+        # TODO(koda): merge question in initial phrase
+        # now in initial phrase, every question is fresh, even though the
+        # answer derived is the same
         self.backfill(topic, recent=7)
         self.derive(topic)
 
