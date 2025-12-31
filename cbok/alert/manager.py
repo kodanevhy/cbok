@@ -1,14 +1,13 @@
-from datetime import datetime
 import json
 import logging
+import time
 
 from django import db
-from g4f import client
-from g4f import models as g4f_models
 
 from cbok.alert.crawler import google
+from cbok.alert import llm
 from cbok.alert import models
-
+from cbok.alert import utils as alert_utils
 
 LOG = logging.getLogger(__name__)
 
@@ -16,7 +15,7 @@ LOG = logging.getLogger(__name__)
 class AlertManager:
     def __init__(self):
         self.google_crawler = google.GoogleAlertCrawler()
-        self.llm = client.Client()
+        self.g4f = llm.G4F()
 
     def init_topic(self, topic: models.Topic):
         if topic.initialized:
@@ -33,14 +32,18 @@ class AlertManager:
         LOG.info(f"Topic {topic.uuid} has been initialized")
 
     def backfill(self, topic: models.Topic, recent=1):
-        date = recent
-        history = self.google_crawler.analysis_history(topic.name, date)
+        LOG.info(f"Backing fill recent {recent} day(s)")
+
+        history = self.google_crawler.analysis_history(topic.name, recent)
+
+        exists_article_num = 0
+        new_article_num = 0
 
         for h in history:
             url = h["url"]
 
             if models.Article.objects.filter(url=url).exists():
-                LOG.debug(f"Article exists: {url}")
+                exists_article_num += 1
                 continue
 
             try:
@@ -50,7 +53,7 @@ class AlertManager:
                 LOG.warning("Fetch article failed: %s", url)
                 continue
 
-            publish_date = self._parse_publish_date(
+            publish_date = alert_utils.parse_publish_date(
                 article_data.get("date")
             )
 
@@ -62,9 +65,17 @@ class AlertManager:
                     publish_date=publish_date,
                     content=article_data.get("content", ""),
                 )
-                LOG.info(f"Article crawled for {topic.name}: {url}")
+
+                new_article_num += 1
+                time.sleep(1)
             except db.IntegrityError:
                 pass
+            except Exception:
+                LOG.warning(f"{url} failed to crawl")
+
+        LOG.info(f"Recent articles of {recent} day(s) are all backfilled, "
+                 f"with {exists_article_num} exist and {new_article_num} "
+                 f"update")
 
     def derive(self, topic: models.Topic):
 
@@ -84,14 +95,20 @@ class AlertManager:
 
             self._derive_article(conversation, article)
 
+            time.sleep(3)
+
     def _derive_article(self, conversation, article):
         active_questions = models.Question.objects.filter(
             topic=article.topic,
             status=models.Question._Status.ACTIVE,
         )
 
-        messages = self.build_llm_context(article, active_questions)
-        response = self.ask_llm(messages)
+        messages = self.g4f.build_further_context(article, active_questions)
+
+        # TODO(koda): g4f conversation length limit?
+        LOG.debug(f"Article {article.uuid} is taking {len(active_questions)} "
+                  f"question(s) to further derive {article.topic.name}")
+        response = self.g4f.ask_llm(messages)
 
         try:
             llm_result = json.loads(response)
@@ -114,82 +131,9 @@ class AlertManager:
                 uuid=article.topic.uuid
             ).update(has_evolving_answer=True)
 
-    def build_llm_context(self, article, active_questions):
-
-        messages = []
-
-        def _build_fact_messages():
-            messages.append({
-                "role": "system",
-                "content": (
-                    f"你正在持续跟踪话题：{article.topic.name}。"
-                    "下面是你已经知道的事实，以及一篇新文章。"
-                )
-            })
-            if not active_questions.exists():
-                messages.append({
-                        "role": "user",
-                        "content": "已知事实: " + "暂无"
-                    })
-                return
-
-            # data structure:
-            # ["问题：xxx，已知事实：1.xxx;2.xxx", "问题：xxx，已知事实：1.xxx;2.xxx"]
-            active_question_with_facts = []
-            for q in active_questions:
-                chunks = (
-                    models.Answer.objects
-                    .filter(question=q)
-                    .order_by("created_at")
-                    .values_list("content", flat=True)
-                )
-                if not chunks:
-                    continue
-
-                joined = [f"{i}.{c};" for i, c in enumerate(chunks)]
-                active_question_with_facts.append(
-                    f"问题：{q.summary}，已知事实：{joined}"
-                )
-
-            if active_question_with_facts:
-                messages.append({
-                    "role": "system",
-                    "content": "你已知: " + "-".join(active_question_with_facts)
-                })
-
-        _build_fact_messages()
-
-        messages.append({
-            "role": "user",
-            "content": (
-                f"下面是新文章："
-                f"标题：{article.title}"
-                f"内容：{article.content}"
-                "任务："
-                "1. 如果新文章补充或修正了上述事实，请更新对应问题的答案，如果暂无已知事实，请不要填充 fact_answers 字段"
-                "2. 如果新文章引出了新的重要问题，请提出并回答"
-                "请返回可以直接被解析的 JSON 数据："
-                "{"
-                '"fact_answers": [{"question": "...", "answer": "..."}],'
-                '"new_questions": [{"question": "...", "answer": "..."}]'
-                "}"
-            )
-        })
-
-        return messages
-
-    def ask_llm(self, messages):
-        resp = self.llm.chat.completions.create(
-            model=g4f_models.deepseek_v3,
-            messages=messages,
-            web_search=False,
-            response_format={"type": "json_object"}
-        )
-        return resp.choices[0].message.content
-
     def _apply_answers(self, article, questions, result):
         for item in result.get("answers", []):
-            question = self._match_question(questions, item["question"])
+            question = alert_utils.match_question(questions, item["question"])
             if not question:
                 continue
 
@@ -251,17 +195,3 @@ class AlertManager:
                 f"新问题：{item['question']}\n{item['answer']}",
                 models.Message._ContentType.QUESTION,
             )
-
-    def _match_question(self, questions, text):
-        for qst in questions:
-            if qst.summary and qst.summary in text:
-                return qst
-        return None
-
-    def _parse_publish_date(self, date_str):
-        if not date_str:
-            return None
-        try:
-            return datetime.strptime(date_str, "%Y-%m-%d").date()
-        except Exception:
-            return None
