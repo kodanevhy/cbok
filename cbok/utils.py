@@ -14,6 +14,7 @@ from cbok import settings
 
 
 LOG = logging.getLogger(__name__)
+CONF = settings.CONF
 
 
 def applications():
@@ -239,11 +240,37 @@ def construct_headers():
     return HEADERS
 
 
+def load_proxies(conf=None):
+    if not conf:
+        conf = CONF
+    if not conf.has_section("proxy"):
+        return None
+
+    scheme = conf.get("proxy", "type", fallback="socks5h")
+    host = conf.get("proxy", "localhost")
+    port = conf.get("proxy", "localport")
+
+    url = f"{scheme}h://{host}:{port}"
+    return {"http": url, "https": url}
+
+
 def create_session(
     timeout=10,
     retries=3,
     backoff_factor=0.5,
+    proxies=None,
 ):
+    """
+    :param timeout: default request timeout
+    :param retries: retry times
+    :param backoff_factor: retry backoff
+    :param proxies: requests proxies dict, e.g.
+        {
+            "http": "socks5h://127.0.0.1:1080",
+            "https": "socks5h://127.0.0.1:1080",
+        }
+    """
+
     def _wrap_timeout(func, timeout):
         def wrapper(*args, **kwargs):
             kwargs.setdefault("timeout", timeout)
@@ -257,8 +284,9 @@ def create_session(
         read=retries,
         connect=retries,
         backoff_factor=backoff_factor,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET"],
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=("GET",),
+        raise_on_status=False,
     )
 
     adapter = HTTPAdapter(max_retries=retry)
@@ -273,5 +301,9 @@ def create_session(
         )
     })
 
+    if proxies:
+        session.proxies.update(proxies)
+
     session.request = _wrap_timeout(session.request, timeout)
+
     return session

@@ -71,7 +71,7 @@ class BatchProcessor:
                         try:
                             task_info['func']()
                         except Exception as e:
-                            LOG.error(f"Error in periodic task {task_name}: {e}")
+                            LOG.exception(f"Error in periodic task {task_name}: {e}")
                         time.sleep(interval)
 
                 LOG.info(f"{task_name} spawned")
