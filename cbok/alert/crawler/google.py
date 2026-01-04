@@ -7,22 +7,26 @@ from urllib import parse
 
 from cbok.alert.crawler import base
 from cbok.alert.login import google
+from cbok import settings
 from cbok import utils as cbok_utils
 
 LOG = logging.getLogger(__name__)
+CONF = settings.CONF
 
 
 class GoogleAlertCrawler(base.BaseCrawler):
     INDEX = 'https://www.google.com/alerts'
     HISTORY = 'https://www.google.com/alerts/history'
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, use_proxy=True):
+        super().__init__(use_proxy)
         self.login_manager = google.GoogleLogin
 
     def analysis_index(self):
-        session_cookies = self.ensure_cookies(
-            "kodanevhyz@gmail.com", "Everlost584@")
+        google_account_conf = CONF.get("alert_account", "google")
+        username = google_account_conf.split(",")[0].strip()
+        password = google_account_conf.split(",")[1].strip()
+        session_cookies = self.ensure_cookies(username, password)
 
         headers = cbok_utils.construct_headers()
         self.session.headers.update(headers)

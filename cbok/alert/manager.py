@@ -14,11 +14,10 @@ LOG = logging.getLogger(__name__)
 
 class AlertManager:
     def __init__(self):
-        self.google_crawler = google.GoogleAlertCrawler()
+        self.google_crawler = google.GoogleAlertCrawler(use_proxy=True)
         self.g4f = llm.G4F()
 
     def init_topic(self, topic: models.Topic):
-        import pdb; pdb.set_trace()
         if topic.in_progress:
             return
 
@@ -43,7 +42,7 @@ class AlertManager:
         for h in history:
             url = h["url"]
 
-            if models.Article.objects.filter(url=url).exists():
+            if self.google_crawler.dedup(topic, url):
                 exists_article_num += 1
                 continue
 
@@ -96,6 +95,8 @@ class AlertManager:
         )
 
         for article in articles:
+            # every article will only be derived one time, use derived
+            # answer already written to database to join next derive
             if models.Answer.objects.filter(article=article).exists():
                 continue
 
@@ -113,7 +114,7 @@ class AlertManager:
 
         # TODO(koda): g4f conversation length limit?
         LOG.debug(f"Article {article.uuid} is taking {len(active_questions)} "
-                  f"question(s) to further derive {article.topic.name}")
+                  f"question(s) to further derive {article.topic.uuid}")
         response = self.g4f.ask_llm(messages)
 
         try:
@@ -121,7 +122,7 @@ class AlertManager:
         except Exception:
             LOG.error("LLM invalid json: %s", response)
             # TODO: add notify to administrator? maybe we need to have an
-            # optmization on llm input
+            # optmization on llm request
             return
 
         with db.transaction.atomic():

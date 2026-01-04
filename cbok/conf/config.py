@@ -39,14 +39,26 @@ PROXY = Group(
     name="proxy",
     title="proxy settings",
     options=[
+        Option("type", default="socks5h", help="Proxy type"),
         Option("cipher", default="aes-256-gcm", help="Encryption method"),
         Option("password", default="", help="VPS password"),
         Option("vps_server", default="", help="VPS IP or hostname"),
         Option("port", default=9646, help="VPS port"),
+        Option("localhost", default="127.0.0.1", help="Proxy local host on"),
+        Option("localport", default=1080, help="Proxy local port listen to"),
     ],
 )
 
-ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY]
+ALERT_ACCOUNT = Group(
+    name="alert_account",
+    title="alert account settings",
+    options=[
+        Option("google", default="",
+        help="Google account, format as username, password"),
+    ]
+)
+
+ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT]
 
 
 def validate_section_strict(conf, group):

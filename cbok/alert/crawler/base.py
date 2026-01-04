@@ -3,6 +3,7 @@ import logging
 import re
 import tldextract
 
+from cbok.alert import models
 from cbok import utils as cbok_utils
 from cbok.alert.login import base as login_base
 
@@ -15,8 +16,12 @@ logging.getLogger("charset_normalizer").setLevel(logging.WARNING)
 class BaseCrawler(object):
     INDEX = str()
 
-    def __init__(self):
-        self.session = cbok_utils.create_session(retries=False)
+    def __init__(self, use_proxy=False):
+        if use_proxy:
+            self.session = cbok_utils.create_session(
+                retries=False, proxies=cbok_utils.load_proxies())
+        else:
+            self.session = cbok_utils.create_session(retries=False)
         self.login_manager = login_base.BaseLogin
 
     def _init_login_manager(self, username, password):
@@ -29,7 +34,7 @@ class BaseCrawler(object):
             lm.ensure_cookies(page_site=self.INDEX)
         domain = tldextract.extract(self.INDEX).domain
         if session_cookies:
-            LOG.debug(f"Found stashed cookie of {domain}")
+            LOG.debug(f"Found stashed and valid cookie of {domain}")
 
         if not session_cookies or session_cookies == -1:
             LOG.debug(f"No valid cookie found, logging to "
@@ -39,10 +44,10 @@ class BaseCrawler(object):
         return session_cookies
 
     def dedup(self, belong_topic, url):
-        # get all article urls in this topic
-        # models.Article
-        # check if exists
-        pass
+        return models.Article.objects.filter(
+            topic=belong_topic,
+            url=url,
+        ).exists()
 
     def fetch_article(self, url):
         title = None
