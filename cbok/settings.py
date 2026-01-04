@@ -10,12 +10,21 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/2.2/ref/settings/
 """
 
+import configparser
 import os
 import sys
+
+from cbok.conf import config
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
+
+CONF = configparser.ConfigParser()
+CONF.read(os.path.join(BASE_DIR, "cbok.conf"))
+for group in config.ALL_GROUPS:
+    config.validate_section_strict(CONF, group)
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.2/howto/deployment/checklist/
@@ -90,14 +99,16 @@ WSGI_APPLICATION = 'cbok.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/2.2/ref/settings/#databases
 
+# If in production, prefer to use ingress
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': os.environ.get('DB_NAME', 'cbok'),
-        'USER': os.environ.get('DB_USER', 'root'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', '000000'),
-        'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
-        'PORT': os.environ.get('DB_PORT', '3306'),
+        'USER': os.environ.get('DB_USER', CONF.get("database", "user")),
+        'PASSWORD': os.environ.get('DB_PASSWORD',
+                                   CONF.get("database", "password")),
+        'HOST': os.environ.get('DB_HOST', CONF.get("database", "host")),
+        'PORT': os.environ.get('DB_PORT', CONF.get("database", "port")),
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
         },
@@ -201,11 +212,12 @@ LOGGING = {
     },
 }
 
-Workspace = "/Users/mizar/Workspace/"
+Workspace = CONF.get("default", "workspace")
 
-EMAIL_HOST = "smtp.163.com"
-EMAIL_PORT = 25
-EMAIL_HOST_USER = "yormng@163.com"
-EMAIL_HOST_PASSWORD = "JSPLWXPZQAWHEGHO"
-EMAIL_USE_TLS = False
-EMAIL_FROM = "yormng@163.com"
+if "email" in CONF.sections():
+    EMAIL_HOST = CONF.get("email", "host")
+    EMAIL_PORT = CONF.getint("email", "port", fallback=25)
+    EMAIL_HOST_USER = CONF.get("email", "host_user")
+    EMAIL_HOST_PASSWORD = CONF.get("email", "host_password")
+    EMAIL_USE_TLS = CONF.getboolean("email", "use_tls", fallback=False)
+    EMAIL_FROM = CONF.get("email", "from")

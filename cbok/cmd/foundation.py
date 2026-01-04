@@ -1,3 +1,4 @@
+import configparser
 import logging
 import os
 import sys
@@ -5,8 +6,10 @@ import sys
 from oslo_utils import strutils
 
 from cbok.cmd import args
+from cbok import settings
 
 
+CONF = settings.CONF
 LOG = logging.getLogger(__name__)
 
 
@@ -67,12 +70,28 @@ class FoundationCommands(args.BaseCommand):
             LOG.error("CBoK is already ready")
             sys.exit(1)
 
-        LOG.info("Detached clean host, starting deploy CBoK base")
+        LOG.info("Detected clean host, starting deploy CBoK base")
 
         result = self.p_runner.run_command(
             ["bash", "-c", f"source {self.executor}; install_rsync {address}"]
         )
         LOG.debug(f"rsync installed to {address}")
+
+        if "proxy" in CONF.sections():
+            with open("foundation/base/proxy", "w") as f:
+                try:
+                    proxy_conf = (f"cipher={CONF.get("proxy", "cipher")}\n"
+                    f"password={CONF.get("proxy", "password")}\n"
+                    f"vps_server={CONF.get("proxy", "vps_server")}\n"
+                    f"port={CONF.get("proxy", "port")}")
+                except (configparser.NoSectionError,
+                        configparser.NoOptionError) as e:
+                    LOG.warning("Please fill in the proxy configuration: %s", e)
+                    sys.exit(1)
+                f.write(proxy_conf)
+        else:
+            LOG.warning("No proxy configuration found, maybe failed to fetch "
+                        "repository")
 
         LOG.debug("Copying resource, be patient if network seems slow")
 

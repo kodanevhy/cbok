@@ -31,7 +31,14 @@
   python3 manage.py migrate
 ```
 
-三、 本地安装CBoK（可选）
+三、生成配置文件
+
+部分功能需要先声明配置，例如邮箱，用户应该尽量配置。若用户充分了解代码并明确暂时不需要相关功能，请将以下命令生成的 section 配置块整体注释掉，以不妨碍运行。
+```shell
+  python3 tools/generate_conf.py
+```
+
+四、 本地安装CBoK（可选）
 
 部分功能在本地使用，例如`bbx`中的`put_patch`，需要先在本地安装。这会在Python site中创建一个链接指向本地CBoK source。
 ```shell

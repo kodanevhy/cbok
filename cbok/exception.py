@@ -72,3 +72,9 @@ class CannotLocateProject(CBoKException):
 
 class ShouldNotVirtualEnv(CBoKException):
     msg_fmt = "Shouldn't be in virtual environment"
+
+
+class ConfigValidateFailed(CBoKException):
+    msg_fmt = "Config validate failed: %(err_msg)s, please comment out the "\
+              "whole section if you want to disable the feature"
+    code = 400
