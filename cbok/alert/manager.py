@@ -18,7 +18,8 @@ class AlertManager:
         self.g4f = llm.G4F()
 
     def init_topic(self, topic: models.Topic):
-        if topic.status in ("initialized", "evolving"):
+        import pdb; pdb.set_trace()
+        if topic.in_progress:
             return
 
         # TODO(koda): merge question in initial phrase

@@ -21,7 +21,12 @@ class Topic(models.Model):
     )
 
     def __str__(self):
-        return self.uuid
+        return f"{self.uuid}"
+
+    @property
+    def in_progress(self):
+        return self.status in (self._Status.INITIALIZED.value,
+                               self._Status.EVOLVING.value)
 
 
 class Article(models.Model):
@@ -41,7 +46,7 @@ class Article(models.Model):
     content = models.TextField()
 
     def __str__(self):
-        return self.uuid
+        return f"{self.uuid}"
 
 
 class Question(models.Model):
@@ -63,7 +68,7 @@ class Question(models.Model):
     summary = models.TextField()
 
     def __str__(self):
-        return self.uuid
+        return f"{self.uuid}"
 
 
 class Answer(models.Model):
@@ -78,7 +83,7 @@ class Answer(models.Model):
         unique_together = ('question', 'article')
 
     def __str__(self):
-        return self.uuid
+        return f"{self.uuid}"
 
 
 class Conversation(models.Model):
@@ -88,7 +93,7 @@ class Conversation(models.Model):
     topic = models.ForeignKey(Topic, on_delete=models.CASCADE)
 
     def __str__(self):
-        return self.uuid
+        return f"{self.uuid}"
 
 
 class Message(models.Model):
