@@ -16,6 +16,7 @@ cbok/bbx/kernel/base/*
 cbok/bbx/ut/images/*
 cbok/alert/login/cookie.json
 cbok/*/migrations/
+cbok.conf
 review/*
 !review/README.md
 personnel/*
