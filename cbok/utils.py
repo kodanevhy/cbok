@@ -250,7 +250,7 @@ def load_proxies(conf=None):
     host = conf.get("proxy", "localhost")
     port = conf.get("proxy", "localport")
 
-    url = f"{scheme}h://{host}:{port}"
+    url = f"{scheme}://{host}:{port}"
     return {"http": url, "https": url}
 
 

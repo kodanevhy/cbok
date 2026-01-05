@@ -13,6 +13,7 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
 logging.getLogger("charset_normalizer").setLevel(logging.WARNING)
 
+
 class BaseCrawler(object):
     INDEX = str()
 
@@ -78,11 +79,19 @@ class BaseCrawler(object):
             if match:
                 date = match.group(1)
 
-        paragraphs = [
-            p.get_text(strip=True)
-            for p in soup.find_all("p")
-            if len(p.get_text(strip=True)) > 0
-        ]
+        def _filterd_p(text):
+            """Filter that page maybe anti our request"""
+            useless_p = ["{{summary}}"]
+            if text in useless_p:
+                return True
+
+        paragraphs = []
+        for p in soup.find_all("p"):
+            p_text = p.get_text(strip=True)
+            if _filterd_p(p_text):
+                continue
+            if len(p_text) > 0:
+                paragraphs.append(p_text)
 
         content = "\n\n".join(paragraphs)
 

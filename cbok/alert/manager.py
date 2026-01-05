@@ -15,9 +15,9 @@ LOG = logging.getLogger(__name__)
 
 class AlertManager:
     def __init__(self):
-        self.google_crawler = google.GoogleAlertCrawler(use_proxy=True)
+        self.google_crawler = google.GoogleAlertCrawler()
         self.llm_client = llm.Deepseek()
-        self.context = context.Context()
+        self.context = context.DeriveContext()
 
     def init_topic(self, topic: models.Topic):
         if topic.in_progress:
@@ -32,6 +32,99 @@ class AlertManager:
         topic.status = "initialized"
         topic.save(update_fields=["status"])
         LOG.info(f"Topic {topic.uuid} has been initialized")
+
+    def derive(self, topic: models.Topic, init_topic=False):
+
+        if not init_topic:
+            models.Topic.objects.filter(
+                uuid=article.topic.uuid
+            ).update(status="evolving")
+
+        articles = (
+            models.Article.objects
+            .filter(topic=topic)
+            .order_by("created_at")
+        )
+
+        for article in articles:
+            # every article will only be derived one time, use derived
+            # answer already written to database to join next derive
+            if models.Answer.objects.filter(article=article).exists():
+                continue
+
+            if init_topic:
+                self._init_topic_derive_article(article)
+            else:
+                self._further_derive_article(article)
+
+            time.sleep(3)
+
+    def _init_topic_derive_article(self, article):
+        message = self.context.build_init_topic_context(article)
+        response = self.llm_client.ask(message)
+
+        try:
+            llm_result = json.loads(response)
+        except Exception:
+            LOG.error("LLM invalid json: %s", response)
+            # TODO: add notify to administrator? maybe we need to have an
+            # optmization on llm request
+            return
+
+        self._apply_answers(article, llm_result)
+
+    def _further_derive_article(self, article):
+        active_questions = models.Question.objects.filter(
+            topic=article.topic,
+            status=models.Question._Status.ACTIVE,
+        )
+
+        messages = self.context.build_further_context(
+            article, active_questions)
+
+        # TODO(koda): llm conversation length limit?
+        LOG.debug(f"Article {article.uuid} is taking {len(active_questions)} "
+                  f"question(s) to further derive {article.topic.uuid}")
+        response = self.llm_client.ask(messages)
+
+        try:
+            llm_result = json.loads(response)
+        except Exception:
+            LOG.error("LLM invalid json: %s", response)
+            # TODO: add notify to administrator? maybe we need to have an
+            # optmization on llm request
+            return
+
+        with db.transaction.atomic():
+            self._apply_answers(article, active_questions, llm_result)
+
+    def _apply_answers(self, article, result, active_questions=None):
+        for item in result.get("answers", []):
+            question = alert_utils.match_question(
+                active_questions, item["question"])
+            if not question:
+                continue
+
+            models.Answer.objects.get_or_create(
+                question=question,
+                article=article,
+                defaults={"content": item["answer"]},
+            )
+
+        for item in result.get("new_questions", []):
+            question, _ = models.Question.objects.get_or_create(
+                topic=article.topic,
+                summary=item["question"],
+                defaults={
+                    "status": models.Question._Status.ACTIVE,
+                },
+            )
+
+            models.Answer.objects.get_or_create(
+                question=question,
+                article=article,
+                defaults={"content": item["answer"]},
+            )
 
     def backfill(self, topic: models.Topic, recent=1):
         LOG.info(f"Backing fill recent {recent} day(s)")
@@ -49,7 +142,12 @@ class AlertManager:
                 continue
 
             try:
+                # TODO(koda): maybe we do not need to proxy to Chinese
+                # website, so that reduce usage consumption
                 article_data = self.google_crawler.fetch_article(url)
+
+                if not article_data["content"]:
+                    continue
             except Exception:
                 # We can easily give up an unreachable article
                 LOG.warning("Fetch article failed: %s", url)
@@ -78,125 +176,3 @@ class AlertManager:
         LOG.info(f"Recent articles of {recent} day(s) are all backfilled, "
                  f"with {exists_article_num} exist and {new_article_num} "
                  f"insert")
-
-    def derive(self, topic: models.Topic, init_topic=False):
-
-        if not init_topic:
-            models.Topic.objects.filter(
-                uuid=article.topic.uuid
-            ).update(status="evolving")
-
-        conversation, _ = models.Conversation.objects.get_or_create(
-            topic=topic
-        )
-
-        articles = (
-            models.Article.objects
-            .filter(topic=topic)
-            .order_by("created_at")
-        )
-
-        for article in articles:
-            # every article will only be derived one time, use derived
-            # answer already written to database to join next derive
-            if models.Answer.objects.filter(article=article).exists():
-                continue
-
-            self._derive_article(conversation, article)
-
-            time.sleep(3)
-
-    def _derive_article(self, conversation, article):
-        active_questions = models.Question.objects.filter(
-            topic=article.topic,
-            status=models.Question._Status.ACTIVE,
-        )
-
-        messages = self.context.build_further_context(
-            article, active_questions)
-
-        # TODO(koda): llm conversation length limit?
-        LOG.debug(f"Article {article.uuid} is taking {len(active_questions)} "
-                  f"question(s) to further derive {article.topic.uuid}")
-        response = self.llm_client.ask(messages)
-
-        try:
-            llm_result = json.loads(response)
-        except Exception:
-            LOG.error("LLM invalid json: %s", response)
-            # TODO: add notify to administrator? maybe we need to have an
-            # optmization on llm request
-            return
-
-        with db.transaction.atomic():
-            self._apply_answers(article, active_questions, llm_result)
-            # TODO: now we only use chunked answer as context to compress input
-            # for AI, next we maybe directly use history article content by llm
-            # conversation. But we must have an idea to limit the conversation
-            # length
-            # self._persist_messages(conversation, article, llm_result)
-
-    def _apply_answers(self, article, questions, result):
-        for item in result.get("answers", []):
-            question = alert_utils.match_question(questions, item["question"])
-            if not question:
-                continue
-
-            models.Answer.objects.get_or_create(
-                question=question,
-                article=article,
-                defaults={"content": item["answer"]},
-            )
-
-        for item in result.get("new_questions", []):
-            question, _ = models.Question.objects.get_or_create(
-                topic=article.topic,
-                summary=item["question"],
-                defaults={
-                    "status": models.Question._Status.ACTIVE,
-                },
-            )
-
-            models.Answer.objects.get_or_create(
-                question=question,
-                article=article,
-                defaults={"content": item["answer"]},
-            )
-
-    def _persist_messages(self, conversation, article, result):
-        index = (
-            models.Message.objects
-            .filter(conversation=conversation)
-            .count()
-        )
-
-        def save(role, content, ctype):
-            nonlocal index
-            index += 1
-            models.Message.objects.create(
-                conversation=conversation,
-                index=index,
-                role=role,
-                content=content,
-                content_type=ctype,
-            )
-
-        save(
-            "user",
-            f"处理文章：{article.title}",
-            models.Message._ContentType.ARTICLE,
-        )
-
-        for item in result.get("answers", []):
-            save(
-                "system",
-                f"补充问题：{item['question']}\n{item['answer']}",
-                models.Message._ContentType.ANSWER,
-            )
-
-        for item in result.get("new_questions", []):
-            save(
-                "system",
-                f"新问题：{item['question']}\n{item['answer']}",
-                models.Message._ContentType.QUESTION,
-            )

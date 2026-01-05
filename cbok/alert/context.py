@@ -1,7 +1,32 @@
 from cbok.alert import models
 
 
-class Context(object):
+class DeriveContext(object):
+
+    def __init__(self) -> None:
+        pass
+
+    def build_init_topic_context(self, article):
+        messages = []
+
+        message = {
+            "role": "user",
+            "content": (
+                f"下面是一篇文章："
+                f"标题：{article.title}"
+                f"内容：{article.content}"
+                "任务："
+                "你觉得该文章有哪些值得人们感兴趣的问题，请提出，并基于该文章的内容对问题作出回答"
+                "请返回可以直接被解析的 JSON 数据："
+                "{"
+                '"new_questions": [{"question": "...", "answer": "..."}]'
+                "}"
+            )
+        }
+
+        messages.append(message)
+        return messages
+
     def build_further_context(self, article, active_questions):
 
         messages = []
