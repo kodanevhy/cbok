@@ -118,6 +118,10 @@ def copy_changes(address, changes, pod_name, service_meta):
                           "worker", "copy.sh")
 
     for change in changes:
+        filename = change["path"].split(f"{parent}")[1]
+        if f"/{package}/" not in filename:
+            continue
+
         change["remote_path"] = os.path.join(
             target_site, change["path"].split(f"{parent}/{package}")[1].lstrip('/'))
 
