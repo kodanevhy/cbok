@@ -4,6 +4,7 @@ import time
 
 from django import db
 
+from cbok.alert import context
 from cbok.alert.crawler import google
 from cbok.alert import llm
 from cbok.alert import models
@@ -15,7 +16,8 @@ LOG = logging.getLogger(__name__)
 class AlertManager:
     def __init__(self):
         self.google_crawler = google.GoogleAlertCrawler(use_proxy=True)
-        self.g4f = llm.G4F()
+        self.llm_client = llm.Deepseek()
+        self.context = context.Context()
 
     def init_topic(self, topic: models.Topic):
         if topic.in_progress:
@@ -110,12 +112,13 @@ class AlertManager:
             status=models.Question._Status.ACTIVE,
         )
 
-        messages = self.g4f.build_further_context(article, active_questions)
+        messages = self.context.build_further_context(
+            article, active_questions)
 
-        # TODO(koda): g4f conversation length limit?
+        # TODO(koda): llm conversation length limit?
         LOG.debug(f"Article {article.uuid} is taking {len(active_questions)} "
                   f"question(s) to further derive {article.topic.uuid}")
-        response = self.g4f.ask_llm(messages)
+        response = self.llm_client.ask(messages)
 
         try:
             llm_result = json.loads(response)
@@ -128,7 +131,7 @@ class AlertManager:
         with db.transaction.atomic():
             self._apply_answers(article, active_questions, llm_result)
             # TODO: now we only use chunked answer as context to compress input
-            # for AI, next we maybe directly use history article content by g4f
+            # for AI, next we maybe directly use history article content by llm
             # conversation. But we must have an idea to limit the conversation
             # length
             # self._persist_messages(conversation, article, llm_result)
