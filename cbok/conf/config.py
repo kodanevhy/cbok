@@ -58,7 +58,15 @@ ALERT_ACCOUNT = Group(
     ]
 )
 
-ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT]
+LLM_API_KEY = Group(
+    name="llm_api_key",
+    title="LLM api key",
+    options=[
+        Option("deepseek", default="", help="API key of deepseek"),
+    ]
+)
+
+ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT, LLM_API_KEY]
 
 
 def validate_section_strict(conf, group):
