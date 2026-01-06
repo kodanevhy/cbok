@@ -26,7 +26,6 @@ venv/
 .idea/
 .DS_Store
 __pycache__/
-log/
 CBoK.egg-info/
 cbok-base-amd64.tar
 *.pyc

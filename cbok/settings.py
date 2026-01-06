@@ -17,7 +17,7 @@ for group in config.ALL_GROUPS:
 SECRET_KEY = ')3t5bed8bo61ao(x&%f@z7q@i#zjme34d*ms9&2a)qzw@dl7c)'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = bool(CONF.get("default", "debug"))
 
 ALLOWED_HOSTS = ['*']
 CORS_ORIGIN_ALLOW_ALL = True
@@ -125,58 +125,52 @@ STATIC_URL = '/static/'
 #     os.path.join(BASE_DIR, 'static')
 # ]
 
-BASE_LOG_DIR = os.path.join(BASE_DIR, 'log')
-os.makedirs(BASE_LOG_DIR, exist_ok=True)
+LOG_DIR = CONF.get("default", "log_dir")
+if sys.platform == "darwin":
+    LOG_DIR = os.path.expanduser("~/Library/Logs/")
+
+os.makedirs(LOG_DIR, exist_ok=True)
 LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'standard': {
-            'format': '[%(levelname)s][%(asctime)s][%(threadName)s:%(thread)d][%(name)s:%(lineno)d] %(message)s'
+    "version": 1,
+    "disable_existing_loggers": False,
+
+    "formatters": {
+        "standard": {
+            "format": "%(asctime)s [%(levelname)s][%(threadName)s:%(thread)d][%(name)s:%(lineno)d] %(message)s"
         },
-        'simple': {
-            'format': '[%(levelname)s][%(asctime)s][%(filename)s:%(lineno)d] %(message)s'
+        "simple": {
+            "format": "%(asctime)s [%(levelname)s][%(filename)s:%(lineno)d] %(message)s"
+        }
+    },
+
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+            "level": "DEBUG",
+        },
+        "file": {
+            "class": "logging.handlers.WatchedFileHandler",
+            "filename": os.path.join(LOG_DIR, "cbok.log"),
+            "formatter": "standard",
+            "level": "DEBUG",
         },
     },
-    'filters': {
-        'require_debug_true': {
-            '()': 'django.utils.log.RequireDebugTrue',
-        },
+
+    "root": {
+        "handlers": ["console", "file"],
+        "level": "DEBUG",
     },
-    'handlers': {
-        'console': {
-            'level': 'DEBUG',   # Recode DEBUG and above
-            # that means once we are in product, you should trace the log in
-            # log file.
-            'filters': ['require_debug_true'],
-            'class': 'logging.StreamHandler',
-            'formatter': 'standard'
-        },
-        'default': {
-            'level': 'INFO',    # Record INFO, WARNING and above
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_LOG_DIR, 'info.log'),
-            'maxBytes': 1024 * 1024 * 50,
-            'backupCount': 3,
-            'formatter': 'standard',
-            'encoding': 'utf-8',
-        },
-        'error': {
-            'level': 'ERROR',   # Record ERROR, FATAL, EXCEPTION
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': os.path.join(BASE_LOG_DIR, 'error.log'),
-            'maxBytes': 1024 * 1024 * 50,
-            'backupCount': 5,
-            'formatter': 'standard',
-            'encoding': 'utf-8',
-        },
-    },
-    'loggers': {
-        '': {
-            'handlers': ['console', 'default', 'error'],
-            'level': 'DEBUG',
-            'propagate': True,
-        },
+
+    "loggers": {
+        "urllib3": {"level": "WARNING"},
+        "urllib3.connectionpool": {"level": "WARNING"},
+        "charset_normalizer": {"level": "WARNING"},
+        "filelock": {"level": "WARNING"},
+        "asyncio": {"level": "WARNING"},
+        "openai": {"level": "WARNING"},
+        "httpx": {"level": "WARNING"},
+        "httpcore": {"level": "WARNING"},
     },
 }
 

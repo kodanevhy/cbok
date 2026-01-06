@@ -8,6 +8,10 @@ DEFAULT = Group(
     options=[
         Option("workspace", default="",
         help="CBoK workspace, absolutely path of CBoK parent"),
+        Option("debug", default=True, help="Enable debug log level"),
+        Option("log_dir", default="/var/log/",
+        help="CBoK log directory, if you are in MacOS, it will be "
+             "forced to ~/Library/Logs/"),
     ],
 )
 

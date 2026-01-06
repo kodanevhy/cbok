@@ -8,22 +8,7 @@ import threading
 from cbok import batch
 
 
-LOG = logging.getLogger()
-LOG.setLevel(logging.INFO)
-
-
-class FlushStreamHandler(logging.StreamHandler):
-    def emit(self, record):
-        super().emit(record)
-        self.flush()
-
-if not LOG.handlers:
-    ch = FlushStreamHandler(sys.stdout)
-    formatter = logging.Formatter(
-        '%(asctime)s [%(levelname)s][%(threadName)s] %(message)s'
-    )
-    ch.setFormatter(formatter)
-    LOG.addHandler(ch)
+LOG = logging.getLogger(__name__)
 
 
 def main():

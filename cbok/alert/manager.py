@@ -59,6 +59,8 @@ class AlertManager:
 
             time.sleep(3)
 
+        LOG.info(f"Topic {topic.uuid} has been derived intermediately")
+
     def _init_topic_derive_article(self, article):
         message = self.context.build_init_topic_context(article)
         response = self.llm_client.ask(message)
@@ -67,11 +69,11 @@ class AlertManager:
             llm_result = json.loads(response)
         except Exception:
             LOG.error("LLM invalid json: %s", response)
-            # TODO: add notify to administrator? maybe we need to have an
-            # optmization on llm request
             return
 
         self._apply_answers(article, llm_result)
+
+        LOG.info(f"Article {article.uuid} is initial derived")
 
     def _further_derive_article(self, article):
         active_questions = models.Question.objects.filter(
@@ -83,7 +85,7 @@ class AlertManager:
             article, active_questions)
 
         # TODO(koda): llm conversation length limit?
-        LOG.debug(f"Article {article.uuid} is taking {len(active_questions)} "
+        LOG.info(f"Article {article.uuid} is taking {len(active_questions)} "
                   f"question(s) to further derive {article.topic.uuid}")
         response = self.llm_client.ask(messages)
 

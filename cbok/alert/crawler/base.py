@@ -9,10 +9,6 @@ from cbok.alert.login import base as login_base
 
 LOG = logging.getLogger(__name__)
 
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-logging.getLogger("urllib3.connectionpool").setLevel(logging.WARNING)
-logging.getLogger("charset_normalizer").setLevel(logging.WARNING)
-
 
 class BaseCrawler(object):
     INDEX = str()
