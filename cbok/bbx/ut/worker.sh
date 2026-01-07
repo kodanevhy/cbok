@@ -74,7 +74,7 @@ function first_run() {
 
     docker exec $container_name bash -c "
         set -ex
-        sudo pip install tox
+        sudo pip -v install tox
     "
     docker exec $container_name bash -c "
         sudo chown -R nova:nova $local_
