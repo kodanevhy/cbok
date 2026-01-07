@@ -47,7 +47,9 @@ def run(project, command, executor=None):
         zip_target = os.path.join(os.path.dirname(project_home),
                                   f"{project}.zip")
         result = executor.run_command(
-            ["zip", "-r", zip_target, project],
+            ["zip", "-r", zip_target, project,
+            "-x", f"{project}/.idea/*",
+            "-x", f"{project}/venv/*"],
             cwd=os.path.dirname(project_home)
         )
         if result.returncode != 0:
