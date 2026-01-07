@@ -44,6 +44,13 @@ function first_run() {
 
     container_name="ut-"$project
 
+    task_container=$(docker ps -a | grep $container_name || true)
+    if echo $task_container | grep -q Exited; then
+        echo "Found dead $container_name, remove and rebuild"
+        docker rm -f $container_name
+        sleep 2
+    fi
+
     task_container=$(docker ps | grep $container_name || true)
     if [ -z "$task_container" ]; then
         docker run --privileged=true -dit --name $container_name $mother_img bash

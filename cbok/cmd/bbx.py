@@ -14,7 +14,7 @@ from cbok import utils as cbok_utils
 LOG = logging.getLogger(__name__)
 
 
-class PatchCommands:
+class PatchCommands(args.BaseCommand):
 
     @args.action_description("Upload the patch changes to a running env")
     @args.args(
@@ -55,7 +55,7 @@ class PatchCommands:
                 LOG.error(f"If you are es member, please claim project "
                           f"{os.path.join(settings.Workspace, path)}")
                 sys.exit(1)
-            ut.run(project, tox_command)
+            ut.run(project, tox_command, executor=self.p_runner)
         except Exception:
             raise
 

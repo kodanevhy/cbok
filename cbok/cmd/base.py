@@ -2,12 +2,15 @@ import argparse
 import logging
 import os
 import sys
+
+import django
+
 from cbok.cmd import bbx
 from cbok.cmd import foundation
 from cbok import utils as cbok_utils
 
 
-LOG = logging.getLogger("cbok-cli")
+LOG = logging.getLogger(__name__)
 
 CATEGORIES = {
     'patch': bbx.PatchCommands,
@@ -16,19 +19,25 @@ CATEGORIES = {
 }
 
 
-def setup_logging(debug=False):
-    level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(
-        level=level,
-        format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
-        handlers=[logging.StreamHandler(sys.stdout)],
-    )
+def setup_logging_level(debug=False):
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG if debug else logging.INFO)
+
+    for handler in root.handlers:
+        handler.setLevel(logging.DEBUG if debug else logging.INFO)
 
 
 def main():
+    # To make logging sense, the logger only effective
+    # after Django setup
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "cbok.settings")
+    django.setup()
+
     os.chdir(cbok_utils.assert_cbok_home())
 
     parser = argparse.ArgumentParser(prog="cbok", description="CBoK CLI")
+    # override Django DEBUG configuration, cuz if we in
+    # production (DEBUG=False), the cbok cli also can be debug
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     subparsers = parser.add_subparsers(dest='subcommand', required=True)
 
@@ -51,8 +60,8 @@ def main():
 
     args = parser.parse_args()
 
-    setup_logging(debug=args.debug)
-    LOG.debug("Starting CBoK CLI (debug=%s)", args.debug)
+    setup_logging_level(args.debug)
+    LOG.info("Starting CBoK CLI")
 
     try:
         func = getattr(args, 'func', None)
