@@ -28,9 +28,6 @@ class GoogleAlertCrawler(base.BaseCrawler):
         password = google_account_conf.split(",")[1].strip()
         session_cookies = self.ensure_cookies(username, password)
 
-        headers = cbok_utils.construct_headers()
-        self.session.headers.update(headers)
-
         page = self.session.get(self.INDEX, cookies=session_cookies)
         if page.status_code != 200:
             raise
