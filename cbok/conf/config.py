@@ -8,7 +8,9 @@ DEFAULT = Group(
     options=[
         Option("workspace", default="",
         help="CBoK workspace, absolutely path of CBoK parent"),
-        Option("debug", default=True, help="Enable debug log level"),
+        Option("debug", default=True,
+        help="Enable debug log level. SECURITY WARNING: don't "
+             "run with debug turned on in production!"),
         Option("log_dir", default="/var/log/",
         help="CBoK log directory, if you are in MacOS, it will be "
              "forced to ~/Library/Logs/"),
@@ -73,7 +75,7 @@ LLM_API_KEY = Group(
 ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT, LLM_API_KEY]
 
 
-def validate_section_strict(conf, group):
+def validate_section_strict(conf):
     """
     Rules:
     1. Section missing  -> ignore all options (OK)
@@ -82,17 +84,19 @@ def validate_section_strict(conf, group):
     WARNING: You must comment out the whole section if you do not want to
              use the feature
     """
-    if not conf.has_section(group.name):
-        return  # section not enabled, ignore options
+    for group in ALL_GROUPS:
 
-    for opt in group.options:
-        if not conf.has_option(group.name, opt.name):
-            raise exception.ConfigValidateFailed(err_msg=
-                f"Missing option [{group.name}] {opt.name}"
-            )
+        if not conf.has_section(group.name):
+            return  # section not enabled, ignore options
 
-        value = conf.get(group.name, opt.name)
-        if not value.strip():
-            raise exception.ConfigValidateFailed(err_msg=
-                f"Empty option [{group.name}] {opt.name}"
-            )
+        for opt in group.options:
+            if not conf.has_option(group.name, opt.name):
+                raise exception.ConfigValidateFailed(err_msg=
+                    f"Missing option [{group.name}] {opt.name}"
+                )
+
+            value = conf.get(group.name, opt.name)
+            if not value.strip():
+                raise exception.ConfigValidateFailed(err_msg=
+                    f"Empty option [{group.name}] {opt.name}"
+                )

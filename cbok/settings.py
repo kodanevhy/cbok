@@ -10,13 +10,11 @@ sys.path.insert(0, BASE_DIR)
 
 CONF = configparser.ConfigParser()
 CONF.read(os.path.join(BASE_DIR, "cbok.conf"))
-for group in config.ALL_GROUPS:
-    config.validate_section_strict(CONF, group)
+config.validate_section_strict(CONF)
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = ')3t5bed8bo61ao(x&%f@z7q@i#zjme34d*ms9&2a)qzw@dl7c)'
 
-# SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = bool(CONF.get("default", "debug"))
 
 ALLOWED_HOSTS = ['*']
