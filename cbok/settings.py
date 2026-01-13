@@ -2,6 +2,8 @@ import configparser
 import os
 import sys
 
+from oslo_utils import strutils
+
 from cbok.conf import config
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -15,7 +17,7 @@ config.validate_section_strict(CONF)
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = ')3t5bed8bo61ao(x&%f@z7q@i#zjme34d*ms9&2a)qzw@dl7c)'
 
-DEBUG = bool(CONF.get("default", "debug"))
+DEBUG = strutils.bool_from_string(CONF.get("default", "debug"))
 
 ALLOWED_HOSTS = ['*']
 CORS_ORIGIN_ALLOW_ALL = True
