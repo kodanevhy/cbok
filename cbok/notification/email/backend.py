@@ -3,10 +3,10 @@ from typing import List, Optional
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 
-from .base import BaseEmailService
+from cbok.notification.email import base
 
 
-class DjangoEmailService(BaseEmailService):
+class DjangoEmailService(base.BaseEmailService):
     def send(
         self,
         subject: str,
@@ -20,7 +20,7 @@ class DjangoEmailService(BaseEmailService):
         msg = EmailMultiAlternatives(
             subject=subject,
             body=body or "",
-            from_email=settings.DEFAULT_FROM_EMAIL,
+            from_email=settings.EMAIL_FROM,
             to=to,
         )
 

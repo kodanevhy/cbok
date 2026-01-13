@@ -22,4 +22,5 @@ urlpatterns = [
     re_path(r'^csrf/', views.CSRFView.as_view()),
     re_path(r'^bbx/', include('cbok.bbx.urls')),
     re_path(r'^user/', include('cbok.user.urls')),
+    re_path(r'^alert/', include('cbok.alert.urls'))
 ]

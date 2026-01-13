@@ -64,7 +64,9 @@ ROOT_URLCONF = 'cbok.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [
+            os.path.join(BASE_DIR, "cbok/templates"),
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [

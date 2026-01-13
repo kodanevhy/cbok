@@ -1,9 +1,12 @@
 import logging
+import threading
 
 from django import http
 from django.views.generic import base
 
 from cbok.alert import manager
+from cbok.alert import models
+from cbok.notification.email import message
 
 LOG = logging.getLogger(__name__)
 
@@ -17,12 +20,28 @@ class TopicView(base.View):
         self.alert_manager = manager.AlertManager()
 
     def post(self, request, **kwargs):
-        """Create topic"""
+        """Create topic and initial derive"""
 
         cleaned_form = request.form
-        topic = cleaned_form.cleaned_data['name']
+        topic_name = cleaned_form.cleaned_data['name']
 
-        # TODO: create topic, if success then return
-        # TODO: async
-        # self.alert_manager.crawl(topic, first_track=True)
-        # return http.JsonResponse({'Topic tracked': True})
+        topic = models.Topic.objects.filter(name=topic_name).first()
+        # if topic and topic.in_progress:
+        if topic:
+            return http.JsonResponse(
+                {'Already in progress': True}, status=403)
+
+        topic = models.Topic.objects.create(
+            name=topic_name,
+            status="created",
+        )
+
+        message.send_welcome_email(["1923001710@qq.com"], "Mizar")
+
+        threading.Thread(
+            target=self.alert_manager.init_topic,
+            kwargs={"topic": topic},
+            daemon=True
+        ).start()
+
+        return http.JsonResponse({"In progress": True}, status=200)
