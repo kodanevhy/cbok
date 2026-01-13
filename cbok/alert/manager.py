@@ -46,7 +46,11 @@ class AlertManager:
             .order_by("created_at")
         )
 
+        percent = 0
+        unit = 100 / len(articles)
         for article in articles:
+            percent += unit
+            percent = round(percent, 2)
             # every article will only be derived one time, use derived
             # answer already written to database to join next derive
             if models.Answer.objects.filter(article=article).exists():
@@ -54,12 +58,14 @@ class AlertManager:
 
             if init_topic:
                 self._init_topic_derive_article(article)
+                LOG.info(f"Article {article.uuid} is initial "
+                         f"derived ({percent}/100%)")
             else:
                 self._further_derive_article(article)
+                LOG.info(f"Topic {topic.uuid} has been derived "
+                         f"intermediately ({percent}/100%)")
 
             time.sleep(3)
-
-        LOG.info(f"Topic {topic.uuid} has been derived intermediately")
 
     def _init_topic_derive_article(self, article):
         message = self.context.build_init_topic_context(article)
@@ -72,8 +78,6 @@ class AlertManager:
             return
 
         self._apply_answers(article, llm_result)
-
-        LOG.info(f"Article {article.uuid} is initial derived")
 
     def _further_derive_article(self, article):
         active_questions = models.Question.objects.filter(
@@ -93,8 +97,6 @@ class AlertManager:
             llm_result = json.loads(response)
         except Exception:
             LOG.error("LLM invalid json: %s", response)
-            # TODO: add notify to administrator? maybe we need to have an
-            # optmization on llm request
             return
 
         with db.transaction.atomic():

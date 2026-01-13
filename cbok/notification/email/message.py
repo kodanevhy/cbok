@@ -3,13 +3,12 @@ from typing import List
 from cbok.notification.email import template
 from cbok.notification.email import backend
 
-
 email_service = backend.DjangoEmailService()
 
 
 def send_welcome_email(to: List[str], username: str):
     html = template.render_email_template(
-        "emails/welcome.html",
+        "alert/welcome.html",
         {"username": username},
     )
 
@@ -22,7 +21,7 @@ def send_welcome_email(to: List[str], username: str):
 
 def send_alert_email(to: List[str], title: str, content: str):
     html = template.render_email_template(
-        "emails/alert.html",
+        "alert/alert.html",
         {
             "title": title,
             "content": content,

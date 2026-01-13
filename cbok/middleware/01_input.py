@@ -2,6 +2,7 @@ import logging
 import json
 
 from django import http
+from django.http import multipartparser
 from django.utils.deprecation import MiddlewareMixin
 
 LOG = logging.getLogger(__name__)
@@ -29,10 +30,22 @@ class InputMiddleware(MiddlewareMixin):
         if not form_class:
             return
 
-        body = request.body
-        if type(body) == bytes and body:
-            body = json.loads(body.decode('utf-8'))
-        form = form_class(request.POST or body)
+        content_type = request.META.get("CONTENT_TYPE", "")
+
+        if content_type.startswith("application/json"):
+            try:
+                body = json.loads(request.body.decode("utf-8"))
+            except json.JSONDecodeError:
+                body = {}
+        else:
+            # multipart / form-urlencoded
+            body = request.POST.dict()
+        request.parsed_body = body
+
+        try:
+            form = form_class(request.parsed_body)
+        except multipartparser.MultiPartParserError as e:
+            raise Exception("No request body found in POST")
         if form.is_valid():
             request.form = form
             return
