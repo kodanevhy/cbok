@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
-set -ex
+set -e
 
 base_path=$(python -c "from cbok import settings; print(settings.BASE_DIR)")
+workspace=$(python -c "from cbok import settings; print(settings.Workspace)")
 source "$base_path/utils.sh"
+source "$base_path/cbok/bbx/utils.sh"
 
 local_='/root/workspace/ut'
 
@@ -18,9 +20,9 @@ function is_virtual_env_ready() {
     fi
 
     docker exec $container_name bash -c "
-        if [ -e $tox_path ]; then
-            echo Ready
-        fi
+if [ -e $tox_path ]; then
+    echo Ready
+fi
     "
 }
 
@@ -57,37 +59,94 @@ function first_run() {
     fi
 
     docker exec $container_name bash -c "
-        set -ex
-        sudo rm -rf $local_/$project
-        sudo mkdir -p $local_
-        sudo chown -R nova:nova $local_
-        sudo yum -y install unzip
+set -ex
+sudo rm -rf $local_/$project
+sudo mkdir -p $local_
+sudo chown -R nova:nova $local_
+sudo yum -y install unzip
     "
 
     docker cp $zip_target $container_name:/tmp/
 
     project_home=$local_/$project
     docker exec $container_name bash -c "
-        set -ex
-        sudo unzip -d $local_ /tmp/$project.zip > /dev/null
+set -ex
+sudo unzip -d $local_ /tmp/$project.zip > /dev/null
     "
 
     docker exec $container_name bash -c "
-        set -ex
-        sudo pip -v install tox
+set -ex
+sudo pip -v install tox
     "
     docker exec $container_name bash -c "
-        sudo chown -R nova:nova $local_
-        cd $project_home;sudo CFLAGS="-std=gnu99" tox -e $cmd -vv 2>&1
+sudo chown -R nova:nova $local_
+cd $project_home;sudo CFLAGS="-std=gnu99" tox -e $cmd -vv 2>&1
     "
 }
 
 
-function copy_test_dir_and_run() {
-    test_dir="$1"
-    project="$2"
-    sub_cmd="$3"
-    module_especial="$4"
+function get_diff() {
+    project_name=$1
+    check_if_committed $project_name
+
+    pushd $workspace/Cursor/es/$project_name > /dev/null
+
+    git show --name-status --pretty="" | while read status oldpath newpath; do
+        [ -z "$status" ] && continue
+
+        case "$status" in
+            A|M|D)
+                printf '{"status":"%s","path":"%s"}\n' "$status" "$oldpath"
+                ;;
+            R*)
+                printf '{"status":"D","path":"%s"}\n' "$oldpath"
+                printf '{"status":"A","path":"%s"}\n' "$newpath"
+                ;;
+            *)
+                printf '{"status":"UNKNOWN","status_code":"%s","old":"%s","new":"%s"}\n' \
+                    "$status" "$oldpath" "$newpath"
+                ;;
+        esac
+    done
+    popd > /dev/null
+}
+
+
+function copy_changes() {
+    container_name="$1"
+    files_json="$2"
+    echo "$files_json" | python3 -c "
+import json, sys
+files = json.loads(sys.stdin.read())
+for f in files:
+    print(f['status'], f['path'], f['remote_path'])
+    " | while read status src dst; do
+
+        case "$status" in
+            A|M)
+                echo "Processing $status $src -> $dst"
+                docker cp $src $container_name:$dst
+                ;;
+
+            D)
+                echo Deleting $dst or $dst"c" in $container_name
+                docker exec $container_name bash -c "rm -f $dst"
+                dst="$dst"c
+                docker exec $container_name bash -c "rm -f $dst"
+                ;;
+
+            *)
+                echo "Unknown status: $status"
+                ;;
+        esac
+    done
+}
+
+
+function later_run() {
+    project="$1"
+    sub_cmd="$2"
+    module_especial="$3"
 
     if test "$module_especial";then
         cmd="$sub_cmd $module_especial"
@@ -98,9 +157,8 @@ function copy_test_dir_and_run() {
     container_name="ut-$project"
 
     project_home=$local_/$project
-    docker cp $test_dir $container_name:$project_home
 
     docker exec $container_name bash -c "
-        cd $project_home;sudo CFLAGS="-std=gnu99" tox -e $cmd -vv 2>&1
+cd $project_home;sudo CFLAGS="-std=gnu99" tox -e $cmd -vv 2>&1
     "
 }
