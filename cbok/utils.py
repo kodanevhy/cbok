@@ -88,6 +88,8 @@ def periodic_task(interval=60):
     return decorator
 
 
+# FIXME(koda): the service output was mixed in stdout, so we cannot
+# retreive, use `execute` in this util file as workaround
 class UnifiedProcessRunner:
     def __init__(self, log_prefix="SHELL"):
         self.log_prefix = log_prefix
@@ -208,8 +210,8 @@ def assert_cbok_home():
     cbok_home = os.path.join(workspace, "Cursor", "me", "cbok")
     if not os.path.exists(cbok_home):
         print(f"CBoK command required: please re-define workspace root in "
-                f"settings.Workspace, and build source tree first "
-                f"and put CBoK into {os.path.dirname(cbok_home)}:")
+              f"settings.Workspace, and build source tree first "
+              f"and put CBoK into {os.path.dirname(cbok_home)}:")
         print(f"*mkdir -p {os.path.dirname(cbok_home)}*")
         sys.exit(1)
 

@@ -1,11 +1,13 @@
+import json
 import logging
 import os.path
 import sys
+import shlex
 
 from oslo_utils import fileutils
-
 from cbok.bbx import exception
 from cbok import settings
+from cbok import utils as cbok_utils
 
 LOG = logging.getLogger(__name__)
 
@@ -15,15 +17,37 @@ SUPPORTED = {
     # nova-compute:6.2.2-alpha.21
     "nova": {
         "image": "cbok-ut-nova-compute:latest",
-        "test_dir": "/nova/test/"
+        "site": "/root/workspace/ut/nova/",
     },
     # from hub.easystack.io/arm64v8/escloud-linux-source-
     # nova-dashboard-api:6.2.2-alpha.21
     "nova-dashboard-api": {
         "image": "cbok-ut-nova-dashboard-api:latest",
-        "test_dir": "/nova_dashboard_api/test/"
+        "site": "/root/workspace/ut/nova-dashboard-api/",
     },
 }
+
+
+def copy_changes(project, container_name, changes, executor=None):
+    service_meta = SUPPORTED[project]
+    target_site = service_meta["site"]
+
+    worker = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                          "worker.sh")
+
+    for change in changes:
+        change["remote_path"] = os.path.join(
+            target_site, change["path"].split(f"{project}")[1].lstrip('/'))
+
+    files_args = json.dumps(changes)
+
+    result = executor.run_command(
+        ["bash", "-c", f"source {worker}; copy_changes {container_name} "
+                       f"{shlex.quote(files_args)}"])
+    
+    if result.returncode != 0:
+        LOG.error(result.stderr)
+        raise exception.CopyChangesFailed()
 
 
 def run(project, command, executor=None):
@@ -68,8 +92,25 @@ def run(project, command, executor=None):
     else:
         LOG.info("Using cached tox virtual env")
 
-        test_dir = SUPPORTED[project]["test_dir"]
-        test_dir = os.path.join(project_home, test_dir.lstrip("/"))
+        result = cbok_utils.execute(
+                ["bash", "-c", f"source {worker}; get_diff {project}"])
+
+        if result.returncode == 0 and not result.stdout:
+            raise exception.NoDiffBetweenHead()
+
+        if result.returncode != 0:
+            LOG.error(result.stderr)
+            raise exception.AnalysisCommitFailed(project=project)
+
+        files = [json.loads(line) for line in result.stdout.splitlines()]
+        for file in files:
+            file_abs = os.path.join(settings.Workspace, 'Cursor',
+                                    'es', project, file["path"])
+            file["path"] = file_abs
+
+        container_name = f"ut-{project}"
+        copy_changes(project, container_name, files, executor)
+
         result = executor.run_command(
-            ["bash", "-c", f"source {worker}; copy_test_dir_and_run "
-                           f"{test_dir} {project} {command}"])
+            ["bash", "-c", f"source {worker}; later_run "
+                           f"{project} {command}"])
