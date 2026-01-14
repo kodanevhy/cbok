@@ -36,6 +36,7 @@ class TopicView(base.View):
             status="created",
         )
 
+        # TODO: only if the user hadn't created any topics 
         message.send_welcome_email(["1923001710@qq.com"], "Mizar")
 
         threading.Thread(
