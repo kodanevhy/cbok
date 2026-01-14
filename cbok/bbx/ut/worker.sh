@@ -46,14 +46,18 @@ function first_run() {
 
     container_name="ut-"$project
 
-    task_container=$(docker ps -a | grep $container_name || true)
+    task_container=$(
+        docker ps -a | awk -v name="$container_name" '$NF == name'
+    )
     if echo $task_container | grep -q Exited; then
         echo "Found dead $container_name, remove and rebuild"
         docker rm -f $container_name
         sleep 2
     fi
 
-    task_container=$(docker ps | grep $container_name || true)
+    task_container=$(
+        docker ps -a | awk -v name="$container_name" '$NF == name'
+    )
     if [ -z "$task_container" ]; then
         docker run --privileged=true -dit --name $container_name $mother_img bash
     fi
@@ -80,19 +84,25 @@ sudo pip -v install tox
     "
     docker exec $container_name bash -c "
 sudo chown -R nova:nova $local_
-cd $project_home;sudo CFLAGS="-std=gnu99" tox -e $cmd -vv 2>&1
+sudo cd $project_home;sudo CFLAGS="-std=gnu99" tox -e $cmd -vv 2>&1
     "
 }
 
 
 function get_diff() {
     project_name=$1
-    check_if_committed $project_name
+    base_branch=${2:-origin/master}
 
-    pushd $workspace/Cursor/es/$project_name > /dev/null
+    pushd "$workspace/Cursor/es/$project_name" > /dev/null
 
-    git show --name-status --pretty="" | while read status oldpath newpath; do
-        [ -z "$status" ] && continue
+    {
+        # 1. tracked changes (commit + uncommitted)
+        git diff --name-status "$base_branch"...HEAD
+        # 2. staged but not committed
+        git diff --name-status --cached
+        # 3. untracked files
+        git ls-files --others --exclude-standard | sed 's/^/??\t/'
+    } | sort -u | while read status oldpath newpath; do
 
         case "$status" in
             A|M|D)
@@ -102,12 +112,16 @@ function get_diff() {
                 printf '{"status":"D","path":"%s"}\n' "$oldpath"
                 printf '{"status":"A","path":"%s"}\n' "$newpath"
                 ;;
+            '??')
+                printf '{"status":"A","path":"%s"}\n' "$oldpath"
+                ;;
             *)
-                printf '{"status":"UNKNOWN","status_code":"%s","old":"%s","new":"%s"}\n' \
+                printf '{"status":"UNKNOWN","code":"%s","old":"%s","new":"%s"}\n' \
                     "$status" "$oldpath" "$newpath"
                 ;;
         esac
     done
+
     popd > /dev/null
 }
 
