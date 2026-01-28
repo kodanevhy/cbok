@@ -12,3 +12,5 @@
 0.4-backlog:
     1.Shell module re design
     2.Separate bbx dependencies
+    3.Proxy service uniform (sock5 and http)
+    4.Proxy in private cloud
