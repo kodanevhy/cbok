@@ -3,6 +3,8 @@ import os
 import shutil
 import sys
 
+from oslo_utils import strutils
+
 from cbok.bbx.put_patch import main as put_patch
 from cbok.bbx.ut import main as ut
 from cbok.cmd import args
@@ -203,3 +205,52 @@ class BinCommands(args.BaseCommand):
     def default(self, binary):
         """Override the binary to use"""
         pass
+
+
+class OpenStackCommands(args.BaseCommand):
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.executor = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "bbx/openstack/executor.sh")
+
+    @args.action_description("Deploy an OpenStack")
+    @args.args(
+        "--block-alias", metavar="<block_alias>", required=True,
+        help="Block alias for Cinder data disk")
+    @args.args(
+        "--eth", metavar="<eth>", required=True,
+        help="Ethernet name, instance network traffic export")
+    @args.args(
+        "--floating-ip", metavar="<floating_ip>", required=False,
+        help="Floating IP, use the same with address if not specified")
+    @args.args(
+        "--address", metavar="<address>", required=True,
+        help="Target address that is already authorized")
+    def deploy(self, address, floating_ip, eth, block_alias):
+
+        def _check_ipv4(_addr):
+            if not cbok_utils.is_ipv4(_addr):
+                print(f"Not an allowed IPv4 address: {_addr}")
+                sys.exit(1)
+
+        if floating_ip:
+            _check_ipv4(floating_ip)
+        _check_ipv4(address)
+
+        floating_ip = floating_ip or address
+
+        is_clean = input(f"Override WARNING: is {floating_ip} "
+                         f"free and purely clean? (y/n): ")
+        if not strutils.bool_from_string(is_clean):
+            sys.exit(1)
+
+        hostname = "controller"
+
+        cbok_utils.write_proxy_conf("cbok/bbx/openstack/proxy")
+
+        self.p_runner.run_shell_script(
+            self.executor,
+            args=[floating_ip, address, hostname, eth, block_alias]
+        )
