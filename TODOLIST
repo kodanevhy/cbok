@@ -14,3 +14,8 @@
     2.Separate bbx dependencies
     3.Proxy service uniform (sock5 and http)
     4.Proxy in private cloud
+
+KnownIssue (low priority):
+    1.Adaptation on Windows
+    2.Shell output capture exactly
+    3.More flexible where the CBoK host directory, hardcoded 'Cursor'
