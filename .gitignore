@@ -14,6 +14,8 @@ cbok/bbx/kernel/base/*
 !cbok/bbx/kernel/base/README.md
 cbok/bbx/ut/images/*
 cbok/alert/login/cookie.json
+cbok/bbx/openstack/proxy
+cbok/bbx/openstack/shadowsocks2-linux
 cbok/*/migrations/
 cbok.conf
 review/*

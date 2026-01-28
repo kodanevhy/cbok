@@ -14,6 +14,8 @@ cbok/bbx/virt_devel/example/*
 cbok/bbx/kernel/base/*
 !cbok/bbx/kernel/base/README.md
 cbok/bbx/ut/images/*
+cbok/bbx/openstack/proxy
+cbok/bbx/openstack/shadowsocks2-linux
 cbok/alert/login/cookie.json
 cbok/*/migrations/
 cbok.conf

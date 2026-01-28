@@ -1,9 +1,11 @@
+import configparser
 from contextlib import contextmanager
 import logging
 import os
 from pathlib import Path
 import requests
 from requests.adapters import HTTPAdapter
+import socket
 import subprocess
 import sys
 from urllib3.util.retry import Retry
@@ -123,7 +125,10 @@ class UnifiedProcessRunner:
             full_cmd = list(cmd)
 
         if args:
-            full_cmd.extend(args)
+            if isinstance(args, str):
+                full_cmd.append(args)
+            else:
+                full_cmd.extend(args)
 
         self._print_header(full_cmd)
 
@@ -238,6 +243,24 @@ def load_proxies(conf=None):
     return {"http": url, "https": url}
 
 
+def write_proxy_conf(path):
+    if "proxy" in CONF.sections():
+        with open(path, "w") as f:
+            try:
+                proxy_conf = (f"cipher={CONF.get("proxy", "cipher")}\n"
+                f"password={CONF.get("proxy", "password")}\n"
+                f"vps_server={CONF.get("proxy", "vps_server")}\n"
+                f"port={CONF.get("proxy", "port")}")
+            except (configparser.NoSectionError,
+                    configparser.NoOptionError) as e:
+                LOG.warning("Please fill in the proxy configuration: %s", e)
+                return False
+            f.write(proxy_conf)
+    else:
+        LOG.warning("No proxy configuration found, maybe failed to fetch "
+                    "repository")
+
+
 def create_session(
     timeout=10,
     retries=3,
@@ -291,3 +314,11 @@ def create_session(
     session.request = _wrap_timeout(session.request, timeout)
 
     return session
+
+
+def is_ipv4(addr):
+    try:
+        socket.inet_aton(addr)
+        return addr.count('.') == 3
+    except socket.error:
+        return False

@@ -15,6 +15,7 @@ LOG = logging.getLogger(__name__)
 CATEGORIES = {
     'patch': bbx.PatchCommands,
     'bin': bbx.BinCommands,
+    'openstack': bbx.OpenStackCommands,
     'foundation': foundation.FoundationCommands,
 }
 

@@ -7,6 +7,7 @@ from oslo_utils import strutils
 
 from cbok.cmd import args
 from cbok import settings
+from cbok import utils as cbok_utils
 
 
 CONF = settings.CONF
@@ -77,21 +78,7 @@ class FoundationCommands(args.BaseCommand):
         )
         LOG.debug(f"rsync installed to {address}")
 
-        if "proxy" in CONF.sections():
-            with open("foundation/base/proxy", "w") as f:
-                try:
-                    proxy_conf = (f"cipher={CONF.get("proxy", "cipher")}\n"
-                    f"password={CONF.get("proxy", "password")}\n"
-                    f"vps_server={CONF.get("proxy", "vps_server")}\n"
-                    f"port={CONF.get("proxy", "port")}")
-                except (configparser.NoSectionError,
-                        configparser.NoOptionError) as e:
-                    LOG.warning("Please fill in the proxy configuration: %s", e)
-                    sys.exit(1)
-                f.write(proxy_conf)
-        else:
-            LOG.warning("No proxy configuration found, maybe failed to fetch "
-                        "repository")
+        cbok_utils.write_proxy_conf("foundation/base/proxy")
 
         LOG.debug("Copying resource, be patient if network seems slow")
 
