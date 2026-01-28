@@ -7,6 +7,7 @@
     6.Remove assert and execute cbok command everywhere
     7.security configuration
     8.VPS for alert
+    9.OpenStack deploy utilization
 
 0.4-backlog:
     1.Shell module re design
