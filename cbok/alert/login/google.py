@@ -30,8 +30,8 @@ class ElementAction(object):
 class GoogleLogin(base.BaseLogin):
     URL = 'https://accounts.google.com/ServiceLogin'
 
-    def __init__(self, username, password):
-        super().__init__(username, password)
+    def __init__(self, username, password, use_proxy=False):
+        super().__init__(username, password, use_proxy)
         self.email = username
         self.password = password
         self.driver = None
