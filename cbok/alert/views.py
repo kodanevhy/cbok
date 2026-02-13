@@ -26,18 +26,18 @@ class TopicView(base.View):
         topic_name = cleaned_form.cleaned_data['name']
 
         topic = models.Topic.objects.filter(name=topic_name).first()
-        # if topic and topic.in_progress:
-        if topic:
+        if topic and topic.in_progress:
             return http.JsonResponse(
                 {'Already in progress': True}, status=403)
 
-        topic = models.Topic.objects.create(
-            name=topic_name,
-            status="created",
-        )
+        if not topic:
+            topic = models.Topic.objects.create(
+                name=topic_name,
+                status="created",
+            )
 
         # TODO: only if the user hadn't created any topics 
-        message.send_welcome_email(["1923001710@qq.com"], "Mizar")
+        # message.send_welcome_email(["1923001710@qq.com"], "Mizar")
 
         threading.Thread(
             target=self.alert_manager.init_topic,

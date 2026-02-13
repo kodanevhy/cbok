@@ -9,15 +9,56 @@ from cbok.alert.crawler import google
 from cbok.alert import llm
 from cbok.alert import models
 from cbok.alert import utils as alert_utils
+from cbok import settings
+from cbok.notification import service as email_service
 
+CONF = settings.CONF
 LOG = logging.getLogger(__name__)
 
 
 class AlertManager:
     def __init__(self):
-        self.google_crawler = google.GoogleAlertCrawler()
         self.llm_client = llm.Deepseek()
         self.context = context.DeriveContext()
+        self._init_google_crawler()
+        self.email_service = email_service.EmailService()
+
+    def _init_google_crawler(self):
+        google_account_conf = CONF.get("alert_account", "google")
+        username = google_account_conf.split(",")[0].strip()
+        password = google_account_conf.split(",")[1].strip()
+        self.google_crawler = google.GoogleAlertCrawler()
+        self.google_crawler.ensure_cookies(username, password,
+                                           use_proxy=True)
+
+    ALERT_EMAIL_TO = ["1923001710@qq.com"]
+
+    def notify_initialized(self, topic: models.Topic):
+        answers = (
+            models.Answer.objects
+            .filter(question__topic=topic)
+            .select_related("question", "article")
+            .order_by("created_at")
+        )
+        items = [
+            {
+                "question": a.question.summary,
+                "answer": a.content,
+                "article_title": a.article.title,
+                "article_url": a.article.url,
+            }
+            for a in answers
+        ]
+        try:
+            self.email_service.initialized_alert(
+                to=self.ALERT_EMAIL_TO,
+                topic_name=topic.name,
+                items=items,
+            )
+        except Exception as e:
+            LOG.warning("Failed to send initialized alert email: %s", e)
+
+        LOG.info(f"Initialized alert notified")
 
     def init_topic(self, topic: models.Topic):
         if topic.in_progress:
@@ -31,6 +72,7 @@ class AlertManager:
 
         topic.status = "initialized"
         topic.save(update_fields=["status"])
+        self.notify_initialized(topic)
         LOG.info(f"Topic {topic.uuid} has been initialized")
 
     def derive(self, topic: models.Topic, init_topic=False):
@@ -45,6 +87,9 @@ class AlertManager:
             .filter(topic=topic)
             .order_by("created_at")
         )
+
+        if len(articles) == 0:
+            return
 
         percent = 0
         unit = 100 / len(articles)

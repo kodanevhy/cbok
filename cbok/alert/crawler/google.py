@@ -8,7 +8,6 @@ from urllib import parse
 from cbok.alert.crawler import base
 from cbok.alert.login import google
 from cbok import settings
-from cbok import utils as cbok_utils
 
 LOG = logging.getLogger(__name__)
 CONF = settings.CONF
@@ -23,12 +22,7 @@ class GoogleAlertCrawler(base.BaseCrawler):
         self.login_manager = google.GoogleLogin
 
     def analysis_index(self):
-        google_account_conf = CONF.get("alert_account", "google")
-        username = google_account_conf.split(",")[0].strip()
-        password = google_account_conf.split(",")[1].strip()
-        session_cookies = self.ensure_cookies(username, password)
-
-        page = self.session.get(self.INDEX, cookies=session_cookies)
+        page = self.session.get(self.INDEX, cookies=self.cookies)
         if page.status_code != 200:
             raise
 
@@ -48,7 +42,7 @@ class GoogleAlertCrawler(base.BaseCrawler):
                         alert_name = a[1][2][0]
                         alert_id = a[1][5][0][-1]
                         r.update({alert_name: alert_id})
-                return r, session_cookies
+                return r
             except SyntaxError:
                 raise
         else:
@@ -73,11 +67,11 @@ class GoogleAlertCrawler(base.BaseCrawler):
         d = 86400 * date
         # That mean the past `date` days by default
         params = f'[null,null,{now},{d}]'
-        indexed, session_cookies = self.analysis_index()
+        indexed = self.analysis_index()
         sid = indexed[name]
         url = f'{self.HISTORY}?params={parse.quote(params)}&s={sid}'
 
-        r = self.session.get(url, cookies=session_cookies)
+        r = self.session.get(url, cookies=self.cookies)
 
         html = r.text.encode('utf-8')
 

@@ -11,10 +11,14 @@ LOG = logging.getLogger(__name__)
 class BaseLogin(object):
     URL = 'https://www.baselogin.com'
 
-    def __init__(self, username, password):
+    def __init__(self, username, password, use_proxy=False):
         self.username = username
         self.password = password
-        self.session = cbok_utils.create_session(retries=False)
+        if use_proxy:
+            self.session = cbok_utils.create_session(
+                retries=False, proxies=cbok_utils.load_proxies())
+        else:
+            self.session = cbok_utils.create_session(retries=False)
 
     @property
     def target(self):

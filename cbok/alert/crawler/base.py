@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from bs4 import BeautifulSoup
 import logging
 import re
@@ -8,6 +10,14 @@ from cbok import utils as cbok_utils
 from cbok.alert.login import base as login_base
 
 LOG = logging.getLogger(__name__)
+
+DOMESTIC_SUFFIXES = (".cn", ".com.cn", ".net.cn", ".org.cn", ".gov.cn",
+                     ".edu.cn")
+DOMESTIC_DOMAINS = frozenset([
+    "baidu.com", "zhihu.com", "weibo.com", "qq.com", "taobao.com", "jd.com",
+    "163.com", "sina.com.cn", "sohu.com", "weixin.qq.com", "douban.com",
+    "bilibili.com", "csdn.net", "oschina.net", "segmentfault.com",
+])
 
 
 class BaseCrawler(object):
@@ -20,12 +30,13 @@ class BaseCrawler(object):
         else:
             self.session = cbok_utils.create_session(retries=False)
         self.login_manager = login_base.BaseLogin
+        self.cookies = None
 
-    def _init_login_manager(self, username, password):
-        return self.login_manager(username, password)
+    def _init_login_manager(self, username, password, use_proxy=False):
+        return self.login_manager(username, password, use_proxy)
 
-    def ensure_cookies(self, username, password):
-        lm = self._init_login_manager(username, password)
+    def ensure_cookies(self, username, password, use_proxy=False):
+        lm = self._init_login_manager(username, password, use_proxy)
 
         session_cookies = \
             lm.ensure_cookies(page_site=self.INDEX)
@@ -38,7 +49,7 @@ class BaseCrawler(object):
                      f"{domain}")
             session_cookies = lm.retrieve_cookies()
 
-        return session_cookies
+        self.cookies = session_cookies
 
     def dedup(self, belong_topic, url):
         return models.Article.objects.filter(
@@ -46,12 +57,34 @@ class BaseCrawler(object):
             url=url,
         ).exists()
 
+    def _is_domestic_domain(self, url):
+        try:
+            host = urlparse(url).netloc or ""
+            if not host:
+                return False
+            ext = tldextract.extract(host)
+            reg = ext.registered_domain.lower()
+            if not reg:
+                return False
+            if any(reg.endswith(s) for s in DOMESTIC_SUFFIXES):
+                return True
+            return reg in DOMESTIC_DOMAINS
+        except Exception:
+            return False
+
     def fetch_article(self, url):
         title = None
         date = None
         content = None
 
-        resp = self.session.get(url)
+        if self._is_domestic_domain(url):
+            resp = self.session.get(url, proxies={"http": None, "https": None})
+        else:
+            # FIXME: Record this as a warning to find Chinese domain, so that
+            # except more Chinese domain in the future, fix me if we are
+            # experienced enough.
+            LOG.warning(f"Fetching article {url} with proxy")
+            resp = self.session.get(url)
         resp.raise_for_status()
         resp.encoding = resp.apparent_encoding
         soup = BeautifulSoup(resp.text, "html.parser")
