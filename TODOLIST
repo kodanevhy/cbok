@@ -1,4 +1,4 @@
-0.3-alpha:
+0.3:
     1.Optimize log output of remote shell
     2.Finish alert application
     3.Fix cbok main app delete job bug
@@ -9,11 +9,12 @@
     8.VPS for alert
     9.OpenStack deploy utilization
 
-0.4-backlog:
+0.4-alpha:
     1.Shell module re design
     2.Separate bbx dependencies
     3.Proxy service uniform (sock5 and http)
     4.Proxy in private cloud
+    5.alert derive notification
 
 KnownIssue (low priority):
     1.Adaptation on Windows
