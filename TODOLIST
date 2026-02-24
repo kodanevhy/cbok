@@ -19,3 +19,4 @@ KnownIssue (low priority):
     1.Adaptation on Windows/Linux
     2.Shell output capture exactly
     3.More flexible where the CBoK host directory, hardcoded 'Cursor'
+    4.The files locate which git ignored 
