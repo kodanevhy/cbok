@@ -1,3 +1,4 @@
+import configparser
 import logging
 import os
 import shutil
@@ -254,3 +255,165 @@ class OpenStackCommands(args.BaseCommand):
             self.executor,
             args=[floating_ip, address, hostname, eth, block_alias]
         )
+
+
+class ProxyCommands(args.BaseCommand):
+
+    def __init__(self) -> None:
+        super().__init__()
+        bbx_proxy = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bbx/proxy")
+        self.server_executor = os.path.join(bbx_proxy, "socks5_server.sh")
+        self._client_mac_executor = os.path.join(bbx_proxy, "client_mac.sh")
+
+    def _run_proxy_script(self, action, address, env=None):
+        """Run bbx/proxy/socks5_server.sh with action and address. For deploy, env has cipher/password/port from cbok.conf."""
+        self.p_runner.run_shell_script(
+            self.server_executor,
+            args=[action, address],
+            env=env,
+        )
+
+    def _read_proxy_address(self):
+        """Read proxy server address (vps_server) from cbok.conf [proxy]."""
+        conf = settings.CONF
+        if not conf.has_section("proxy"):
+            LOG.error("Missing [proxy] in cbok.conf.")
+            sys.exit(1)
+        try:
+            address = conf.get("proxy", "vps_server").strip()
+        except configparser.NoOptionError:
+            LOG.error("cbok.conf [proxy] needs vps_server.")
+            sys.exit(1)
+        if not address:
+            LOG.error("cbok.conf [proxy] vps_server is empty.")
+            sys.exit(1)
+        return address
+
+    def _deploy_env(self):
+        """Build env with [proxy] from cbok.conf for deploy (no config file)."""
+        conf = settings.CONF
+        if not conf.has_section("proxy"):
+            LOG.error("Missing [proxy] in cbok.conf; cannot deploy.")
+            sys.exit(1)
+        try:
+            cipher = conf.get("proxy", "cipher")
+            password = conf.get("proxy", "password")
+            port = conf.get("proxy", "port")
+        except (configparser.NoSectionError, configparser.NoOptionError) as e:
+            LOG.error("cbok.conf [proxy] needs cipher, password, port: %s", e)
+            sys.exit(1)
+        env = os.environ.copy()
+        env["CBOK_SS5_CIPHER"] = cipher
+        env["CBOK_SS5_PASSWORD"] = password
+        env["CBOK_SS5_PORT"] = str(port)
+        return env
+
+    def _get_client_config(self):
+        """Read client config from cbok.conf [proxy]. Returns dict with ss_uri, localport for client_mac.sh env."""
+        conf = settings.CONF
+        if not conf.has_section("proxy"):
+            LOG.error("Missing [proxy] in cbok.conf.")
+            sys.exit(1)
+        try:
+            cipher = conf.get("proxy", "cipher")
+            password = conf.get("proxy", "password")
+            port = conf.get("proxy", "port")
+            vps_server = conf.get("proxy", "vps_server")
+            localport = conf.get("proxy", "localport", fallback="1080")
+        except (configparser.NoSectionError, configparser.NoOptionError) as e:
+            LOG.error("cbok.conf [proxy] needs cipher, password, port, vps_server: %s", e)
+            sys.exit(1)
+        import urllib.parse
+        password_enc = urllib.parse.quote(password, safe="")
+        ss_uri = f"ss://{cipher}:{password_enc}@{vps_server}:{port}"
+        return {"ss_uri": ss_uri, "localport": localport}
+
+    def _client_env(self):
+        """Env for client_mac.sh deploy (CBOK_SS5_SS_URI, CBOK_SS5_LOCALPORT)."""
+        cfg = self._get_client_config()
+        env = os.environ.copy()
+        env["CBOK_SS5_SS_URI"] = cfg["ss_uri"]
+        env["CBOK_SS5_LOCALPORT"] = cfg["localport"]
+        return env
+
+    def _run_client_mac(self, action, env=None):
+        """Run bbx/proxy/client_mac.sh with action. Env only needed for deploy."""
+        self.p_runner.run_shell_script(
+            self._client_mac_executor,
+            args=[action],
+            env=env,
+        )
+
+    @args.action_description("Deploy shadowsocks5 server (and local client on macOS)")
+    def deploy(self):
+        """Deploy server on vps_server from cbok.conf [proxy]; on macOS also deploy local client (launchd)."""
+        address = self._read_proxy_address()
+        result = self.p_runner.run_shell_script(
+            self.server_executor,
+            args=["deploy", address],
+            env=self._deploy_env(),
+        )
+        if result.returncode != 0:
+            sys.exit(1)
+        if sys.platform == "darwin":
+            self._run_client_mac("deploy", env=self._client_env())
+        else:
+            LOG.warning("Local client deploy is only supported on macOS; skipping.")
+
+    @args.action_description("Start server and/or local client")
+    @args.args(
+        "--target", choices=("server", "client", "both"), default="both",
+        help="Target: server (remote), client (local), or both (default)")
+    def start(self, target="both"):
+        """Start server and/or client according to --target."""
+        if target in ("server", "both"):
+            self._run_proxy_script("start", self._read_proxy_address())
+        if target in ("client", "both") and sys.platform == "darwin":
+            self._run_client_mac("start")
+
+    @args.action_description("Stop server and/or local client")
+    @args.args(
+        "--target", choices=("server", "client", "both"), default="both",
+        help="Target: server (remote), client (local), or both (default)")
+    def stop(self, target="both"):
+        """Stop server and/or client according to --target."""
+        if target in ("server", "both"):
+            self._run_proxy_script("stop", self._read_proxy_address())
+        if target in ("client", "both") and sys.platform == "darwin":
+            self._run_client_mac("stop")
+
+    @args.action_description("Restart server and/or local client")
+    @args.args(
+        "--target", choices=("server", "client", "both"), default="both",
+        help="Target: server (remote), client (local), or both (default)")
+    def restart(self, target="both"):
+        """Restart server and/or client according to --target."""
+        if target in ("server", "both"):
+            self._run_proxy_script("restart", self._read_proxy_address())
+        if target in ("client", "both") and sys.platform == "darwin":
+            self._run_client_mac("restart")
+
+    @args.action_description("Remove server and/or local client")
+    @args.args(
+        "--target", choices=("server", "client"), required=True,
+        help="Target: server (remote systemd + binary) or client (local launchd)")
+    def delete(self, target):
+        """Remove server on remote (stop, disable, remove unit and binary) or local client (unload launchd, remove plist)."""
+        if target == "server":
+            self._run_proxy_script("delete", self._read_proxy_address())
+        else:
+            if sys.platform != "darwin":
+                LOG.warning("Client delete is only supported on macOS.")
+                return
+            self._run_client_mac("delete")
+
+    @args.action_description("Show status of server and/or local client")
+    @args.args(
+        "--target", choices=("server", "client", "both"), default="both",
+        help="Target: server (remote), client (local), or both (default)")
+    def status(self, target="both"):
+        """Show status of server (systemctl) and/or client (launchctl) according to --target."""
+        if target in ("server", "both"):
+            self._run_proxy_script("status", self._read_proxy_address())
+        if target in ("client", "both") and sys.platform == "darwin":
+            self._run_client_mac("status")

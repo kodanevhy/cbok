@@ -17,6 +17,7 @@ CATEGORIES = {
     'bin': bbx.BinCommands,
     'openstack': bbx.OpenStackCommands,
     'foundation': foundation.FoundationCommands,
+    'proxy': bbx.ProxyCommands,
 }
 
 
