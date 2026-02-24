@@ -10,13 +10,12 @@
     9.OpenStack deploy utilization
 
 0.4-alpha:
-    1.Shell module re design
+    1.Shell module re design, global shell utilization and global static files
     2.Separate bbx dependencies
-    3.Proxy service uniform (sock5 and http)
-    4.Proxy in private cloud
-    5.alert derive notification
+    3.Proxy service uniform (sock5 only)
+    4.alert derive notification
 
 KnownIssue (low priority):
-    1.Adaptation on Windows
+    1.Adaptation on Windows/Linux
     2.Shell output capture exactly
     3.More flexible where the CBoK host directory, hardcoded 'Cursor'

@@ -16,6 +16,8 @@ cbok/bbx/kernel/base/*
 cbok/bbx/ut/images/*
 cbok/bbx/openstack/proxy
 cbok/bbx/openstack/shadowsocks2-linux
+cbok/bbx/proxy/shadowsocks2-linux
+cbok/bbx/proxy/shadowsocks2-macos-arm64
 cbok/alert/login/cookie.json
 cbok/*/migrations/
 cbok.conf
