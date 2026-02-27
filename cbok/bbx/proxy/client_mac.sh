@@ -117,7 +117,7 @@ PLIST
         if echo "$raw" | grep -q '"PID"'; then
             pid=$(echo "$raw" | sed -n 's/.*"PID" = \([0-9]*\).*/\1/p' | head -1)
             if [[ "$pid" != "0" ]]; then
-                active="\033[32mactive\033[0m"
+                active="\033[1;32mactive\033[0m"
             fi
             echo -e "State:  ${active} (PID $pid)"
             echo "SOCKS5: 127.0.0.1:1080"
