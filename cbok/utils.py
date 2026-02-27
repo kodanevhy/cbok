@@ -96,7 +96,8 @@ class UnifiedProcessRunner:
     def __init__(self, log_prefix="SHELL"):
         self.log_prefix = log_prefix
 
-    def run_shell_script(self, script_path, args=None, cwd=None, env=None):
+    def run_shell_script(self, script_path, args=None, cwd=None, env=None,
+                         cmd_purge_output=False):
         if sys.platform == 'win32':
             script_path = script_path.replace('\\', '/')
             script_path = str(Path(script_path).resolve())
@@ -104,7 +105,8 @@ class UnifiedProcessRunner:
         if not os.access(script_path, os.X_OK):
             os.chmod(script_path, 0o755)
 
-        return self.run_command(script_path, args, cwd=cwd, env=env)
+        return self.run_command(script_path, args, cwd=cwd, env=env,
+                                cmd_purge_output=cmd_purge_output)
 
     def _print_header(self, cmd):
         LOG.debug(f"Working from: {os.getcwd()}")
@@ -118,7 +120,7 @@ class UnifiedProcessRunner:
         LOG.error(f"[{self.log_prefix}] ERRNO: {returncode} ;<")
 
     def run_command(self, cmd, args=None, shell=False, cwd=None, env=None,
-                           timeout=None, check=False):
+                    timeout=None, check=False, cmd_purge_output=False):
         if isinstance(cmd, str):
             full_cmd = [cmd]
         else:
@@ -130,7 +132,8 @@ class UnifiedProcessRunner:
             else:
                 full_cmd.extend(args)
 
-        self._print_header(full_cmd)
+        if not cmd_purge_output:
+            self._print_header(full_cmd)
 
         if shell:
             if isinstance(full_cmd, list):
@@ -163,6 +166,9 @@ class UnifiedProcessRunner:
                     if line:
                         output_lines.append(line)
                         if line.startswith("+"):
+                            continue
+                        if cmd_purge_output:
+                            print(line)
                             continue
                         LOG.info(f"[{self.log_prefix}] {line}")
                 proc.stdout.close()

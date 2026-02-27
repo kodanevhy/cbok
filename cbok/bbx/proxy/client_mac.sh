@@ -116,10 +116,13 @@ PLIST
         raw=$(launchctl list "$LABEL" 2>/dev/null)
         if echo "$raw" | grep -q '"PID"'; then
             pid=$(echo "$raw" | sed -n 's/.*"PID" = \([0-9]*\).*/\1/p' | head -1)
-            echo "State:  running (PID $pid)"
+            if [[ "$pid" != "0" ]]; then
+                active="\033[32mactive\033[0m"
+            fi
+            echo -e "State:  ${active} (PID $pid)"
             echo "SOCKS5: 127.0.0.1:1080"
         else
-            echo "State:  not running"
+            echo "State:  inactive"
         fi
         echo "Log:    $LOG_PATH"
         ;;

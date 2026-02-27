@@ -88,7 +88,10 @@ REMOTEUNIT
         state=$(run_remote "systemctl is-active ${SERVICE_NAME}" 2>/dev/null || echo "inactive")
         pid=$(run_remote "systemctl show -p MainPID --value ${SERVICE_NAME}" 2>/dev/null || echo "")
         echo "--- Server (${address}) ---"
-        echo "State: ${state}"
+        if [[ "$state" == "active" ]]; then
+            state="\033[32m${state}\033[0m"
+        fi
+        echo -e "State: ${state}"
         [[ -n "$pid" && "$pid" != "0" ]] && echo "PID:   $pid"
         ;;
     delete)
