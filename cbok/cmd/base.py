@@ -35,12 +35,15 @@ def _resolve_and_reexec_venv():
     bin_dir = "Scripts" if sys.platform == "win32" else "bin"
     venv_cbok = os.path.join(venv_dir, bin_dir, "cbok.exe" if sys.platform == "win32" else "cbok")
     venv_python = os.path.join(venv_dir, bin_dir, "python.exe" if sys.platform == "win32" else "python")
+    project_root = os.path.dirname(venv_dir)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = project_root + (os.pathsep + env.get("PYTHONPATH", "")) if env.get("PYTHONPATH") else project_root
     argv = ["cbok"] + sys.argv[1:]
     try:
         if os.path.isfile(venv_cbok) and os.access(venv_cbok, os.X_OK):
-            os.execv(venv_cbok, argv)
+            os.execve(venv_cbok, argv, env)
         if os.path.isfile(venv_python):
-            os.execv(venv_python, [venv_python, "-m", "cbok.cmd"] + sys.argv[1:])
+            os.execve(venv_python, [venv_python, "-m", "cbok.cmd"] + sys.argv[1:], env)
     except Exception as e:
         sys.stderr.write("cbok: failed to re-exec into venv %s: %s\n" % (venv_dir, e))
         sys.exit(1)
