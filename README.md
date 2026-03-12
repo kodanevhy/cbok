@@ -1,19 +1,38 @@
 # CBoK - Career Body of Knowledge
 
-## 本地开发调试步骤
+# 安装依赖
 
-一、安装依赖
-
-宿主机推荐安装Python 3.12.10，配置虚拟环境后，在项目根目录执行如下命令。
+宿主机推荐安装Python 3.12.10，配置虚拟环境，在项目根目录执行如下命令。
 
 ```shell
+  python3 -m venv venv
+  source venv/bin/activate
   pip3 install -r requirements.txt
+  deactivate
 ```
 
-安装成功后，检查关键依赖项如下：
-- Django == 6.0
+# 客户端安装
 
-二、迁移数据库
+客户端在生产与日常使用均为**可编辑安装**（不打包分发）：克隆/拷贝代码后在目标环境建 venv、装依赖、可选 `pip install -e .`，无需构建 wheel 等分发包。
+
+一、 本地安装CBoK
+
+部分功能在本地使用，例如`bbx`中的`put_patch`，需要先在本地安装。这会在Python site中创建一个链接指向本地CBoK source。
+```shell
+  python3 -m site
+  pip3 install -e .
+```
+
+二、生成配置文件
+
+部分功能需要先声明配置，例如邮箱，用户应该尽量配置。若用户充分了解代码并明确暂时不需要相关功能，请将以下命令生成的 section 配置块整体注释掉，以不妨碍运行。
+```shell
+  python3 tools/generate_conf.py
+```
+
+# 服务端开发调试步骤
+
+一、迁移数据库
 
 如果没有数据库，可以使用Docker创建：
 ```shell
@@ -31,17 +50,12 @@
   python3 manage.py migrate
 ```
 
-三、生成配置文件
+二、运行服务
 
-部分功能需要先声明配置，例如邮箱，用户应该尽量配置。若用户充分了解代码并明确暂时不需要相关功能，请将以下命令生成的 section 配置块整体注释掉，以不妨碍运行。
 ```shell
-  python3 tools/generate_conf.py
+  python3 manage.py runserver --noreload
 ```
 
-四、 本地安装CBoK（可选）
+# 服务端上线步骤
 
-部分功能在本地使用，例如`bbx`中的`put_patch`，需要先在本地安装。这会在Python site中创建一个链接指向本地CBoK source。
-```shell
-  python3 -m site
-  pip3 install -e .
-```
+TODO
