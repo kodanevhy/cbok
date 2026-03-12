@@ -55,6 +55,7 @@ import logging
 
 import django
 
+from cbok import __version__
 from cbok.cmd import bbx
 from cbok.cmd import foundation
 from cbok import utils as cbok_utils
@@ -88,6 +89,7 @@ def main():
     os.chdir(cbok_utils.assert_cbok_home())
 
     parser = argparse.ArgumentParser(prog="cbok", description="CBoK CLI")
+    parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
     # override Django DEBUG configuration, cuz if we in
     # production (DEBUG=False), the cbok cli also can be debug
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')

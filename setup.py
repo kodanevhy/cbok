@@ -1,8 +1,10 @@
 from setuptools import setup, find_packages
 
+from cbok import __version__
+
 setup(
     name="CBoK",
-    version="0.3",
+    version=__version__,
     packages=find_packages(),
     entry_points={
         'console_scripts': [
