@@ -3,7 +3,7 @@
 set -ex
 
 base_path=$(python -c "from cbok import settings; print(settings.BASE_DIR)")
-source "$base_path/utils.sh"
+source "$base_path/scriptlet/bootstrap.sh"
 
 
 function is_ready() {
@@ -35,7 +35,7 @@ function apply_service() {
     else
         excludes=()
     fi
-    if ! copy_resource_to "$address" "$foundation_home" "foundation/$service_name" "$exclude"; then
+    if ! copy_resource_to "$address" "$foundation_home" "foundation/$service_name" "${excludes[@]}"; then
         die "Failed to copy resource to $address"
     fi
 
@@ -60,7 +60,7 @@ function apply_service() {
     fi
 
     # Installation
-    ssh -n root@"$address" "
+    remote_bash "$address" "
         echo Applying manifests for $service_name ...
         for f in $foundation_home/$service_name/*.yaml; do
             if [ $service_name = "cbok" ] && [[ "\$f" =~ "03-job-mariadb.yaml" ]]; then
@@ -68,21 +68,19 @@ function apply_service() {
             fi
             echo "Applying \$f ..."
             if ! kubectl apply -f "\$f"; then
-                echo "Failed to apply \$f"
-                exit 1
+                die "kubectl apply failed: \$f"
             fi
         done
     "
 
     # Waiting
-    ssh -n root@"$address" "
+    remote_bash "$address" "
         echo 'Waiting for pods of $service_name to be Ready ...'
         until kubectl get pod -l app='$service_name' -n cbok 2>/dev/null | grep -q -v NAME; do
             sleep 2
         done
         if ! kubectl wait --for=condition=Ready pod -l app='$service_name' -n cbok --timeout=300s; then
-            echo 'Warning: some pods of $service_name may not be Ready in cbok'
-            exit 1
+            die "kubectl wait Ready failed for $service_name in cbok"
         fi
     "
 
@@ -95,7 +93,7 @@ function apply_service() {
         fi
     fi
 
-    ssh -n root@"$address" "
+    remote_bash "$address" "
         echo 'Service $service_name applied successfully.'
     "
     echo "APPLY SUCCESS"
@@ -121,7 +119,7 @@ function remove_service() {
     fi
 
     # Deletion
-    ssh -n root@"$address" "
+    remote_bash "$address" "
         set -x
         echo Deleting manifests for $service_name ...
         for f in $foundation_home/$service_name/*.yaml; do
@@ -132,18 +130,16 @@ function remove_service() {
             elif [[ \$output =~ \"deleted\" ]]; then
                 echo Delete success
             else
-                echo Failed to delete \$f
-                exit 1
+                die "kubectl delete failed: \$f"
             fi
         done
     "
 
     # Waiting
-    ssh -n root@"$address" "
+    remote_bash "$address" "
         echo 'Waiting for pods of $service_name to be deleted ...'
         if ! kubectl wait --for=delete pod -l app='$service_name' -n cbok --timeout=300s; then
-            echo 'Warning: some pods of $service_name may not be Ready in cbok'
-            exit 1
+            die "kubectl wait delete failed for $service_name in cbok"
         fi
     "
 
@@ -179,19 +175,19 @@ function copy_resource_to() {
     shift 3
     local excludes=("$@")
 
-    ssh -n root@$address "mkdir -p '$remote_target_dir'"
+    remote_mkdir "$address" "$remote_target_dir"
 
     local exclude_args=()
-    for e in "${excludes[@]}"; do
+    for e in "${excludes[@]-}"; do
         exclude_args+=(--exclude "$e")
     done
 
-    rsync -avz --progress --delete "${exclude_args[@]}" "$source_resource_dir" root@$address:"$remote_target_dir"
+    rsync -avz --progress --delete "${exclude_args[@]-}" "$source_resource_dir" root@$address:"$remote_target_dir"
 }
 
 
 function execute() {
     floating_address="$1"
     mgmt_eth="$2"
-    ssh -n root@$floating_address "cd /opt/foundation/base; bash kubernetes.sh $mgmt_eth"
+    remote_bash "$floating_address" "cd /opt/foundation/base; bash kubernetes.sh $mgmt_eth"
 }

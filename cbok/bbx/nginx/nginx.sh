@@ -5,7 +5,7 @@
 set -ex
 
 base_path=$(python -c "from cbok import settings; print(settings.BASE_DIR)")
-source "$base_path/utils.sh"
+source "$base_path/scriptlet/bootstrap.sh"
 
 NAMESPACE="cbok"
 target="/data/${NAMESPACE}/"

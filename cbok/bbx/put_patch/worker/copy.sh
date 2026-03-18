@@ -3,12 +3,15 @@ set -ex
 
 target='/tmp/zztestcbok/'
 
+base_path=$(python -c "from cbok import settings; print(settings.BASE_DIR)")
+source "$base_path/scriptlet/bootstrap.sh"
+
 function copy() {
     address=$1
     pod_name=$2
     container=$3
     files_json="$4"
-    gtimeout -s KILL 10 ssh root@$address "mkdir -p $target"
+    cbok_timeout 10 ssh root@$address "mkdir -p $target"
     echo "$files_json" | python3 -c "
 import json, sys
 files = json.loads(sys.stdin.read())
@@ -29,21 +32,21 @@ for f in files:
                 remote_tmp="/tmp/$tmp_name"
                 remote_dir=$(dirname "$dst")
 
-                gtimeout -s KILL 10 ssh -n root@$address \
+                cbok_timeout 10 ssh -n root@$address \
                     "kubectl cp $target/$tmp_name -n openstack $pod_name:$remote_tmp -c $container"
 
-                gtimeout -s KILL 10 ssh -n root@$address \
+                cbok_timeout 10 ssh -n root@$address \
                     "kubectl exec -n openstack $pod_name -c $container -- mkdir -p $remote_dir"
 
-                gtimeout -s KILL 10 ssh -n root@$address \
+                cbok_timeout 10 ssh -n root@$address \
                     "kubectl exec -n openstack $pod_name -c $container -- sudo mv $remote_tmp $dst"
                 ;;
 
             D)
                 echo Deleting $dst or $dst"c" in pod $pod_name
-                gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -- rm -f $dst"
+                cbok_timeout 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -- rm -f $dst"
                 dst="$dst"c
-                gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -- rm -f $dst"
+                cbok_timeout 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -- rm -f $dst"
                 ;;
 
             *)
@@ -55,15 +58,7 @@ for f in files:
 
 
 function cleanup() {
-    gtimeout -s KILL 10 ssh root@$address "rm -rf $target"
-}
-
-
-function remote_exec_via_jump() {
-    local jump=$1
-    shift
-    ssh_key="ssh -i ~/.ssh/id_rsa.roller root@10.20.0.3"
-    sshpass -p "easystack" ssh -n root@"$jump" $ssh_key $@
+    cbok_timeout 10 ssh root@$address "rm -rf $target"
 }
 
 
@@ -72,7 +67,7 @@ function copy_os_in_os() {
     pod_name=$2
     container=$3
     files_json="$4"
-    gtimeout -s KILL 10 sshpass -p "easystack" ssh root@$address "mkdir -p $target"
+    cbok_timeout 10 sshpass -p "easystack" ssh root@$address "mkdir -p $target"
     echo "$files_json" | python3 -c "
 import json, sys
 files = json.loads(sys.stdin.read())
@@ -88,7 +83,7 @@ for f in files:
                 filename=$(basename "$src")
                 tmp_name="${parent_dir}_${filename}"
 
-                gtimeout -s KILL 10 sshpass -p "easystack" \
+                cbok_timeout 10 sshpass -p "easystack" \
                     scp "$src" root@$address:"$target/$tmp_name"
 
                 remote_exec_via_jump $address mkdir -p "$target"
@@ -124,6 +119,6 @@ for f in files:
 
 
 function cleanup_os_in_os() {
-    gtimeout -s KILL 10 sshpass -p "easystack" ssh root@$address "rm -rf $target"
+    cbok_timeout 10 sshpass -p "easystack" ssh root@$address "rm -rf $target"
     remote_exec_via_jump $address rm -rf "$target"
 }

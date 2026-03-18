@@ -1,4 +1,3 @@
-import configparser
 import logging
 import os
 import sys
@@ -6,6 +5,7 @@ import sys
 from oslo_utils import strutils
 
 from cbok.cmd import args
+from cbok.cmd import base
 from cbok import settings
 from cbok import utils as cbok_utils
 
@@ -14,7 +14,7 @@ CONF = settings.CONF
 LOG = logging.getLogger(__name__)
 
 
-class FoundationCommands(args.BaseCommand):
+class FoundationCommands(base.BaseCommand):
 
     def __init__(self):
         super().__init__()
@@ -62,6 +62,7 @@ class FoundationCommands(args.BaseCommand):
     @args.args(
         '--address', metavar='<address>', required=True,
         help='Running address of cbok')
+    @args.requires_remote_scriptlet("address")
     def deploy(self, address=None, mgmt_eth=None):
         """Let cbok running into product"""
         result = self.p_runner.run_command(
@@ -126,6 +127,8 @@ class FoundationCommands(args.BaseCommand):
             sys.exit(1)
 
         address = self._check_and_reflag_success(address)
+        # This command executes remote bash that sources scriptlet.
+        self.ensure_remote_scriptlet(address)
 
         if not os.path.isdir(os.path.join("foundation", service)):
             LOG.error(f"No such service: {service}")
@@ -165,6 +168,8 @@ class FoundationCommands(args.BaseCommand):
         """Uninstall service"""
 
         address = self._check_and_reflag_success(address)
+        # This command executes remote bash that sources scriptlet.
+        self.ensure_remote_scriptlet(address)
 
         if not os.path.isdir(os.path.join("foundation", service)):
             LOG.error(f"No such service: {service}")
