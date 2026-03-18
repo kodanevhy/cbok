@@ -2,6 +2,14 @@
 
 set -ex
 
+if [[ -f /opt/cbok/scriptlet/lib/core.sh ]]; then
+  # shellcheck source=/dev/null
+  . /opt/cbok/scriptlet/lib/core.sh
+fi
+if ! declare -F die >/dev/null 2>&1; then
+  die() { echo "error: $*" >&2; exit 1; }
+fi
+
 HOSTNAME="cbok"
 mgmt_eth=$1
 # Not only the Kubernetes version is, but also relates to all
@@ -16,8 +24,7 @@ echo "Started"
 
 get_ipv4() {
     if ! ip link show "$mgmt_eth" >/dev/null 2>&1; then
-        echo "Error: interface $mgmt_eth not found" >&2
-        exit 1
+        die "interface $mgmt_eth not found"
     fi
 
     ip -4 addr show "$mgmt_eth" | grep -oP '(?<=inet\s)\d+(\.\d+){3}'
@@ -44,8 +51,7 @@ function redo {
             break
         else
             if [ $i == 3 ]; then
-                echo "Looks so slow: $command" >&2
-                exit 1
+                die "Looks so slow after 3 retries: $command"
             fi
         fi
     done
@@ -107,20 +113,17 @@ EOF
 function check_net {
     num=$(echo "$HOST_IP" | awk -F "." '{print NF}')
     if [ $num -ne 4 ]; then
-        echo "Not like IPv4: $HOST_IP" >&2
-        exit 1
+        die "Not like IPv4: $HOST_IP"
     fi
     local_ip=$(ip a|grep inet|grep -v 127.0.0.1|grep -v inet6|awk '{print $2}'|cut -d'/' -f1)
     if [[ $local_ip =~ $HOST_IP ]]; then
         ping -c 3 -w 3 119.29.29.29 || rc119=$?
         rc119=${rc119:-0}
         if [ $rc119 -ne 0 ]; then
-            echo "Check net failed" >&2
-            exit 1
+            die "Check net failed"
         fi
     else
-        echo "$HOST_IP is not configured" >&2
-        exit 1
+        die "$HOST_IP is not configured"
     fi
 }
 
@@ -213,29 +216,12 @@ function pre {
     yum -y install git wget yum-utils python-pip net-tools screen
 
     if [ -f "proxy" ]; then
-        echo "Building proxy client(go-shadowsocks2)"
-        cipher=$(cat proxy | grep cipher | awk -F "=" '{print $2}')
-        password=$(cat proxy | grep password | awk -F "=" '{print $2}')
-        vps_server=$(cat proxy | grep vps_server | awk -F "=" '{print $2}')
-        port=$(cat proxy | grep port | awk -F "=" '{print $2}')
-        chmod 777 ./shadowsocks2-linux
-        already_build=""
-        if screen -ls | grep -q "shadowsocks";then
-            echo "ss client was already rebuild before"
-        else
-            # server end:
-            #   go install github.com/shadowsocks/go-shadowsocks2@latest
-            #   screen -dmS shadowsocks /root/go/bin/go-shadowsocks2 \
-            #   -s 'ss://$cipher:$password@:$port' \
-            #   -verbose
-            screen -dmS shadowsocks ./shadowsocks2-linux \
-                -c "ss://$cipher:$password@$vps_server:$port" -verbose -socks :1080
-
-            echo "Shadowsocks started in screen session"
-            screen -ls | grep shadowsocks
-            git config --global http.proxy "socks5://127.0.0.1:1080"
-            git config --global https.proxy "socks5://127.0.0.1:1080"
+        if [ ! -f "/opt/cbok/scriptlet/lib/proxy_kv.sh" ]; then
+            die "proxy file present but /opt/cbok/scriptlet/lib/proxy_kv.sh missing (sync scriptlet before kubernetes.sh)"
         fi
+        # shellcheck source=/dev/null
+        . /opt/cbok/scriptlet/lib/proxy_kv.sh
+        ss5_client_start_local_screen_from_proxy "proxy" "./shadowsocks2-linux" 1080
     else
         echo "No config found, skipping proxy build"
     fi
@@ -254,8 +240,7 @@ disable-pull-on-run: false
 EOF
     systemctl restart containerd
     if [ $? -ne 0 ]; then
-        echo "The runtime containerd start failed after all configurations finished"  >&2
-        exit 1
+        die "The runtime containerd start failed after all configurations finished"
     fi
 }
 
@@ -287,8 +272,7 @@ EOF
     redo "yum -y install kubelet-$toolkit_version kubeadm-$toolkit_version kubectl-$toolkit_version --disableexcludes=kubernetes" 600
     systemctl restart kubelet && systemctl enable --now kubelet
     if [ $? -ne 0 ]; then
-        echo "Toolkit especially kubelet start failed" >&2
-        exit 1
+        die "Toolkit especially kubelet start failed"
     fi
 }
 
@@ -359,8 +343,7 @@ function main {
     ctr -n k8s.io images tag registry.aliyuncs.com/google_containers/pause:3.6 registry.k8s.io/pause:3.6
     kubeadm init --config kubeadm.yaml
     if [ $? -ne 0 ]; then
-        echo "kubeadm init server failed" >&2
-        exit 1
+        die "kubeadm init server failed"
     fi
 
     # To ensure calico can visit etcd
@@ -376,8 +359,7 @@ function main {
     kubectl wait --for=condition=Ready pods --all -n kube-system --timeout=300s
 
     if [ $? -ne 0 ]; then
-        echo "Apply calico network failed" >&2
-        exit 1
+        die "Apply calico network failed"
     fi
 
     kubectl create namespace cbok

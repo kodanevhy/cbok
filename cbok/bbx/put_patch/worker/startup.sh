@@ -1,6 +1,9 @@
 #!/bin/bash
 set -ex
 
+base_path=$(python -c "from cbok import settings; print(settings.BASE_DIR)")
+source "$base_path/scriptlet/bootstrap.sh"
+
 
 function finalize_startup() {
     address="$1"
@@ -8,17 +11,9 @@ function finalize_startup() {
     container=$3
     startup_script=$4
     filename=$(basename "$startup_script")
-    gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- sudo cp $startup_script /opt/$filename"
-    gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- sudo chmod 777 /opt/$filename"
-    gtimeout -s KILL 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- sudo sed -i '2d' /opt/$filename"
-}
-
-
-function remote_exec_via_jump() {
-    local jump=$1
-    shift
-    ssh_key="ssh -i ~/.ssh/id_rsa.roller root@10.20.0.3"
-    sshpass -p "easystack" ssh -n root@"$jump" $ssh_key $@
+    cbok_timeout 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- sudo cp $startup_script /opt/$filename"
+    cbok_timeout 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- sudo chmod 777 /opt/$filename"
+    cbok_timeout 10 ssh -n root@$address "kubectl exec -n openstack $pod_name -c $container -- sudo sed -i '2d' /opt/$filename"
 }
 
 

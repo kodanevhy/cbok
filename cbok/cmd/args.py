@@ -1,6 +1,3 @@
-from cbok import utils as cbok_utils
-
-
 def action_description(desc):
     def wrapper(func):
         func._description = desc
@@ -17,6 +14,13 @@ def args(*arg_args, **arg_kwargs):
     return wrapper
 
 
-class BaseCommand:
-    def __init__(self) -> None:
-        self.p_runner = cbok_utils.UnifiedProcessRunner()
+def requires_remote_scriptlet(address_kw="address"):
+    """
+    Mark a command method that will run remote shell requiring scriptlet.
+    The dispatcher will call BaseCommand.ensure_remote_scriptlet(kwargs[address_kw])
+    once before invoking the command.
+    """
+    def wrapper(func):
+        func._requires_remote_scriptlet = address_kw
+        return func
+    return wrapper

@@ -4,8 +4,7 @@ set -e
 
 base_path=$(python -c "from cbok import settings; print(settings.BASE_DIR)")
 workspace=$(python -c "from cbok import settings; print(settings.Workspace)")
-source "$base_path/utils.sh"
-source "$base_path/cbok/bbx/utils.sh"
+source "$base_path/scriptlet/bootstrap.sh"
 
 local_='/root/workspace/ut'
 

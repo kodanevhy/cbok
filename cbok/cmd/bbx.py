@@ -9,6 +9,7 @@ from oslo_utils import strutils
 from cbok.bbx.put_patch import main as put_patch
 from cbok.bbx.ut import main as ut
 from cbok.cmd import args
+from cbok.cmd import base
 from cbok import exception
 from cbok import settings
 from cbok import utils as cbok_utils
@@ -17,7 +18,7 @@ from cbok import utils as cbok_utils
 LOG = logging.getLogger(__name__)
 
 
-class PatchCommands(args.BaseCommand):
+class PatchCommands(base.BaseCommand):
 
     @args.action_description("Upload the patch changes to a running env")
     @args.args(
@@ -104,7 +105,7 @@ class PatchCommands(args.BaseCommand):
         )
 
 
-class BinCommands(args.BaseCommand):
+class BinCommands(base.BaseCommand):
 
     def __init__(self):
         super().__init__()
@@ -208,7 +209,7 @@ class BinCommands(args.BaseCommand):
         pass
 
 
-class OpenStackCommands(args.BaseCommand):
+class OpenStackCommands(base.BaseCommand):
 
     def __init__(self) -> None:
         super().__init__()
@@ -229,6 +230,7 @@ class OpenStackCommands(args.BaseCommand):
     @args.args(
         "--address", metavar="<address>", required=True,
         help="Target address that is already authorized")
+    @args.requires_remote_scriptlet("address")
     def deploy(self, address, floating_ip, eth, block_alias):
 
         def _check_ipv4(_addr):
@@ -257,7 +259,7 @@ class OpenStackCommands(args.BaseCommand):
         )
 
 
-class ProxyCommands(args.BaseCommand):
+class ProxyCommands(base.BaseCommand):
 
     def __init__(self) -> None:
         super().__init__()
