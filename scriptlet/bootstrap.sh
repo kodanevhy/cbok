@@ -24,6 +24,7 @@ source "${SCRIPTLET_DIR}/lib/k8s.sh"
 source "${SCRIPTLET_DIR}/lib/git.sh"
 source "${SCRIPTLET_DIR}/lib/jump.sh"
 source "${SCRIPTLET_DIR}/lib/proxy.sh"
+source "${SCRIPTLET_DIR}/lib/zsv.sh"
 
 _cbok_export_func() {
   local f="$1"
@@ -56,3 +57,8 @@ _cbok_export_func ss5_client_setup_remote_from_proxy_file
 _cbok_export_func k8s_kubectl
 _cbok_export_func k8s_kubectl_apply_dir
 _cbok_export_func k8s_kubectl_wait_ready
+
+_cbok_export_func zsv_node_status
+_cbok_export_func zsv_nodes_status
+_cbok_export_func zsv_perform_upgrade
+_cbok_export_func zsv_upgrade_latest

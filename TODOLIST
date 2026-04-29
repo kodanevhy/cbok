@@ -15,6 +15,7 @@
     3.Proxy service uniform (sock5 only)
     4.alert derive notification
     5.CBoK version query support
+    6.Introduce ZStack ZSphere upgrade tracker
 
 KnownIssue (low priority):
     1.Adaptation on Windows/Linux

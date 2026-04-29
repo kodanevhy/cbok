@@ -72,7 +72,23 @@ LLM_API_KEY = Group(
     ]
 )
 
-ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT, LLM_API_KEY]
+ZSPHERE = Group(
+    name="zsv",
+    title="ZSphere upgrade settings",
+    options=[
+        Option("env_name", default="zsphere-h84r-zsv-5.0.0",
+        help="Name of the tracked ZSphere environment"),
+        Option("iso_url", default="",
+        help="ZSphere ISO index URL or exact ISO URL"),
+        Option("nodes", default="172.26.53.17,172.26.53.18",
+        help="Comma separated ZSphere node IPs"),
+        Option("primary_node", default="172.26.53.17",
+        help="Node where zstack-upgrade runs"),
+    ]
+)
+
+ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT, LLM_API_KEY,
+              ZSPHERE]
 
 
 def validate_section_strict(conf):

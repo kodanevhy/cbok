@@ -62,6 +62,7 @@ def main():
     from cbok import __version__
     from cbok.cmd import bbx
     from cbok.cmd import foundation
+    from cbok.cmd import zsv
     from cbok.cmd.base import BaseCommand
     from cbok import utils as cbok_utils
 
@@ -73,6 +74,7 @@ def main():
         "openstack": bbx.OpenStackCommands,
         "foundation": foundation.FoundationCommands,
         "proxy": bbx.ProxyCommands,
+        "zsv": zsv.ZSphereCommands,
     }
 
     def setup_logging_level(debug=False):
