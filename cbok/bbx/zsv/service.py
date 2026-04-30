@@ -212,6 +212,12 @@ class ZSphereTracker:
             return True
         return False
 
+    @staticmethod
+    def _iso_modified_arg(iso):
+        if not iso.modified_at:
+            return ""
+        return timezone.localtime(iso.modified_at).isoformat()
+
     def check(self):
         iso = self.fetch_latest_iso()
         state, new_iso_detected = self.refresh_state(iso)
@@ -246,7 +252,9 @@ class ZSphereTracker:
             "bash", "-lc",
             "source scriptlet/bootstrap.sh; "
             f"zsv_upgrade_latest {shlex.quote(self.primary_node)} "
-            f"{shlex.quote(iso.download_url)} {shlex.quote(iso.name)}",
+            f"{shlex.quote(iso.download_url)} {shlex.quote(iso.name)} "
+            f"{shlex.quote(self._iso_modified_arg(iso))} "
+            f"{shlex.quote(iso.size or '')}",
         ], cmd_purge_output=True)
         if result.returncode == 0:
             state.latest_iso_name = iso.name
