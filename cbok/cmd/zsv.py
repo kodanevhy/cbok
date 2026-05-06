@@ -39,13 +39,12 @@ def _print_iso(tracker, iso, state, needs_upgrade):
     upgraded_iso_modified = _fmt(state.last_upgraded_iso_modified_at)
     upgraded_at = _fmt(state.last_upgraded_at)
 
-    print(f"Upgrade ISO: {iso.name}")
-    print(f"DB upgraded ISO modified at: {upgraded_iso_modified}")
-    print(f"URL latest ISO modified at: {latest_iso_modified}")
-    print(f"Last upgraded at: {upgraded_at}")
-    print(f"Need upgrade: {'yes' if needs_upgrade else 'no'}")
+    print(f"Name:         {iso.name}")
+    print(f"DB:           {upgraded_iso_modified}")
+    print(f"URL:          {latest_iso_modified}")
+    print(f"Last sync at: {upgraded_at}")
     if needs_upgrade:
-        print(f"Manual upgrade command: {_upgrade_command(tracker)}")
+        print(f"---\n{_upgrade_command(tracker)}")
 
 
 class ZSphereCommands(base.BaseCommand):
