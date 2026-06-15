@@ -38,6 +38,20 @@ class MavenBuildPlan:
     profiles: list[str]
 
 
+@dataclass(frozen=True)
+class DockerTmpfsCompileConfig:
+    enabled: bool
+    image: str
+    platform: str
+    size: str
+    workdir: str
+    container_name: str
+    m2_volume: str
+    preload_m2: bool
+    m2_source: str
+    premium_source: str
+
+
 def default_zstack_root() -> str:
     return os.path.join(settings.Workspace, "Cursor", "zs", "zstack")
 
@@ -68,6 +82,33 @@ def docker_compile_from_conf() -> tuple[str | None, str]:
         or DEFAULT_DOCKER_ZSTACK_ROOT
     )
     return raw, root
+
+
+def _conf_get(section: str, option: str, default: str) -> str:
+    conf = settings.CONF
+    if conf.has_section(section) and conf.has_option(section, option):
+        return conf.get(section, option).strip()
+    return default
+
+
+def _conf_bool(section: str, option: str, default: bool) -> bool:
+    raw = _conf_get(section, option, str(default))
+    return raw.strip().lower() in ("1", "true", "yes", "on", "y")
+
+
+def docker_tmpfs_compile_from_conf() -> DockerTmpfsCompileConfig:
+    return DockerTmpfsCompileConfig(
+        enabled=_conf_bool("zsv_compile", "docker_tmpfs_enabled", False),
+        image=_conf_get("zsv_compile", "docker_tmpfs_image", "zstack-buildbin:debug7-arm64"),
+        platform=_conf_get("zsv_compile", "docker_tmpfs_platform", "linux/arm64"),
+        size=_conf_get("zsv_compile", "docker_tmpfs_size", "6g"),
+        workdir=_conf_get("zsv_compile", "docker_tmpfs_workdir", "/work").rstrip("/"),
+        container_name=_conf_get("zsv_compile", "docker_tmpfs_container_name", "zsv-buildbin-arm64-tmpfs"),
+        m2_volume=_conf_get("zsv_compile", "docker_tmpfs_m2_volume", "zsv-m2"),
+        preload_m2=_conf_bool("zsv_compile", "docker_tmpfs_preload_m2", True),
+        m2_source=_conf_get("zsv_compile", "docker_tmpfs_m2_source", "~/.m2/repository"),
+        premium_source=_conf_get("zsv_compile", "docker_tmpfs_premium_source", ""),
+    )
 
 
 def _git(root: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -206,18 +247,139 @@ def collect_built_jars(
     zstack_root: str,
     main_mods: list[str],
     prem_mods: list[str],
+    premium_root: str | None = None,
 ) -> list[str]:
     root = Path(zstack_root)
     jars: list[str] = []
     for m in main_mods:
         jars.extend(_artifact_jars(root / m))
-    pr = root / "premium"
+    pr = Path(premium_root) if premium_root else root / "premium"
     for m in prem_mods:
         jars.extend(_artifact_jars(pr / m))
     by_base: dict[str, str] = {}
     for j in jars:
         by_base[os.path.basename(j)] = j
     return list(by_base.values())
+
+
+def _run_shell(runner, script: str) -> int:
+    r = runner.run_command(["bash", "-lc", script], cmd_purge_output=False)
+    return getattr(r, "returncode", 1) or 0
+
+
+def _premium_source_for_root(root: str, configured: str = "") -> str | None:
+    candidates: list[str] = []
+    if configured.strip():
+        raw = os.path.expanduser(configured.strip())
+        if not os.path.isabs(raw):
+            raw = os.path.join(root, raw)
+        candidates.append(raw)
+    candidates.extend([
+        os.path.join(root, "premium"),
+        os.path.join(os.path.dirname(root), "premium"),
+    ])
+    for candidate in candidates:
+        real = os.path.realpath(candidate)
+        if os.path.isdir(real):
+            return real
+    return None
+
+
+def _docker_tmpfs_mount(path: str, target: str, readonly: bool = False) -> str:
+    suffix = ":ro" if readonly else ""
+    return f"{path}:{target}{suffix}"
+
+
+def run_mvn_in_docker_tmpfs(
+    zstack_root: str,
+    premium_root: str | None,
+    plan: MavenBuildPlan,
+    tmpfs: DockerTmpfsCompileConfig,
+    runner,
+) -> int:
+    if not plan.modules:
+        return 0
+
+    if tmpfs.container_name:
+        name = shlex.quote(tmpfs.container_name)
+        rc = _run_shell(runner, f"docker rm -f {name} >/dev/null 2>&1 || true")
+        if rc != 0:
+            return rc
+
+    mvn_cmd = ["mvn"]
+    if plan.profiles:
+        mvn_cmd.append("-P" + ",".join(plan.profiles))
+    mvn_cmd.extend(["-DskipTests", "clean", "install", "-pl", ",".join(plan.modules)])
+    mvn_inner = " ".join(shlex.quote(c) for c in mvn_cmd)
+
+    workdir = tmpfs.workdir or "/work"
+    work_zstack = f"{workdir}/zstack"
+    work_premium = f"{workdir}/premium"
+    preload = ""
+    m2_source = os.path.expanduser(tmpfs.m2_source).rstrip("/")
+    if tmpfs.preload_m2:
+        preload = """
+if [ -d /host-m2 ]; then
+  mkdir -p /root/.m2/repository
+  rsync -a --ignore-existing /host-m2/ /root/.m2/repository/
+fi
+"""
+    premium_copy = ""
+    premium_sync = ""
+    if premium_root:
+        premium_copy = f"""
+mkdir -p {shlex.quote(work_premium)}
+rsync -a --delete --exclude .git --exclude target /src/premium/ {shlex.quote(work_premium)}/
+ln -sfn ../premium {shlex.quote(work_zstack)}/premium
+"""
+        premium_sync = f"""
+sync_targets {shlex.quote(work_premium)} /out/premium
+"""
+    script = f"""
+set -euo pipefail
+mkdir -p {shlex.quote(work_zstack)}
+{preload}
+rsync -a --delete --exclude .git --exclude target /src/zstack/ {shlex.quote(work_zstack)}/
+{premium_copy}
+cd {shlex.quote(work_zstack)}
+{mvn_inner}
+sync_targets() {{
+  local work_root="$1"
+  local out_root="$2"
+  [ -d "$work_root" ] || return 0
+  find "$work_root" -type d -name target -prune -print0 | while IFS= read -r -d '' target; do
+    rel="${{target#$work_root/}}"
+    dest="$out_root/$rel"
+    mkdir -p "$(dirname "$dest")"
+    rsync -a --delete "$target"/ "$dest"/
+  done
+}}
+sync_targets {shlex.quote(work_zstack)} /out/zstack
+{premium_sync}
+"""
+
+    cmd = ["docker", "run", "--rm"]
+    if tmpfs.container_name:
+        cmd.extend(["--name", tmpfs.container_name])
+    if tmpfs.platform:
+        cmd.extend(["--platform", tmpfs.platform])
+    cmd.extend(["--tmpfs", f"{workdir}:rw,exec,size={tmpfs.size}"])
+    cmd.extend(["-v", _docker_tmpfs_mount(zstack_root, "/src/zstack", readonly=True)])
+    cmd.extend(["-v", _docker_tmpfs_mount(zstack_root, "/out/zstack")])
+    if premium_root:
+        cmd.extend(["-v", _docker_tmpfs_mount(premium_root, "/src/premium", readonly=True)])
+        cmd.extend(["-v", _docker_tmpfs_mount(premium_root, "/out/premium")])
+    if tmpfs.m2_volume:
+        cmd.extend(["-v", f"{tmpfs.m2_volume}:/root/.m2"])
+    if tmpfs.preload_m2 and os.path.isdir(m2_source):
+        cmd.extend(["-v", _docker_tmpfs_mount(m2_source, "/host-m2", readonly=True)])
+    cmd.extend([tmpfs.image, "bash", "-lc", script])
+    LOG.info(
+        "docker tmpfs compile in %s with image %s: %s",
+        workdir, tmpfs.image, mvn_inner,
+    )
+    r = runner.run_command(cmd, cmd_purge_output=False)
+    return getattr(r, "returncode", 1) or 0
 
 
 def run_mvn(
@@ -333,12 +495,19 @@ def run_compile_flow(
     plan = maven_build_plan(grouped["main"], grouped["premium"])
 
     conf_docker_container, conf_docker_root = docker_compile_from_conf()
+    docker_tmpfs = docker_tmpfs_compile_from_conf()
     if docker_container_override is None:
         docker_container = conf_docker_container
     elif docker_container_override.strip().lower() in _DOCKER_DISABLED:
         docker_container = None
     else:
         docker_container = docker_container_override.strip()
+    if docker_tmpfs.enabled and docker_container:
+        LOG.warning(
+            "Docker tmpfs compile is enabled; ignoring Docker container %s.",
+            docker_container,
+        )
+        docker_container = None
     docker_root_raw = docker_zstack_root_override or conf_docker_root
     docker_root = docker_root_raw.strip().rstrip("/")
     if not docker_root:
@@ -349,21 +518,35 @@ def run_compile_flow(
     head_line, full_hash = git_summary(root)
     print_plan(root, head_line, full_hash, grouped, plan)
 
-    prem_host = os.path.join(root, "premium")
-    if grouped["premium"] and not (docker_container or os.path.isdir(prem_host)):
-        LOG.error(
-            "Premium modules requested but %s is not a directory (and no Docker). "
-            "Use [zsv_compile] docker_container or clone premium/.",
-            prem_host,
-        )
-        return 1
+    root_premium = os.path.join(root, "premium")
+    tmpfs_premium = _premium_source_for_root(root, docker_tmpfs.premium_source)
+    collect_premium = root_premium
+    if docker_tmpfs.enabled and grouped["premium"] and tmpfs_premium:
+        collect_premium = tmpfs_premium
+    if grouped["premium"]:
+        if docker_tmpfs.enabled:
+            if not tmpfs_premium:
+                LOG.error("Premium modules requested but premium source is not a directory.")
+                return 1
+        elif not (docker_container or os.path.isdir(root_premium)):
+            LOG.error(
+                "Premium modules requested but %s is not a directory (and no Docker). "
+                "Use [zsv_compile] docker_container or clone premium/.",
+                root_premium,
+            )
+            return 1
 
     build_cwd = docker_root if docker_container else root
-    rc = run_mvn(
-        build_cwd, plan.modules, runner,
-        profiles=plan.profiles,
-        docker_container=docker_container,
-    )
+
+    if docker_tmpfs.enabled:
+        build_premium = tmpfs_premium if grouped["premium"] else None
+        rc = run_mvn_in_docker_tmpfs(root, build_premium, plan, docker_tmpfs, runner)
+    else:
+        rc = run_mvn(
+            build_cwd, plan.modules, runner,
+            profiles=plan.profiles,
+            docker_container=docker_container,
+        )
     if rc != 0:
         return rc
 
@@ -372,7 +555,7 @@ def run_compile_flow(
             "Collecting JARs from local tree %s (use the same checkout mounted in %s).",
             root, docker_container,
         )
-    jars = collect_built_jars(root, grouped["main"], grouped["premium"])
+    jars = collect_built_jars(root, grouped["main"], grouped["premium"], collect_premium)
     if not jars:
         LOG.warning("Build finished but no JARs found under target/ for selected modules.")
     print("\n== Built JARs to sync ==")
