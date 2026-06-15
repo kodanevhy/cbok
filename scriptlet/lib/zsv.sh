@@ -109,3 +109,57 @@ zsv_upgrade_latest() {
   remote_exec "$primary_node" zsv_perform_upgrade "$iso_url" "$iso_name" \
     /var/lib/cbok/zsv-upgrade "$expected_modified" "$expected_size"
 }
+
+# --- ZStack dev: backup Tomcat WEB-INF/lib and sync built JARs (used by cbok zsv compile) ---
+
+zsv_tomcat_lib_ensure_backup() {
+  local address="${1:?address required}"
+  local lib="${2:?remote WEB-INF/lib required}"
+
+  local lib_q backup_q
+  lib_q=$(printf %q "$lib")
+  backup_q=$(printf %q "${lib}.cbok-backup")
+  remote_bash "$address" "set -euo pipefail
+lib=${lib_q}
+backup=${backup_q}
+if [[ -e \"\$backup\" ]]; then
+  log_info \"lib backup already exists, skip: \$backup\"
+else
+  [[ -d \"\$lib\" ]] || die \"remote lib dir missing: \$lib\"
+  cp -a \"\$lib\" \"\$backup\"
+  log_info \"created lib backup: \$backup\"
+fi
+"
+}
+
+zsv_scp_jars_to_remote() {
+  local address="${1:?address required}"
+  local remote_staging="${2:?remote staging dir required}"
+  shift 2
+
+  [[ "$#" -gt 0 ]] || die "zsv_scp_jars_to_remote: no local jar paths"
+  remote_mkdir "$address" "$remote_staging"
+
+  local f
+  for f in "$@"; do
+    [[ -f "$f" ]] || die "not a regular file: $f"
+    _cbok_scp "$f" "root@${address}:${remote_staging}/"
+  done
+}
+
+zsv_remote_install_jars_from_staging() {
+  local address="${1:?address required}"
+  local staging="${2:?remote staging dir required}"
+  local lib="${3:?remote WEB-INF/lib required}"
+
+  local sq lq
+  sq=$(printf %q "$staging")
+  lq=$(printf %q "$lib")
+  remote_bash "$address" "set -euo pipefail
+shopt -s nullglob
+j=(\"${sq}\"/*.jar)
+[[ \${#j[@]} -gt 0 ]] || die \"no jars under remote staging ${sq}\"
+cp -f \"${sq}\"/*.jar \"${lq}/\"
+rm -f \"${sq}\"/*.jar
+"
+}

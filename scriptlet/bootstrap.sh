@@ -62,3 +62,7 @@ _cbok_export_func zsv_node_status
 _cbok_export_func zsv_nodes_status
 _cbok_export_func zsv_perform_upgrade
 _cbok_export_func zsv_upgrade_latest
+
+_cbok_export_func zsv_tomcat_lib_ensure_backup
+_cbok_export_func zsv_scp_jars_to_remote
+_cbok_export_func zsv_remote_install_jars_from_staging
