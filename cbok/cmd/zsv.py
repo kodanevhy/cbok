@@ -3,6 +3,11 @@ import shlex
 
 from django.utils import timezone
 
+from cbok.bbx.zsv.agent_replace import DEFAULT_BACKUP_ROOT
+from cbok.bbx.zsv.agent_replace import DEFAULT_KVM_VIRTUALENV
+from cbok.bbx.zsv.agent_replace import DEFAULT_SITE_PACKAGES
+from cbok.bbx.zsv.agent_replace import default_utility_root
+from cbok.bbx.zsv.agent_replace import run_agent_replace_flow
 from cbok.bbx.zsv import DEFAULT_ISO_URL
 from cbok.bbx.zsv import DEFAULT_NODES
 from cbok.bbx.zsv import ZSphereTracker
@@ -172,4 +177,63 @@ class ZSphereCommands(base.BaseCommand):
             docker_container_override=docker_container,
             docker_zstack_root_override=docker_zstack_root,
             runner=self.p_runner,
+        )
+
+    @args.action_description(
+        "Replace changed kvmagent/zstacklib files on all ZSV nodes")
+    @args.args(
+        "--nodes", metavar="<nodes>", required=False,
+        help=f"Comma separated node IPs (default: {','.join(DEFAULT_NODES)})")
+    @args.args(
+        "--utility-root", metavar="<dir>", required=False,
+        default=None,
+        help="zstack-utility checkout root (default: workspace zstack-utility)")
+    @args.args(
+        "--base-ref", metavar="<git-ref>", required=False,
+        help="Git base ref for current branch changes (default: upstream/origin branch)")
+    @args.args(
+        "--site-packages", metavar="<dir|auto>", required=False,
+        default=DEFAULT_SITE_PACKAGES,
+        help=f"Remote KVM site-packages path (default: {DEFAULT_SITE_PACKAGES})")
+    @args.args(
+        "--kvm-virtualenv", metavar="<dir>", required=False,
+        default=DEFAULT_KVM_VIRTUALENV,
+        help=f"Remote KVM virtualenv (default: {DEFAULT_KVM_VIRTUALENV})")
+    @args.args(
+        "--backup-root", metavar="<dir>", required=False,
+        default=DEFAULT_BACKUP_ROOT,
+        help=f"Remote backup root (default: {DEFAULT_BACKUP_ROOT})")
+    @args.args(
+        "--dry-run", action="store_true",
+        help="Only print detected files and nodes")
+    @args.args(
+        "--no-restart", action="store_true",
+        help="Copy files and compile, but do not restart zstack-kvmagent")
+    def replace_agent(
+            self,
+            nodes=None,
+            utility_root=None,
+            base_ref=None,
+            site_packages=None,
+            kvm_virtualenv=None,
+            backup_root=None,
+            dry_run=False,
+            no_restart=False,
+    ):
+        """
+        Replace changed kvmagent/zstacklib files on all ZSV nodes.
+        """
+        target_nodes = nodes or ",".join(self._tracker().nodes)
+        root = utility_root or default_utility_root()
+        return run_agent_replace_flow(
+            utility_root=root,
+            nodes=target_nodes,
+            base_ref=base_ref,
+            site_packages=site_packages or DEFAULT_SITE_PACKAGES,
+            kvm_virtualenv=kvm_virtualenv or DEFAULT_KVM_VIRTUALENV,
+            backup_root=backup_root or DEFAULT_BACKUP_ROOT,
+            dry_run=dry_run,
+            no_restart=no_restart,
+            runner=self.p_runner,
+            ensure_remote_scriptlet=None if dry_run else self.ensure_remote_scriptlet,
         )
