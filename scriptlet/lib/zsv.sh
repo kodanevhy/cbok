@@ -163,3 +163,34 @@ cp -f \"${sq}\"/*.jar \"${lq}/\"
 rm -f \"${sq}\"/*.jar
 "
 }
+
+# --- ZStack dev: replace changed kvmagent/zstacklib runtime files (used by cbok zsv replace_agent) ---
+
+zsv_agent_stage_archive() {
+  local address="${1:?address required}"
+  local local_archive="${2:?local archive required}"
+  local remote_archive="${3:?remote archive required}"
+  local remote_staging="${4:?remote staging dir required}"
+
+  [[ -f "$local_archive" ]] || die "local archive missing: $local_archive"
+  remote_mkdir "$address" "$(dirname "$remote_archive")"
+  _cbok_scp "$local_archive" "root@${address}:${remote_archive}"
+
+  local archive_q staging_q
+  archive_q=$(printf %q "$remote_archive")
+  staging_q=$(printf %q "$remote_staging")
+  remote_bash "$address" "set -euo pipefail
+rm -rf ${staging_q}
+mkdir -p ${staging_q}
+tar -xzf ${archive_q} -C ${staging_q}
+rm -f ${archive_q}
+find ${staging_q} -type f -print
+"
+}
+
+zsv_agent_apply_staging() {
+  local address="${1:?address required}"
+  local script="${2:?remote apply script required}"
+
+  remote_bash "$address" "$script"
+}
