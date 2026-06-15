@@ -87,8 +87,19 @@ ZSPHERE = Group(
     ]
 )
 
+ZSV_COMPILE = Group(
+    name="zsv_compile",
+    title="zsv compile: Docker mvn (optional)",
+    options=[
+        Option("docker_container", default="none",
+        help="Container id/name for docker exec mvn; use none to build on host"),
+        Option("docker_zstack_root", default="/root/zstack",
+        help="ZStack root inside container; premium builds under <root>/premium"),
+    ]
+)
+
 ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT, LLM_API_KEY,
-              ZSPHERE]
+              ZSPHERE, ZSV_COMPILE]
 
 
 def validate_section_strict(conf):

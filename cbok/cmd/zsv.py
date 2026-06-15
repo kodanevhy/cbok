@@ -6,6 +6,8 @@ from django.utils import timezone
 from cbok.bbx.zsv import DEFAULT_ISO_URL
 from cbok.bbx.zsv import DEFAULT_NODES
 from cbok.bbx.zsv import ZSphereTracker
+from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
+from cbok.bbx.zsv.compile import run_compile_flow
 from cbok.cmd import args
 from cbok.cmd import base
 
@@ -117,3 +119,57 @@ class ZSphereCommands(base.BaseCommand):
         else:
             LOG.error("Upgrade command was not completed: %s", iso.name)
         return returncode
+
+    @args.action_description(
+        "Build changed ZStack modules, copy JARs to remote Tomcat lib")
+    @args.args(
+        "--address", metavar="<ip>", required=False,
+        help="Target ZSphere/ZStack node (root SSH); required for deploy "
+             "(omit with --no-deploy)")
+    @args.args(
+        "--remote-lib", metavar="<dir>", required=False,
+        default=DEFAULT_REMOTE_LIB,
+        help=f"Remote WEB-INF/lib (default: {DEFAULT_REMOTE_LIB})")
+    @args.args(
+        "--zstack-root", metavar="<dir>", required=False,
+        help="ZStack checkout root (default: $Workspace/Cursor/zs/zstack)")
+    @args.args(
+        "--docker-container", metavar="<id>", required=False,
+        help="Override [zsv_compile] docker_container; use none to build on host")
+    @args.args(
+        "--docker-zstack-root", metavar="<dir>", required=False,
+        help="Override [zsv_compile] docker_zstack_root")
+    @args.args(
+        "--no-deploy", action="store_true",
+        help="Build locally but skip remote backup/copy")
+    def compile(
+            self,
+            address=None,
+            remote_lib=None,
+            no_deploy=False,
+            zstack_root=None,
+            docker_container=None,
+            docker_zstack_root=None,
+    ):
+        """
+        Build with mvn -DskipTests clean install using auto-detected modules.
+        Optional Docker: [zsv_compile]. Deploy copies JARs to remote WEB-INF/lib (with backup).
+        """
+        deploy = not no_deploy
+        if deploy:
+            if not address:
+                LOG.error(
+                    "Deploy requires --address (or use --no-deploy).")
+                return 1
+            res = self.ensure_remote_scriptlet(address)
+            if getattr(res, "returncode", 0) != 0:
+                return getattr(res, "returncode", 1) or 1
+        return run_compile_flow(
+            address=address if deploy else None,
+            remote_lib=remote_lib or DEFAULT_REMOTE_LIB,
+            no_deploy=no_deploy,
+            zstack_root=zstack_root,
+            docker_container_override=docker_container,
+            docker_zstack_root_override=docker_zstack_root,
+            runner=self.p_runner,
+        )
