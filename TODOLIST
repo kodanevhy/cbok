@@ -16,6 +16,7 @@
     4.alert derive notification
     5.CBoK version query support
     6.Introduce ZStack ZSphere upgrade tracker
+    7.Introduce ZStack ZSphere compile
 
 KnownIssue (low priority):
     1.Adaptation on Windows/Linux
