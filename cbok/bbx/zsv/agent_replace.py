@@ -14,7 +14,7 @@ from pathlib import Path
 LOG = logging.getLogger(__name__)
 
 DEFAULT_KVM_VIRTUALENV = "/var/lib/zstack/virtualenv/kvm"
-DEFAULT_SITE_PACKAGES = "auto"
+DEFAULT_SITE_PACKAGES = "/var/lib/zstack/virtualenv/kvm/lib/python2.7/site-packages"
 DEFAULT_BACKUP_ROOT = "/var/lib/zstack/agent-replace-backup"
 REMOTE_AGENT_ARCHIVE = "/tmp/cbok-zsv-agent-replace.tar.gz"
 REMOTE_AGENT_STAGING = "/tmp/cbok-zsv-agent-replace"
@@ -23,7 +23,7 @@ ChangedFile = collections.namedtuple(
     "ChangedFile",
     ["repo_path", "local_path", "remote_path", "package_name", "is_python"],
 )
-DiscoverResult = collections.namedtuple("DiscoverResult", ["paths", "base_ref"])
+DiscoverResult = collections.namedtuple("DiscoverResult", ["paths", "change_scope"])
 
 ALLOWED_ROOTS = (
     ("kvmagent/kvmagent/", "kvmagent"),
@@ -64,29 +64,6 @@ def run_git(cmd: list[str], cwd: str | None = None) -> str:
     return (proc.stdout or "").strip()
 
 
-def resolve_default_base_ref(repo: str, command_runner=run_git) -> str | None:
-    try:
-        upstream = command_runner(
-            ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
-            cwd=repo,
-        ).strip()
-        if upstream:
-            return upstream
-    except AgentReplaceError:
-        pass
-
-    try:
-        branch = command_runner(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo).strip()
-        if branch and branch != "HEAD":
-            candidate = "origin/%s" % branch
-            command_runner(["git", "rev-parse", "--verify", candidate], cwd=repo)
-            return candidate
-    except AgentReplaceError:
-        pass
-
-    return None
-
-
 def _append_paths(paths: list[str], output: str) -> None:
     for line in (output or "").splitlines():
         path = line.strip()
@@ -96,26 +73,25 @@ def _append_paths(paths: list[str], output: str) -> None:
 
 def discover_changed_files(
     repo: str,
-    base_ref: str | None = None,
     command_runner=run_git,
 ) -> DiscoverResult:
-    effective_base = base_ref or resolve_default_base_ref(repo, command_runner)
+    effective_base = "HEAD^..HEAD"
     paths: list[str] = []
 
-    if effective_base:
-        _append_paths(
-            paths,
-            command_runner(
-                [
-                    "git",
-                    "diff",
-                    "--name-only",
-                    "--diff-filter=ACMRTD",
-                    "%s...HEAD" % effective_base,
-                ],
-                cwd=repo,
-            ),
-        )
+    _append_paths(
+        paths,
+        command_runner(
+            [
+                "git",
+                "diff",
+                "--name-only",
+                "--diff-filter=ACMRTD",
+                "HEAD^",
+                "HEAD",
+            ],
+            cwd=repo,
+        ),
+    )
 
     _append_paths(
         paths,
@@ -132,7 +108,7 @@ def discover_changed_files(
         paths,
         command_runner(["git", "ls-files", "--others", "--exclude-standard"], cwd=repo),
     )
-    return DiscoverResult(paths=paths, base_ref=effective_base)
+    return DiscoverResult(paths=paths, change_scope=effective_base)
 
 
 def parse_nodes(nodes) -> list[str]:
@@ -245,13 +221,6 @@ BACKUP_ROOT={shlex.quote(backup_root)}
 RESTART_AGENT={restart_value}
 PYTHON="$KVM_VIRTUALENV/bin/python"
 if [[ ! -x "$PYTHON" ]]; then PYTHON=python; fi
-if [[ "$SITE_PACKAGES" == "auto" ]]; then
-  SITE_PACKAGES=$("$PYTHON" - <<'PYEOF'
-from distutils.sysconfig import get_python_lib
-print(get_python_lib())
-PYEOF
-)
-fi
 [[ -d "$STAGE_DIR" ]] || die "agent staging dir missing: $STAGE_DIR"
 [[ -d "$SITE_PACKAGES" ]] || die "site-packages missing: $SITE_PACKAGES"
 BACKUP_DIR="$BACKUP_ROOT/$(date +%Y%m%d%H%M%S)-$$"
@@ -385,7 +354,7 @@ def print_plan(
 ) -> None:
     print("== ZSV agent replace ==")
     print("utility:", utility_root)
-    print("base:", discovery.base_ref or "(none; worktree/index/untracked only)")
+    print("changes:", "%s + worktree" % discovery.change_scope)
     print("mode:", "dry-run" if dry_run else "apply")
     print("\n== Files ==")
     for file in files:
@@ -400,7 +369,6 @@ def run_agent_replace_flow(
     *,
     utility_root: str | None,
     nodes,
-    base_ref: str | None = None,
     site_packages: str = DEFAULT_SITE_PACKAGES,
     kvm_virtualenv: str = DEFAULT_KVM_VIRTUALENV,
     backup_root: str = DEFAULT_BACKUP_ROOT,
@@ -421,10 +389,10 @@ def run_agent_replace_flow(
 
     try:
         if changed_paths is None:
-            discovery = discover_changed_files(root, base_ref=base_ref)
+            discovery = discover_changed_files(root)
             changed_paths = discovery.paths
         else:
-            discovery = DiscoverResult(paths=list(changed_paths), base_ref=base_ref)
+            discovery = DiscoverResult(paths=list(changed_paths), change_scope="explicit changed paths")
         if not changed_paths:
             LOG.error("No changed files found in utility root.")
             return 1

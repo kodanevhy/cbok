@@ -72,34 +72,40 @@ LLM_API_KEY = Group(
     ]
 )
 
-ZSPHERE = Group(
-    name="zsv",
-    title="ZSphere upgrade settings",
+ZSV_COMPILE = Group(
+    name="zsv_compile",
+    title="zsv compile: remote Docker settings",
     options=[
-        Option("env_name", default="zsphere-h84r-zsv-5.0.0",
-        help="Name of the tracked ZSphere environment"),
-        Option("iso_url", default="",
-        help="ZSphere ISO index URL or exact ISO URL"),
-        Option("nodes", default="172.26.53.17,172.26.53.18",
-        help="Comma separated ZSphere node IPs"),
-        Option("primary_node", default="172.26.53.17",
-        help="Node where zstack-upgrade runs"),
+        Option("remote_docker_host", default="tcp://172.26.50.70:2375",
+        help="Remote Docker daemon used for ZSV compile"),
+        Option("remote_docker_image", default="registry.docker.zstack.io:80/buildbin:debug7",
+        help="Docker image used for compile and Groovy tests"),
+        Option("remote_docker_platform", default="linux/amd64",
+        help="Docker platform for compile and Groovy tests"),
+        Option("remote_docker_workdir", default="/work",
+        help="Workspace root inside the remote Docker container"),
+        Option("remote_docker_m2_volume", default="zsv-m2",
+        help="Docker volume name for Maven repository cache"),
     ]
 )
 
-ZSV_COMPILE = Group(
-    name="zsv_compile",
-    title="zsv compile: Docker mvn (optional)",
+ZSV_DEPLOY = Group(
+    name="zsv_deploy",
+    title="zsv deployment path settings",
     options=[
-        Option("docker_container", default="none",
-        help="Container id/name for docker exec mvn; use none to build on host"),
-        Option("docker_zstack_root", default="/root/zstack",
-        help="ZStack root inside container; premium builds under <root>/premium"),
-    ]
+        Option("remote_lib", default="/usr/local/zstack/apache-tomcat/webapps/zstack/WEB-INF/lib",
+        help="Remote Tomcat WEB-INF/lib path for management-node JAR deployment"),
+        Option("site_packages", default="/var/lib/zstack/virtualenv/kvm/lib/python2.7/site-packages",
+        help="Remote KVM site-packages path for agent replacement"),
+        Option("kvm_virtualenv", default="/var/lib/zstack/virtualenv/kvm",
+        help="Remote KVM virtualenv root for agent replacement"),
+        Option("backup_root", default="/var/lib/zstack/agent-replace-backup",
+        help="Remote backup root for agent replacement"),
+    ],
 )
 
 ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT, LLM_API_KEY,
-              ZSPHERE, ZSV_COMPILE]
+              ZSV_COMPILE, ZSV_DEPLOY]
 
 
 def validate_section_strict(conf):
@@ -118,12 +124,14 @@ def validate_section_strict(conf):
 
         for opt in group.options:
             if not conf.has_option(group.name, opt.name):
+                if not opt.required:
+                    continue
                 raise exception.ConfigValidateFailed(err_msg=
                     f"Missing option [{group.name}] {opt.name}"
                 )
 
             value = conf.get(group.name, opt.name)
-            if not value.strip():
+            if not value.strip() and opt.required:
                 raise exception.ConfigValidateFailed(err_msg=
                     f"Empty option [{group.name}] {opt.name}"
                 )

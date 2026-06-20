@@ -56,10 +56,10 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
 
         self.assertIn("does not exist", str(ctx.exception))
 
-    def test_discovers_branch_worktree_index_and_untracked_changes(self):
+    def test_discovers_top_commit_worktree_index_and_untracked_changes(self):
         calls = []
         outputs = {
-            ("git", "diff", "--name-only", "--diff-filter=ACMRTD", "origin/dev...HEAD"): "kvmagent/kvmagent/a.py\n",
+            ("git", "diff", "--name-only", "--diff-filter=ACMRTD", "HEAD^", "HEAD"): "kvmagent/kvmagent/a.py\n",
             ("git", "diff", "--name-only", "--diff-filter=ACMRTD"): "zstacklib/zstacklib/b.py\n",
             ("git", "diff", "--name-only", "--cached", "--diff-filter=ACMRTD"): "kvmagent/kvmagent/a.py\n",
             ("git", "ls-files", "--others", "--exclude-standard"): "zstacklib/zstacklib/c.py\n",
@@ -71,7 +71,6 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
 
         result = agent_replace.discover_changed_files(
             self.repo,
-            base_ref="origin/dev",
             command_runner=runner,
         )
 
@@ -83,7 +82,7 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
             ],
             result.paths,
         )
-        self.assertEqual("origin/dev", result.base_ref)
+        self.assertEqual("HEAD^..HEAD", result.change_scope)
         self.assertIn(("git", "ls-files", "--others", "--exclude-standard"), calls)
 
     def test_parse_nodes_deduplicates_comma_and_whitespace_values(self):

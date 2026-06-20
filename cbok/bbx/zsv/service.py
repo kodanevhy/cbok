@@ -14,17 +14,13 @@ import requests
 
 from django.utils import timezone
 
-from cbok import settings
 from cbok import utils as cbok_utils
+from cbok.bbx.zsv import schema_repair
 
 
 LOG = logging.getLogger(__name__)
 
-DEFAULT_ENV_NAME = "zsphere-h84r-zsv-5.0.0"
-DEFAULT_ISO_URL = (
-    "http://storage.zstack.io/mirror/zstack_zsphere_iso_h84r_zsv_5.0.0/latest/"
-)
-DEFAULT_NODES = ("172.26.53.17", "172.26.53.18")
+UPGRADE_TYPES = ("iso", "bin")
 HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -39,12 +35,6 @@ class IsoInfo:
     download_url: str
     modified_at: datetime | None = None
     size: str = ""
-
-
-def _conf_get(option, default):
-    if settings.CONF.has_option("zsv", option):
-        return settings.CONF.get("zsv", option)
-    return default
 
 
 def _aware(dt):
@@ -66,24 +56,75 @@ def _parse_apache_datetime(value):
     return None
 
 
-def _is_iso_url(url):
-    return unquote(urlparse(url).path).lower().endswith(".iso")
+def _normalize_upgrade_type(value):
+    upgrade_type = value.strip().lower()
+    if upgrade_type not in UPGRADE_TYPES:
+        raise ValueError(f"upgrade_type must be one of: {', '.join(UPGRADE_TYPES)}")
+    return upgrade_type
 
 
-def _iso_name_from_url(url):
+def _required(value, name):
+    if value is None or not str(value).strip():
+        raise ValueError(f"{name} is required")
+    return str(value).strip()
+
+
+def _artifact_extension(upgrade_type):
+    return ".bin" if upgrade_type == "bin" else ".iso"
+
+
+def _is_artifact_url(url, upgrade_type):
+    return unquote(urlparse(url).path).lower().endswith(_artifact_extension(upgrade_type))
+
+
+def _artifact_name_from_url(url):
     return os.path.basename(unquote(urlparse(url).path))
 
 
+def _dedupe(items):
+    out = []
+    seen = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def discover_management_nodes(address, runner):
+    result = runner.run_command([
+        "bash", "-lc",
+        "source scriptlet/bootstrap.sh; "
+        f"zsv_discover_management_nodes {shlex.quote(address)}",
+    ], cmd_purge_output=False)
+    if getattr(result, "returncode", 1) != 0:
+        return []
+    return _dedupe([
+        line.strip()
+        for line in (result.stdout or "").splitlines()
+        if line.strip()
+    ])
+
+
 class ZSphereTracker:
-    def __init__(self, name=None, iso_url=None, nodes=None, primary_node=None,
-                 runner=None):
-        self.name = name or _conf_get("env_name", DEFAULT_ENV_NAME)
-        self.iso_url = iso_url or _conf_get("iso_url", DEFAULT_ISO_URL)
-        self.nodes = self._normalize_nodes(nodes or _conf_get(
-            "nodes", ",".join(DEFAULT_NODES)))
-        self.primary_node = primary_node or _conf_get(
-            "primary_node", self.nodes[0])
+    def __init__(
+            self,
+            name=None,
+            upgrade_type=None,
+            upgrade_url=None,
+            db_file=None,
+            primary_node=None,
+            runner=None,
+        ):
+        self.name = _required(name, "name")
+        self.upgrade_type = _normalize_upgrade_type(_required(upgrade_type, "upgrade_type"))
+        self.upgrade_url = _required(upgrade_url, "upgrade_url")
+        self.iso_url = self.upgrade_url
+        self.primary_node = _required(primary_node, "primary_node")
+        self.nodes = self._normalize_nodes([self.primary_node])
         self.runner = runner or cbok_utils.UnifiedProcessRunner()
+        self.schema_db_file = _required(db_file, "db_file")
 
     @staticmethod
     def _normalize_nodes(nodes):
@@ -110,21 +151,31 @@ class ZSphereTracker:
         return state
 
     def fetch_latest_iso(self):
-        if _is_iso_url(self.iso_url):
-            return self._fetch_exact_iso(self.iso_url)
-        return self._fetch_latest_from_index(self.iso_url)
+        if _is_artifact_url(self.upgrade_url, self.upgrade_type):
+            return self._fetch_exact_artifact(self.upgrade_url)
+        return self._fetch_latest_from_index(self.upgrade_url)
 
-    def _fetch_exact_iso(self, iso_url):
-        response = requests.head(
-            iso_url, allow_redirects=True, timeout=20, headers=HTTP_HEADERS)
-        response.raise_for_status()
+    def _fetch_exact_artifact(self, artifact_url):
+        try:
+            response = requests.head(
+                artifact_url, allow_redirects=True, timeout=20, headers=HTTP_HEADERS)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            LOG.warning(
+                "Unable to probe upgrade package metadata locally, remote node will download it directly: %s",
+                exc,
+            )
+            return IsoInfo(
+                name=_artifact_name_from_url(artifact_url),
+                download_url=artifact_url,
+            )
         modified_at = None
         if response.headers.get("Last-Modified"):
             modified_at = _aware(parsedate_to_datetime(
                 response.headers["Last-Modified"]))
         return IsoInfo(
-            name=_iso_name_from_url(response.url or iso_url),
-            download_url=response.url or iso_url,
+            name=_artifact_name_from_url(response.url or artifact_url),
+            download_url=response.url or artifact_url,
             modified_at=modified_at,
             size=response.headers.get("Content-Length", ""),
         )
@@ -133,22 +184,23 @@ class ZSphereTracker:
         response = requests.get(index_url, timeout=20, headers=HTTP_HEADERS)
         response.raise_for_status()
 
-        candidates = self._parse_iso_rows(response.text, response.url)
+        candidates = self._parse_artifact_rows(response.text, response.url)
         if not candidates:
-            raise RuntimeError(f"No ISO found from {index_url}")
+            raise RuntimeError(
+                f"No {self.upgrade_type.upper()} artifact found from {index_url}")
         return max(candidates, key=lambda iso: iso.modified_at or timezone.now())
 
-    def _parse_iso_rows(self, html, base_url):
+    def _parse_artifact_rows(self, html, base_url):
         soup = BeautifulSoup(html, "html.parser")
         candidates = []
         text = soup.get_text("\n")
 
         for link in soup.find_all("a", href=True):
             href = link["href"]
-            if not _is_iso_url(href):
+            if not _is_artifact_url(href, self.upgrade_type):
                 continue
 
-            name = unquote(link.get_text(strip=True) or _iso_name_from_url(href))
+            name = unquote(link.get_text(strip=True) or _artifact_name_from_url(href))
             line_match = re.search(
                 rf"{re.escape(name)}\s+"
                 r"(?P<modified>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})"
@@ -223,6 +275,18 @@ class ZSphereTracker:
         state, new_iso_detected = self.refresh_state(iso)
         return iso, state, self.needs_upgrade(state, iso), new_iso_detected
 
+    def resolve_upgrade_nodes(self):
+        nodes = discover_management_nodes(self.primary_node, self.runner)
+        if not nodes:
+            LOG.warning(
+                "No management nodes discovered from primary node %s; "
+                "falling back to primary node only",
+                self.primary_node)
+            nodes = [self.primary_node]
+        elif self.primary_node not in nodes:
+            nodes.insert(0, self.primary_node)
+        self.nodes = self._normalize_nodes(nodes)
+
     def ensure_scriptlet(self, command):
         for node in self.nodes:
             result = command.ensure_remote_scriptlet(node)
@@ -231,6 +295,7 @@ class ZSphereTracker:
         return None
 
     def status(self, command):
+        self.resolve_upgrade_nodes()
         nodes = " ".join(shlex.quote(node) for node in self.nodes)
         result = self.runner.run_command([
             "bash", "-lc",
@@ -239,6 +304,7 @@ class ZSphereTracker:
         return result.returncode
 
     def upgrade(self, command):
+        self.resolve_upgrade_nodes()
         iso, state, needs_upgrade, _new_iso_detected = self.check()
         if not needs_upgrade:
             LOG.error("Already up to date, interrupted before running upgrade")
@@ -248,13 +314,22 @@ class ZSphereTracker:
         if getattr(result, "returncode", 0) != 0:
             return result.returncode, iso, state
 
+        repair_rc = schema_repair.run_schema_repair_for_file(
+            address=self.primary_node,
+            db_file=self.schema_db_file,
+            runner=self.runner,
+        )
+        if repair_rc != 0:
+            return repair_rc, iso, state
+
         result = self.runner.run_command([
             "bash", "-lc",
             "source scriptlet/bootstrap.sh; "
             f"zsv_upgrade_latest {shlex.quote(self.primary_node)} "
             f"{shlex.quote(iso.download_url)} {shlex.quote(iso.name)} "
             f"{shlex.quote(self._iso_modified_arg(iso))} "
-            f"{shlex.quote(iso.size or '')}",
+            f"{shlex.quote(iso.size or '')} "
+            f"{shlex.quote(self.upgrade_type)}",
         ], cmd_purge_output=True)
         if result.returncode == 0:
             state.latest_iso_name = iso.name
