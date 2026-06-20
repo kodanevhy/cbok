@@ -3,16 +3,17 @@ import shlex
 
 from django.utils import timezone
 
+from cbok import settings
 from cbok.bbx.zsv.agent_replace import DEFAULT_BACKUP_ROOT
 from cbok.bbx.zsv.agent_replace import DEFAULT_KVM_VIRTUALENV
 from cbok.bbx.zsv.agent_replace import DEFAULT_SITE_PACKAGES
-from cbok.bbx.zsv.agent_replace import default_utility_root
 from cbok.bbx.zsv.agent_replace import run_agent_replace_flow
-from cbok.bbx.zsv import DEFAULT_ISO_URL
-from cbok.bbx.zsv import DEFAULT_NODES
+from cbok.bbx.zsv import UPGRADE_TYPES
 from cbok.bbx.zsv import ZSphereTracker
+from cbok.bbx.zsv.service import discover_management_nodes
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
 from cbok.bbx.zsv.compile import run_compile_flow
+from cbok.bbx.zsv.groovy_test import run_groovy_test_flow
 from cbok.cmd import args
 from cbok.cmd import base
 
@@ -20,20 +21,34 @@ from cbok.cmd import base
 LOG = logging.getLogger(__name__)
 
 
+def _conf_get(section: str, option: str, default: str) -> str:
+    conf = settings.CONF
+    if conf.has_section(section) and conf.has_option(section, option):
+        return conf.get(section, option).strip()
+    return default
+
+
+def _zsv_deploy_conf(option: str, default: str) -> str:
+    return _conf_get("zsv_deploy", option, default)
+
+
 def _upgrade_command(tracker):
-    return " ".join([
+    parts = [
         "cbok",
         "zsv",
         "upgrade",
         "--name",
         shlex.quote(tracker.name),
-        "--iso-url",
-        shlex.quote(tracker.iso_url),
-        "--nodes",
-        shlex.quote(",".join(tracker.nodes)),
+        "--upgrade-type",
+        shlex.quote(tracker.upgrade_type),
+        "--upgrade-url",
+        shlex.quote(tracker.upgrade_url),
+        "--db-file",
+        shlex.quote(tracker.schema_db_file),
         "--primary-node",
         shlex.quote(tracker.primary_node),
-    ])
+    ]
+    return " ".join(parts)
 
 
 def _print_iso(tracker, iso, state, needs_upgrade):
@@ -55,69 +70,121 @@ def _print_iso(tracker, iso, state, needs_upgrade):
 
 
 class ZSphereCommands(base.BaseCommand):
-    def _tracker(self, name=None, iso_url=None, nodes=None, primary_node=None):
+    def _tracker(
+            self,
+            name=None,
+            upgrade_type=None,
+            upgrade_url=None,
+            primary_node=None,
+            db_file=None,
+    ):
         return ZSphereTracker(
             name=name,
-            iso_url=iso_url,
-            nodes=nodes,
+            upgrade_type=upgrade_type,
+            upgrade_url=upgrade_url,
+            db_file=db_file,
             primary_node=primary_node,
             runner=self.p_runner,
         )
 
     @args.action_description("Check whether ZSphere needs upgrade")
     @args.args(
-        "--primary-node", metavar="<primary_node>", required=False,
-        help=f"Node where zstack-upgrade runs (default: {DEFAULT_NODES[0]})")
+        "--primary-node", metavar="<primary_node>", required=True,
+        help="Node where upgrade runs and discovers other MNs")
     @args.args(
-        "--nodes", metavar="<nodes>", required=False,
-        help=f"Comma separated node IPs (default: {','.join(DEFAULT_NODES)})")
+        "--upgrade-type", metavar="<type>", required=True,
+        choices=UPGRADE_TYPES,
+        help="Upgrade package type: bin or iso")
     @args.args(
-        "--iso-url", metavar="<iso_url>", required=False,
-        help=f"ISO index URL or exact ISO URL (default: {DEFAULT_ISO_URL})")
+        "--upgrade-url", metavar="<url>", required=True,
+        help="BIN/ISO index URL or exact package URL")
     @args.args(
-        "--name", metavar="<name>", required=False,
+        "--db-file", metavar="<path>", required=True,
+        help="Local ZSV schema SQL file used for pre-upgrade Flyway checksum repair")
+    @args.args(
+        "--name", metavar="<name>", required=True,
         help="Tracked environment name")
-    def check(self, name=None, iso_url=None, nodes=None, primary_node=None):
+    def check(self, name=None, upgrade_type=None, upgrade_url=None, db_file=None, primary_node=None):
         """Check whether ZSphere needs upgrade"""
-        tracker = self._tracker(name, iso_url, nodes, primary_node)
+        tracker = self._tracker(name, upgrade_type, upgrade_url, primary_node, db_file)
         iso, state, needs_upgrade, _new_iso_detected = tracker.check()
         _print_iso(tracker, iso, state, needs_upgrade)
         return 0
 
     @args.action_description("Show status of tracked ZSphere nodes")
     @args.args(
-        "--primary-node", metavar="<primary_node>", required=False,
-        help=f"Node where zstack-upgrade runs (default: {DEFAULT_NODES[0]})")
+        "--primary-node", metavar="<primary_node>", required=True,
+        help="Node used to discover ZSphere nodes")
     @args.args(
-        "--nodes", metavar="<nodes>", required=False,
-        help=f"Comma separated node IPs (default: {','.join(DEFAULT_NODES)})")
+        "--upgrade-type", metavar="<type>", required=True,
+        choices=UPGRADE_TYPES,
+        help="Upgrade package type: bin or iso")
     @args.args(
-        "--iso-url", metavar="<iso_url>", required=False,
-        help=f"ISO index URL or exact ISO URL (default: {DEFAULT_ISO_URL})")
+        "--upgrade-url", metavar="<url>", required=True,
+        help="BIN/ISO index URL or exact package URL")
     @args.args(
-        "--name", metavar="<name>", required=False,
+        "--db-file", metavar="<path>", required=True,
+        help="Local ZSV schema SQL file used for pre-upgrade Flyway checksum repair")
+    @args.args(
+        "--name", metavar="<name>", required=True,
         help="Tracked environment name")
-    def status(self, name=None, iso_url=None, nodes=None, primary_node=None):
+    def status(self, name=None, upgrade_type=None, upgrade_url=None, db_file=None, primary_node=None):
         """Show status of tracked ZSphere nodes"""
-        tracker = self._tracker(name, iso_url, nodes, primary_node)
+        tracker = self._tracker(name, upgrade_type, upgrade_url, primary_node, db_file)
         return tracker.status(self)
 
-    @args.action_description("Upgrade ZSphere primary node to latest ISO")
+    @args.action_description("Restart ZSphere management node")
     @args.args(
-        "--primary-node", metavar="<primary_node>", required=False,
-        help=f"Node where zstack-upgrade runs (default: {DEFAULT_NODES[0]})")
+        "--address", metavar="<ip>", required=True,
+        help="Target ZSphere/ZStack management node (root SSH)")
+    def restart_mn(self, address=None):
+        """Restart ZSphere management node"""
+        if not address:
+            LOG.error("restart_mn requires --address.")
+            return 1
+        result = self.ensure_remote_scriptlet(address)
+        if getattr(result, "returncode", 0) != 0:
+            return getattr(result, "returncode", 1) or 1
+        result = self.p_runner.run_command([
+            "bash", "-lc",
+            "source scriptlet/bootstrap.sh; "
+            f"zsv_restart_mn {shlex.quote(address)}",
+        ], cmd_purge_output=False)
+        return getattr(result, "returncode", 1) or 0
+
+    @args.action_description("Upgrade ZSphere primary node with latest BIN/ISO package")
     @args.args(
-        "--nodes", metavar="<nodes>", required=False,
-        help=f"Comma separated node IPs (default: {','.join(DEFAULT_NODES)})")
+        "--primary-node", metavar="<primary_node>", required=True,
+        help="Node where upgrade runs and discovers other MNs")
     @args.args(
-        "--iso-url", metavar="<iso_url>", required=False,
-        help=f"ISO index URL or exact ISO URL (default: {DEFAULT_ISO_URL})")
+        "--upgrade-type", metavar="<type>", required=True,
+        choices=UPGRADE_TYPES,
+        help="Upgrade package type: bin or iso")
     @args.args(
-        "--name", metavar="<name>", required=False,
+        "--upgrade-url", metavar="<url>", required=True,
+        help="BIN/ISO index URL or exact package URL")
+    @args.args(
+        "--db-file", metavar="<path>", required=True,
+        help="Local ZSV schema SQL file used for pre-upgrade Flyway checksum repair")
+    @args.args(
+        "--name", metavar="<name>", required=True,
         help="Tracked environment name")
-    def upgrade(self, name=None, iso_url=None, nodes=None, primary_node=None):
-        """Upgrade ZSphere primary node to latest ISO"""
-        tracker = self._tracker(name, iso_url, nodes, primary_node)
+    def upgrade(
+            self,
+            name=None,
+            upgrade_type=None,
+            upgrade_url=None,
+            db_file=None,
+            primary_node=None,
+    ):
+        """Upgrade ZSphere primary node with latest BIN/ISO package"""
+        tracker = self._tracker(
+            name,
+            upgrade_type,
+            upgrade_url,
+            primary_node,
+            db_file=db_file,
+        )
         returncode, iso, state = tracker.upgrade(self)
         if returncode == 0:
             LOG.info("Upgrade command finished: %s", iso.name)
@@ -132,33 +199,28 @@ class ZSphereCommands(base.BaseCommand):
         help="Target ZSphere/ZStack node (root SSH); required for deploy "
              "(omit with --no-deploy)")
     @args.args(
-        "--remote-lib", metavar="<dir>", required=False,
-        default=DEFAULT_REMOTE_LIB,
-        help=f"Remote WEB-INF/lib (default: {DEFAULT_REMOTE_LIB})")
+        "--zstack-root", metavar="<dir>", required=True,
+        help="ZStack checkout root for the current worktree")
     @args.args(
-        "--zstack-root", metavar="<dir>", required=False,
-        help="ZStack checkout root (default: $Workspace/Cursor/zs/zstack)")
+        "--premium-root", metavar="<dir>", required=True,
+        help="premium checkout root for the current worktree")
     @args.args(
-        "--docker-container", metavar="<id>", required=False,
-        help="Override [zsv_compile] docker_container; use none to build on host")
-    @args.args(
-        "--docker-zstack-root", metavar="<dir>", required=False,
-        help="Override [zsv_compile] docker_zstack_root")
+        "--docker-container", metavar="<name>", required=True,
+        help="Remote Docker worktree container name")
     @args.args(
         "--no-deploy", action="store_true",
-        help="Build locally but skip remote backup/copy")
+        help="Build and skip remote backup/copy")
     def compile(
             self,
             address=None,
-            remote_lib=None,
             no_deploy=False,
             zstack_root=None,
+            premium_root=None,
             docker_container=None,
-            docker_zstack_root=None,
     ):
         """
-        Build with mvn -DskipTests clean install using auto-detected modules.
-        Optional Docker: [zsv_compile]. Deploy copies JARs to remote WEB-INF/lib (with backup).
+        Build changed modules in a remote Docker worktree container.
+        Deploy copies JARs to remote WEB-INF/lib (with backup).
         """
         deploy = not no_deploy
         if deploy:
@@ -171,38 +233,79 @@ class ZSphereCommands(base.BaseCommand):
                 return getattr(res, "returncode", 1) or 1
         return run_compile_flow(
             address=address if deploy else None,
-            remote_lib=remote_lib or DEFAULT_REMOTE_LIB,
+            remote_lib=_zsv_deploy_conf("remote_lib", DEFAULT_REMOTE_LIB),
             no_deploy=no_deploy,
             zstack_root=zstack_root,
+            premium_root=premium_root,
             docker_container_override=docker_container,
-            docker_zstack_root_override=docker_zstack_root,
+            runner=self.p_runner,
+        )
+
+    @args.action_description(
+        "Run a ZStack Groovy integration test in a reusable worktree Docker container")
+    @args.args(
+        "--zstack-branch", metavar="<git-ref>", required=True,
+        help="ZStack branch/ref to test")
+    @args.args(
+        "--premium-branch", metavar="<git-ref>", required=True,
+        help="premium branch/ref to test")
+    @args.args(
+        "--test-class", metavar="<fqcn>", required=True,
+        help="Groovy Test or Case class; Case mode requires fully qualified class name")
+    @args.args(
+        "--test-mode", choices=("auto", "case", "suite"), default="auto",
+        help="auto: *Test runs as a suite, other classes run as designated Case")
+    @args.args(
+        "--zstack-repo", metavar="<dir>", required=True,
+        help="Source ZStack repo for the current worktree")
+    @args.args(
+        "--premium-repo", metavar="<dir>", required=True,
+        help="Source premium repo for the current worktree")
+    @args.args(
+        "--work-root", metavar="<dir>", required=False,
+        default=None,
+        help="Reusable run directory; default is /tmp/cbok-zsv-groovy-test-<zstack-branch>-<premium-branch>")
+    @args.args(
+        "--run-id", metavar="<name>", required=False,
+        default=None,
+        help="Stable suffix for Docker network/container and default work root")
+    @args.args(
+        "--refresh-worktree", action="store_true",
+        help="Replace the generated zstack/premium worktree before the run")
+    def groovy_test(
+            self,
+            zstack_branch=None,
+            premium_branch=None,
+            test_class=None,
+            test_mode="auto",
+            zstack_repo=None,
+            premium_repo=None,
+            work_root=None,
+            run_id=None,
+            refresh_worktree=False,
+    ):
+        """Run a ZStack Groovy integration test in a reusable Docker container"""
+        return run_groovy_test_flow(
+            zstack_branch=zstack_branch,
+            premium_branch=premium_branch,
+            test_class=test_class,
+            test_mode=test_mode,
+            zstack_repo=zstack_repo,
+            premium_repo=premium_repo,
+            work_root=work_root,
+            run_id=run_id,
+            keep_worktree=not refresh_worktree,
             runner=self.p_runner,
         )
 
     @args.action_description(
         "Replace changed kvmagent/zstacklib files on all ZSV nodes")
     @args.args(
-        "--nodes", metavar="<nodes>", required=False,
-        help=f"Comma separated node IPs (default: {','.join(DEFAULT_NODES)})")
+        "--primary-node", metavar="<primary_node>", required=True,
+        help="Node used to discover ZSphere nodes")
     @args.args(
-        "--utility-root", metavar="<dir>", required=False,
-        default=None,
-        help="zstack-utility checkout root (default: workspace zstack-utility)")
-    @args.args(
-        "--base-ref", metavar="<git-ref>", required=False,
-        help="Git base ref for current branch changes (default: upstream/origin branch)")
-    @args.args(
-        "--site-packages", metavar="<dir|auto>", required=False,
-        default=DEFAULT_SITE_PACKAGES,
-        help=f"Remote KVM site-packages path (default: {DEFAULT_SITE_PACKAGES})")
-    @args.args(
-        "--kvm-virtualenv", metavar="<dir>", required=False,
-        default=DEFAULT_KVM_VIRTUALENV,
-        help=f"Remote KVM virtualenv (default: {DEFAULT_KVM_VIRTUALENV})")
-    @args.args(
-        "--backup-root", metavar="<dir>", required=False,
-        default=DEFAULT_BACKUP_ROOT,
-        help=f"Remote backup root (default: {DEFAULT_BACKUP_ROOT})")
+        "--utility-root", metavar="<dir>", required=True,
+        help="zstack-utility checkout root for the current worktree")
     @args.args(
         "--dry-run", action="store_true",
         help="Only print detected files and nodes")
@@ -211,27 +314,28 @@ class ZSphereCommands(base.BaseCommand):
         help="Copy files and compile, but do not restart zstack-kvmagent")
     def replace_agent(
             self,
-            nodes=None,
+            primary_node=None,
             utility_root=None,
-            base_ref=None,
-            site_packages=None,
-            kvm_virtualenv=None,
-            backup_root=None,
             dry_run=False,
             no_restart=False,
     ):
         """
         Replace changed kvmagent/zstacklib files on all ZSV nodes.
         """
-        target_nodes = nodes or ",".join(self._tracker().nodes)
-        root = utility_root or default_utility_root()
+        if not primary_node:
+            LOG.error("replace_agent requires --primary-node.")
+            return 1
+        if not utility_root:
+            LOG.error("replace_agent requires --utility-root.")
+            return 1
+        discovered = discover_management_nodes(primary_node, self.p_runner)
+        target_nodes = ",".join(discovered or [primary_node])
         return run_agent_replace_flow(
-            utility_root=root,
+            utility_root=utility_root,
             nodes=target_nodes,
-            base_ref=base_ref,
-            site_packages=site_packages or DEFAULT_SITE_PACKAGES,
-            kvm_virtualenv=kvm_virtualenv or DEFAULT_KVM_VIRTUALENV,
-            backup_root=backup_root or DEFAULT_BACKUP_ROOT,
+            site_packages=_zsv_deploy_conf("site_packages", DEFAULT_SITE_PACKAGES),
+            kvm_virtualenv=_zsv_deploy_conf("kvm_virtualenv", DEFAULT_KVM_VIRTUALENV),
+            backup_root=_zsv_deploy_conf("backup_root", DEFAULT_BACKUP_ROOT),
             dry_run=dry_run,
             no_restart=no_restart,
             runner=self.p_runner,

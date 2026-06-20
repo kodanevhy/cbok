@@ -53,7 +53,7 @@ class AgentReplaceArchiveTest(unittest.TestCase):
         script = agent_replace.build_remote_apply_script(
             "/tmp/cbok-zsv-agent",
             files,
-            site_packages="auto",
+            site_packages="/var/lib/zstack/virtualenv/kvm/lib/python2.7/site-packages",
             kvm_virtualenv="/var/lib/zstack/virtualenv/kvm",
             backup_root="/var/lib/zstack/agent-replace-backup",
             restart_agent=True,
@@ -67,3 +67,5 @@ class AgentReplaceArchiveTest(unittest.TestCase):
         self.assertIn('PYTHONPATH="$SITE_PACKAGES${PYTHONPATH:+:$PYTHONPATH}"', script)
         self.assertIn("import kvmagent", script)
         self.assertIn("zstack-kvmagent", script)
+        self.assertNotIn('SITE_PACKAGES" == "auto"', script)
+        self.assertNotIn("distutils.sysconfig", script)

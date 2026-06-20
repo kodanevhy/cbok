@@ -36,7 +36,6 @@ class AgentReplaceFlowTest(unittest.TestCase):
         rc = agent_replace.run_agent_replace_flow(
             utility_root=self.repo,
             nodes="172.26.53.17,172.26.53.18",
-            base_ref="origin/dev",
             dry_run=True,
             no_restart=False,
             runner=runner,
@@ -53,7 +52,6 @@ class AgentReplaceFlowTest(unittest.TestCase):
         rc = agent_replace.run_agent_replace_flow(
             utility_root=self.repo,
             nodes="172.26.53.17",
-            base_ref="origin/dev",
             dry_run=False,
             no_restart=False,
             runner=runner,
@@ -71,7 +69,6 @@ class AgentReplaceFlowTest(unittest.TestCase):
         rc = agent_replace.run_agent_replace_flow(
             utility_root=self.repo,
             nodes="172.26.53.17,172.26.53.18",
-            base_ref="origin/dev",
             dry_run=False,
             no_restart=True,
             runner=runner,

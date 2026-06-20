@@ -1,4 +1,7 @@
-__all__ = ["DEFAULT_ISO_URL", "DEFAULT_NODES", "ZSphereTracker"]
+__all__ = [
+    "UPGRADE_TYPES",
+    "ZSphereTracker",
+]
 
 
 def __getattr__(name):

@@ -25,27 +25,29 @@ docker buildx build --platform linux/arm64 --load \
   cbok/bbx/zsv/docker/buildbin-arm64
 ```
 
-Run as a long-lived compile container:
+Use it through the remote Docker compile settings:
 
 ```bash
-docker run -d --name zsv-buildbin-arm64 --platform linux/arm64 \
-  -v /Users/mizar/Workspace/Cursor/zs/zstack-workspace/zstack:/root/zstack \
-  -v zstack-m2-arm64:/root/.m2 \
-  -w /root/zstack \
-  zstack-buildbin:debug7-arm64 sleep infinity
+cbok zsv compile --address 172.26.213.50 \
+  --zstack-root /path/to/zstack \
+  --premium-root /path/to/premium \
+  --docker-container zsv-buildbin-arm64
 ```
 
 Configure `cbok.conf`:
 
 ```ini
 [zsv_compile]
-docker_container = zsv-buildbin-arm64
-docker_zstack_root = /root/zstack
+remote_docker_host = tcp://172.26.50.70:2375
+remote_docker_image = zstack-buildbin:debug7-arm64
+remote_docker_platform = linux/arm64
+remote_docker_workdir = /work
+remote_docker_m2_volume = zstack-m2-arm64
 ```
 
 Quick verification:
 
 ```bash
-docker exec zsv-buildbin-arm64 bash -lc \
+DOCKER_HOST=tcp://172.26.50.70:2375 docker exec zsv-buildbin-arm64 bash -lc \
   'uname -m; java -version; mvn -version; mysqladmin ping'
 ```
