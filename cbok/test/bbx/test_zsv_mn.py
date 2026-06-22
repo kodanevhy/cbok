@@ -64,3 +64,35 @@ zsv_restart_mn 172.26.213.50
         self.assertIn("address=172.26.213.50", result.stdout)
         self.assertIn("zstack-ctl restart_node", result.stdout)
         self.assertIn("zstack-ctl status", result.stdout)
+
+    def test_zsv_ensure_ui_started_syncs_scriptlet_then_starts_ui(self):
+        script = """
+source scriptlet/bootstrap.sh
+ensure_remote_scriptlet() {
+  printf 'ensure=%s\\n' "$1"
+}
+remote_exec() {
+  printf 'remote_exec=%s %s %s %s\\n' "$1" "$2" "$3" "$4"
+}
+zsv_ensure_ui_started 172.26.213.50
+"""
+
+        result = subprocess.run(
+            ["bash", "-lc", script],
+            cwd=str(CBOK_ROOT),
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("ensure=172.26.213.50", result.stdout)
+        self.assertIn(
+            "remote_exec=172.26.213.50 zsv_start_ui_if_needed 12 5",
+            result.stdout,
+        )
+
+    def test_zsv_start_ui_scriptlet_runs_start_ui_and_checks_status(self):
+        scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
+
+        self.assertIn("zstack-ctl start_ui", scriptlet)
+        self.assertIn("UI status:.*Running", scriptlet)

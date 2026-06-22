@@ -5,10 +5,13 @@ from __future__ import annotations
 
 import logging
 import os
+import posixpath
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,7 +41,8 @@ _AUTO_EXCLUDED_MODULES = frozenset(
     ("test", "testlib", "test-premium", "testlib-premium")
 )
 MAVEN_PROFILE_PREPARE_CMD = "./runMavenProfile premium"
-RSYNC_SOURCE_EXCLUDES = "--exclude .git --exclude target --exclude '._*' --exclude '.DS_Store' --exclude '__MACOSX'"
+RSYNC_SOURCE_EXCLUDES = "--exclude .git --exclude target --exclude '*/target' --exclude '._*' --exclude '.DS_Store' --exclude '__MACOSX'"
+SPRING_CONFIG_PREFIX = "conf/springConfigXml/"
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,12 @@ class RemoteDockerCompileConfig:
     workdir: str
     container_name: str
     m2_volume: str
+
+
+@dataclass(frozen=True)
+class WebClassesFile:
+    source: str
+    relative_path: str
 
 
 @dataclass(frozen=True)
@@ -129,6 +139,11 @@ def git_branch_name(root: str) -> str:
         LOG.debug("Failed to read git branch in %s: %s", root, (r.stderr or "").strip())
         return ""
     return (r.stdout or "").strip()
+
+
+def is_git_worktree(root: str) -> bool:
+    r = _git(root, "rev-parse", "--is-inside-work-tree")
+    return r.returncode == 0 and (r.stdout or "").strip() == "true"
 
 
 def validate_same_branch(zstack_root: str, premium_root: str) -> bool:
@@ -230,6 +245,56 @@ def changed_paths_from_worktree(repo_root: str) -> list[str]:
             continue
         paths.extend(line.strip() for line in (r.stdout or "").splitlines() if line.strip())
     return _dedupe(paths)
+
+
+def _web_classes_files_from_paths(repo_root: str, rel_paths: list[str]) -> list[WebClassesFile]:
+    root = Path(repo_root)
+    files: dict[str, WebClassesFile] = {}
+    for rel_path in rel_paths:
+        normalized = str(rel_path).replace("\\", "/")
+        if not normalized.startswith(SPRING_CONFIG_PREFIX):
+            continue
+        source = root / normalized
+        if not source.is_file():
+            continue
+        target = normalized[len(SPRING_CONFIG_PREFIX):].strip("/")
+        if not target:
+            continue
+        files[f"springConfigXml/{target}"] = WebClassesFile(
+            source=str(source),
+            relative_path=f"springConfigXml/{target}",
+        )
+    return list(files.values())
+
+
+def collect_web_classes_files(
+    zstack_root: str,
+    main_paths: list[str],
+    premium_paths: list[str],
+    premium_root: str | None = None,
+) -> list[WebClassesFile]:
+    files: dict[str, WebClassesFile] = {}
+    for item in _web_classes_files_from_paths(zstack_root, main_paths):
+        files[item.relative_path] = item
+    if premium_root and os.path.isdir(premium_root):
+        for item in _web_classes_files_from_paths(premium_root, premium_paths):
+            files[item.relative_path] = item
+    return list(files.values())
+
+
+def collect_changed_web_classes_files(zstack_root: str, premium_root: str | None = None) -> list[WebClassesFile]:
+    premium_root = premium_root or os.path.join(zstack_root, "premium")
+    main_paths: list[str] = []
+    if is_git_worktree(zstack_root):
+        main_paths = _dedupe(
+            changed_paths_from_worktree(zstack_root) + changed_paths_from_head_commit(zstack_root)
+        )
+    premium_paths: list[str] = []
+    if os.path.isdir(premium_root) and is_git_worktree(premium_root):
+        premium_paths = _dedupe(
+            changed_paths_from_worktree(premium_root) + changed_paths_from_head_commit(premium_root)
+        )
+    return collect_web_classes_files(zstack_root, main_paths, premium_paths, premium_root)
 
 
 _JAVA_SCAN_SKIP_DIRS = frozenset(
@@ -497,6 +562,31 @@ def collect_built_jars(
     return list(by_base.values())
 
 
+def _stage_web_classes_archive(local_copy_root: str, files: list[WebClassesFile]) -> str | None:
+    if not files:
+        return None
+    stage_root = Path(local_copy_root) / "web-classes"
+    archive = Path(local_copy_root) / "web-classes.tar.gz"
+    if stage_root.exists():
+        shutil.rmtree(stage_root)
+    stage_root.mkdir(parents=True, exist_ok=True)
+    for item in files:
+        target = stage_root / item.relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item.source, target)
+    if archive.exists():
+        archive.unlink()
+    with tarfile.open(archive, "w:gz") as tar:
+        for path in sorted(stage_root.rglob("*")):
+            if path.is_file():
+                tar.add(path, arcname=path.relative_to(stage_root).as_posix())
+    return str(archive)
+
+
+def _remote_classes_from_lib(remote_lib: str) -> str:
+    return posixpath.join(posixpath.dirname(remote_lib.rstrip("/")), "classes")
+
+
 def _run_shell(runner, script: str) -> int:
     r = runner.run_command(["bash", "-lc", script], cmd_purge_output=False)
     return getattr(r, "returncode", 1) or 0
@@ -760,6 +850,30 @@ def scriptlet_install_jars(address: str, remote_staging: str, remote_lib: str, r
     return getattr(r, "returncode", 1) or 0
 
 
+def scriptlet_scp_web_classes_archive(address: str, remote_archive: str, local_archive: str, runner) -> int:
+    if not local_archive:
+        return 0
+    a = shlex.quote(address)
+    remote = shlex.quote(remote_archive)
+    local = shlex.quote(local_archive)
+    r = runner.run_command(
+        _bash_scriptlet(f"zsv_scp_web_classes_archive_to_remote {a} {remote} {local}"),
+        cmd_purge_output=False,
+    )
+    return getattr(r, "returncode", 1) or 0
+
+
+def scriptlet_install_web_classes_archive(address: str, remote_archive: str, remote_classes: str, runner) -> int:
+    a = shlex.quote(address)
+    remote = shlex.quote(remote_archive)
+    classes = shlex.quote(remote_classes)
+    r = runner.run_command(
+        _bash_scriptlet(f"zsv_remote_install_web_classes_archive {a} {remote} {classes}"),
+        cmd_purge_output=False,
+    )
+    return getattr(r, "returncode", 1) or 0
+
+
 def run_compile_flow(
     *,
     address: str | None,
@@ -800,8 +914,9 @@ def run_compile_flow(
         return 1
 
     user_main, user_prem = auto_detect_modules(root, remote_premium)
-    if not user_main and not user_prem:
-        LOG.error("No changed Maven modules found from current HEAD commit.")
+    web_classes_files = collect_changed_web_classes_files(root, remote_premium)
+    if not user_main and not user_prem and not web_classes_files:
+        LOG.error("No changed Maven modules or deployable web classes found from current HEAD commit.")
         return 1
 
     grouped = {
@@ -812,7 +927,6 @@ def run_compile_flow(
     head_line, full_hash = git_summary(root)
     print_plan(root, head_line, full_hash, grouped, plan)
 
-    collect_premium = remote_premium
     if grouped["premium"]:
         if not remote_premium:
             LOG.error("Premium modules requested but premium source is not a directory.")
@@ -845,6 +959,10 @@ def run_compile_flow(
     print("\n== Built JARs to sync ==")
     for j in jars:
         print(j)
+    print("\n== Web classes to sync ==")
+    for item in web_classes_files:
+        print(f"{item.source} -> WEB-INF/classes/{item.relative_path}")
+    web_classes_archive = _stage_web_classes_archive(local_jar_copy_root, web_classes_files)
 
     if no_deploy:
         print("\n(no-deploy) skipping remote backup and copy.")
@@ -854,12 +972,28 @@ def run_compile_flow(
         LOG.error("Deploy requires --address.")
         return 1
 
-    rc = scriptlet_ensure_backup(address, remote_lib, runner)
-    if rc != 0:
-        return rc
     remote_staging = _remote_jar_staging_for_root(root)
-    rc = scriptlet_scp_jars(address, remote_staging, jars, runner)
-    if rc != 0:
-        return rc
-    rc = scriptlet_install_jars(address, remote_staging, remote_lib, runner)
-    return rc
+    if jars:
+        rc = scriptlet_ensure_backup(address, remote_lib, runner)
+        if rc != 0:
+            return rc
+        rc = scriptlet_scp_jars(address, remote_staging, jars, runner)
+        if rc != 0:
+            return rc
+        rc = scriptlet_install_jars(address, remote_staging, remote_lib, runner)
+        if rc != 0:
+            return rc
+    if web_classes_archive:
+        remote_archive = posixpath.join(remote_staging, "web-classes.tar.gz")
+        rc = scriptlet_scp_web_classes_archive(address, remote_archive, web_classes_archive, runner)
+        if rc != 0:
+            return rc
+        rc = scriptlet_install_web_classes_archive(
+            address,
+            remote_archive,
+            _remote_classes_from_lib(remote_lib),
+            runner,
+        )
+        if rc != 0:
+            return rc
+    return 0

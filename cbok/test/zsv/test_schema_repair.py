@@ -34,6 +34,7 @@ from cbok.bbx.zsv.service import IsoInfo
 from cbok.bbx.zsv.service import ZSphereTracker
 from cbok.bbx.zsv import service as zsv_service
 from cbok.cmd.zsv import _upgrade_command
+from cbok.cmd.zsv import _upgrade_type_from_state
 from cbok.cmd.zsv import ZSphereCommands
 
 
@@ -153,10 +154,108 @@ class SchemaRepairTest(unittest.TestCase):
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(0, rc)
-        script = runner.commands[-1][0][-1]
-        self.assertIn("zsv_upgrade_latest", script)
-        self.assertIn("ZStack-ZSphere-installer.bin", script)
-        self.assertTrue(script.rstrip().endswith(" bin"))
+        scripts = [cmd[-1] for cmd, _kwargs in runner.commands]
+        upgrade_script = next(script for script in scripts if "zsv_upgrade_latest" in script)
+        self.assertIn("ZStack-ZSphere-installer.bin", upgrade_script)
+        self.assertTrue(upgrade_script.rstrip().endswith(" bin"))
+
+    def test_upgrade_starts_ui_after_successful_remote_upgrade(self):
+        runner = FakeRunner()
+        bin_url = "http://example.invalid/ZStack-ZSphere-installer.bin"
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_type="bin",
+            upgrade_url=bin_url,
+            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
+            primary_node="172.26.213.50",
+            runner=runner,
+        )
+        original_discover = zsv_service.discover_management_nodes
+        original_repair = schema_repair.run_schema_repair_for_file
+        zsv_service.discover_management_nodes = lambda address, runner: [address]
+        schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        artifact = IsoInfo(
+            name="ZStack-ZSphere-installer.bin",
+            download_url=bin_url,
+            size="123",
+        )
+        state = SimpleNamespace(
+            latest_iso_name="",
+            latest_iso_modified_at=None,
+            last_upgraded_iso_name="",
+            last_upgraded_iso_modified_at=None,
+            last_upgraded_at=None,
+            save=lambda update_fields=None: None,
+        )
+        tracker.check = lambda: (artifact, state, True, True)
+
+        try:
+            rc, _artifact, _state = tracker.upgrade(FakeCommand())
+        finally:
+            schema_repair.run_schema_repair_for_file = original_repair
+            zsv_service.discover_management_nodes = original_discover
+
+        self.assertEqual(0, rc)
+        scripts = [cmd[-1] for cmd, _kwargs in runner.commands]
+        self.assertIn("zsv_upgrade_latest", scripts[0])
+        self.assertIn("zsv_ensure_ui_started 172.26.213.50", scripts[1])
+
+    def test_upgrade_fails_when_ui_cannot_be_started(self):
+        class UiFailRunner(FakeRunner):
+            def run_command(self, cmd, **kwargs):
+                self.commands.append((cmd, kwargs))
+                rc = 1 if "zsv_ensure_ui_started" in cmd[-1] else 0
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=rc, stdout="", stderr="")
+
+        runner = UiFailRunner()
+        saved = []
+        bin_url = "http://example.invalid/ZStack-ZSphere-installer.bin"
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_type="bin",
+            upgrade_url=bin_url,
+            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
+            primary_node="172.26.213.50",
+            runner=runner,
+        )
+        original_discover = zsv_service.discover_management_nodes
+        original_repair = schema_repair.run_schema_repair_for_file
+        zsv_service.discover_management_nodes = lambda address, runner: [address]
+        schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        artifact = IsoInfo(
+            name="ZStack-ZSphere-installer.bin",
+            download_url=bin_url,
+            size="123",
+        )
+        state = SimpleNamespace(
+            latest_iso_name="",
+            latest_iso_modified_at=None,
+            last_upgraded_iso_name="",
+            last_upgraded_iso_modified_at=None,
+            last_upgraded_at=None,
+            save=lambda update_fields=None: saved.append(update_fields),
+        )
+        tracker.check = lambda: (artifact, state, True, True)
+
+        try:
+            rc, _artifact, _state = tracker.upgrade(FakeCommand())
+        finally:
+            schema_repair.run_schema_repair_for_file = original_repair
+            zsv_service.discover_management_nodes = original_discover
+
+        self.assertEqual(1, rc)
+        self.assertIn("zsv_ensure_ui_started 172.26.213.50", runner.commands[-1][0][-1])
+        self.assertIn(
+            [
+                "latest_iso_name",
+                "latest_iso_modified_at",
+                "last_upgraded_iso_name",
+                "last_upgraded_iso_modified_at",
+                "last_upgraded_at",
+            ],
+            saved,
+        )
 
     def test_scriptlet_bin_upgrade_runs_installer_with_u(self):
         scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
@@ -193,17 +292,58 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertIn("--upgrade-url http://example.invalid/ZStack-ZSphere-installer.bin", command)
         self.assertIn("--db-file /workspace/zstack/conf/db/zsv/V5.1.0__schema.sql", command)
 
-    def test_zsv_commands_define_required_cli_args(self):
+    def test_zsv_status_only_requires_primary_node(self):
+        options = {
+            arg: kwargs
+            for args, kwargs in getattr(ZSphereCommands.status, "_args", [])
+            for arg in args
+        }
+
+        self.assertEqual(["--primary-node"], list(options))
+        self.assertTrue(options["--primary-node"]["required"])
+
+    def test_zsv_check_does_not_require_upgrade_execution_args(self):
+        options = {
+            arg: kwargs
+            for args, kwargs in getattr(ZSphereCommands.check, "_args", [])
+            for arg in args
+        }
+
+        self.assertEqual(["--primary-node"], list(options))
+        self.assertTrue(options["--primary-node"]["required"])
+        self.assertNotIn("--upgrade-url", options)
+        self.assertNotIn("--name", options)
+        self.assertNotIn("--upgrade-type", options)
+        self.assertNotIn("--db-file", options)
+
+    def test_check_reports_upgrade_type_from_latest_state(self):
+        state = SimpleNamespace(
+            last_upgraded_iso_name="ZStack-ZSphere-installer-fv-2606181047-36.bin",
+            latest_iso_name="",
+            iso_url="http://example.invalid/latest/",
+        )
+
+        self.assertEqual("bin", _upgrade_type_from_state(state))
+
+    def test_check_infers_iso_type_from_latest_state(self):
+        state = SimpleNamespace(
+            last_upgraded_iso_name="",
+            latest_iso_name="ZStack-ZSphere-x86_64-DVD.iso",
+            iso_url="http://example.invalid/latest/",
+        )
+
+        self.assertEqual("iso", _upgrade_type_from_state(state))
+
+    def test_zsv_upgrade_requires_full_execution_args(self):
         required_args = ("--name", "--upgrade-type", "--upgrade-url", "--db-file", "--primary-node")
-        for method in (ZSphereCommands.check, ZSphereCommands.status, ZSphereCommands.upgrade):
-            options = {
-                arg: kwargs
-                for args, kwargs in getattr(method, "_args", [])
-                for arg in args
-            }
-            for arg in required_args:
-                self.assertIn(arg, options)
-                self.assertTrue(options[arg]["required"])
+        options = {
+            arg: kwargs
+            for args, kwargs in getattr(ZSphereCommands.upgrade, "_args", [])
+            for arg in args
+        }
+        for arg in required_args:
+            self.assertIn(arg, options)
+            self.assertTrue(options[arg]["required"])
 
     def test_zsv_upgrade_commands_do_not_define_manual_schema_args(self):
         for method in (ZSphereCommands.check, ZSphereCommands.status, ZSphereCommands.upgrade):
@@ -254,6 +394,7 @@ class SchemaRepairTest(unittest.TestCase):
                 "--test-class",
             ),
             ZSphereCommands.replace_agent: ("--primary-node", "--utility-root"),
+            ZSphereCommands.install_ssh_key: ("--primary-node",),
         }
 
         for method, arg_names in required_by_method.items():
@@ -291,15 +432,16 @@ class SchemaRepairTest(unittest.TestCase):
                 runner=FakeRunner(),
             )
 
-    def test_tracker_requires_db_file(self):
-        with self.assertRaisesRegex(ValueError, "db_file is required"):
-            ZSphereTracker(
-                name="test-env",
-                upgrade_type="bin",
-                upgrade_url="http://example.invalid/ZStack-ZSphere-installer.bin",
-                primary_node="172.26.213.50",
-                runner=FakeRunner(),
-            )
+    def test_tracker_allows_empty_db_file_for_check_only_flow(self):
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_type="bin",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+            primary_node="172.26.213.50",
+            runner=FakeRunner(),
+        )
+
+        self.assertEqual("", tracker.schema_db_file)
 
     def test_tracker_requires_name_upgrade_type_and_primary_node(self):
         common = {

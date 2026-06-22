@@ -20,6 +20,7 @@ FULL_COMPILE_CMD = "./runMavenProfile premium"
 SOURCE_EXCLUDES = (
     "--exclude .git "
     "--exclude target "
+    "--exclude '*/target' "
     "--exclude .idea "
     "--exclude .gradle "
     "--exclude node_modules "
@@ -33,6 +34,7 @@ SOURCE_EXCLUDES = (
 RSYNC_EXCLUDES = (
     "--exclude .git "
     "--exclude target "
+    "--exclude '*/target' "
     "--exclude .idea "
     "--exclude .gradle "
     "--exclude node_modules "

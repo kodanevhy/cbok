@@ -33,6 +33,32 @@ zsv_nodes_status() {
   done
 }
 
+zsv_authorize_public_keys() {
+  local address="${1:?address required}"
+  local local_keys="${2:?local public keys file required}"
+  local remote_keys="/tmp/cbok-public-keys.$$"
+  local remote_keys_q
+
+  [[ -s "$local_keys" ]] || die "local public keys file is empty: $local_keys"
+
+  _cbok_scp "$local_keys" "root@${address}:${remote_keys}"
+  remote_keys_q=$(printf %q "$remote_keys")
+  remote_bash "$address" "set -euo pipefail
+keys_file=${remote_keys_q}
+umask 077
+mkdir -p /root/.ssh
+touch /root/.ssh/authorized_keys
+chmod 700 /root/.ssh
+chmod 600 /root/.ssh/authorized_keys
+while IFS= read -r key; do
+  [[ -n \"\$key\" ]] || continue
+  grep -qxF \"\$key\" /root/.ssh/authorized_keys || printf '%s\n' \"\$key\" >> /root/.ssh/authorized_keys
+done < \"\$keys_file\"
+rm -f \"\$keys_file\"
+"
+  log_info "installed SSH public keys on ${address}"
+}
+
 zsv_restart_mn() {
   local address="${1:?address required}"
 
@@ -44,6 +70,46 @@ fi
 zstack-ctl restart_node
 zstack-ctl status
 "
+}
+
+zsv_start_ui_if_needed() {
+  local max_attempts="${1:-12}"
+  local sleep_seconds="${2:-5}"
+  local status
+  local i
+
+  require_cmd zstack-ctl
+
+  status="$(zstack-ctl status 2>&1 || true)"
+  printf '%s\n' "$status"
+  if printf '%s\n' "$status" | grep -Eq 'UI status:.*Running'; then
+    log_info "ZStack UI is already running"
+    return 0
+  fi
+
+  log_info "starting ZStack UI"
+  zstack-ctl start_ui
+  for ((i = 1; i <= max_attempts; i++)); do
+    status="$(zstack-ctl status 2>&1 || true)"
+    printf '%s\n' "$status"
+    if printf '%s\n' "$status" | grep -Eq 'UI status:.*Running'; then
+      log_info "ZStack UI is running"
+      return 0
+    fi
+    if [[ "$i" -lt "$max_attempts" ]]; then
+      sleep "$sleep_seconds"
+    fi
+  done
+
+  echo "ZStack UI did not reach Running status after start_ui" >&2
+  return 1
+}
+
+zsv_ensure_ui_started() {
+  local address="${1:?address required}"
+
+  ensure_remote_scriptlet "$address"
+  remote_exec "$address" zsv_start_ui_if_needed 12 5
 }
 
 zsv_discover_management_nodes() {
@@ -285,6 +351,58 @@ j=(\"${sq}\"/*.jar)
 [[ \${#j[@]} -gt 0 ]] || die \"no jars under remote staging ${sq}\"
 cp -f \"${sq}\"/*.jar \"${lq}/\"
 rm -f \"${sq}\"/*.jar
+	"
+}
+
+zsv_scp_web_classes_archive_to_remote() {
+  local address="${1:?address required}"
+  local remote_archive="${2:?remote archive required}"
+  local local_archive="${3:?local archive required}"
+
+  [[ -f "$local_archive" ]] || die "not a regular file: $local_archive"
+  remote_mkdir "$address" "$(dirname "$remote_archive")"
+  _cbok_scp "$local_archive" "root@${address}:${remote_archive}"
+}
+
+zsv_remote_install_web_classes_archive() {
+  local address="${1:?address required}"
+  local remote_archive="${2:?remote archive required}"
+  local classes="${3:?remote WEB-INF/classes required}"
+
+  local aq cq bq
+  aq=$(printf %q "$remote_archive")
+  cq=$(printf %q "$classes")
+  bq=$(printf %q "${classes}.cbok-backup")
+  remote_bash "$address" "set -euo pipefail
+archive=${aq}
+classes=${cq}
+backup=${bq}
+list=\$(mktemp)
+[[ -f \"\$archive\" ]] || die \"remote archive missing: \$archive\"
+[[ -d \"\$classes\" ]] || die \"remote classes dir missing: \$classes\"
+mkdir -p \"\$backup\"
+tar -tzf \"\$archive\" > \"\$list\"
+while IFS= read -r rel; do
+  [[ -n \"\$rel\" ]] || continue
+  [[ \"\$rel\" == */ ]] && continue
+  [[ \"\$rel\" != /* ]] || die \"archive contains absolute path: \$rel\"
+  [[ \"\$rel\" != *..* ]] || die \"archive contains unsafe path: \$rel\"
+  target=\"\$classes/\$rel\"
+  if [[ -e \"\$target\" && ! -e \"\$backup/\$rel\" ]]; then
+    mkdir -p \"\$backup/\$(dirname \"\$rel\")\"
+    cp -a \"\$target\" \"\$backup/\$rel\"
+  fi
+done < \"\$list\"
+tar --no-same-owner -xzf \"\$archive\" -C \"\$classes\"
+while IFS= read -r rel; do
+  [[ -n \"\$rel\" ]] || continue
+  [[ \"\$rel\" == */ ]] && continue
+  target=\"\$classes/\$rel\"
+  [[ -e \"\$target\" ]] || continue
+  chown --reference=\"\$classes\" \"\$target\" 2>/dev/null || true
+done < \"\$list\"
+rm -f \"\$list\"
+rm -f \"\$archive\"
 "
 }
 

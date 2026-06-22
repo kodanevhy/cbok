@@ -231,6 +231,8 @@ class GroovyContainerTest(unittest.TestCase):
             if "tar -xzf - -C /tmp/cbok-zsv-src/zstack" in script
         ]
         self.assertEqual(1, len(zstack_archive_scripts))
+        self.assertIn("--exclude target", zstack_archive_scripts[0])
+        self.assertIn("--exclude '*/target'", zstack_archive_scripts[0])
         self.assertIn("--exclude premium", zstack_archive_scripts[0])
         self.assertIn("--exclude ./premium", zstack_archive_scripts[0])
         self.assertTrue(any("rsync -a --delete" in script and "/work/zstack/" in script for script in shell_scripts))

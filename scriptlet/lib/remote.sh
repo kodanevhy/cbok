@@ -2,17 +2,29 @@
 
 _cbok_ssh() {
   # shellcheck disable=SC2086
-  ssh ${CBOK_SSH_OPTS} "$@"
+  if [[ -n "${SSHPASS:-}" ]] && command -v sshpass >/dev/null 2>&1; then
+    sshpass -e ssh ${CBOK_SSH_OPTS} "$@"
+  else
+    ssh ${CBOK_SSH_OPTS} "$@"
+  fi
 }
 
 _cbok_scp() {
   # shellcheck disable=SC2086
-  scp ${CBOK_SCP_OPTS} "$@"
+  if [[ -n "${SSHPASS:-}" ]] && command -v sshpass >/dev/null 2>&1; then
+    sshpass -e scp ${CBOK_SCP_OPTS} "$@"
+  else
+    scp ${CBOK_SCP_OPTS} "$@"
+  fi
 }
 
 _cbok_rsync() {
   # shellcheck disable=SC2086
-  rsync ${CBOK_RSYNC_OPTS} "$@"
+  if [[ -n "${SSHPASS:-}" ]] && command -v sshpass >/dev/null 2>&1; then
+    sshpass -e rsync ${CBOK_RSYNC_OPTS} "$@"
+  else
+    rsync ${CBOK_RSYNC_OPTS} "$@"
+  fi
 }
 
 _cbok_shell_quote_cmd() {
