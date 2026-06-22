@@ -43,6 +43,7 @@ class ZsvCompileTest(unittest.TestCase):
         self._orig_git_summary = compile.git_summary
         self._orig_git = compile._git
         self._orig_local_jar_copy_root_for_root = compile._local_jar_copy_root_for_root
+        self._orig_collect_changed_web_classes_files = compile.collect_changed_web_classes_files
         self._orig_fallback_worktree_store = worktree_container._FALLBACK_STORE
         worktree_container._FALLBACK_STORE = worktree_container.InMemoryWorktreeContainerStore()
 
@@ -52,6 +53,7 @@ class ZsvCompileTest(unittest.TestCase):
         compile.git_summary = self._orig_git_summary
         compile._git = self._orig_git
         compile._local_jar_copy_root_for_root = self._orig_local_jar_copy_root_for_root
+        compile.collect_changed_web_classes_files = self._orig_collect_changed_web_classes_files
         worktree_container._FALLBACK_STORE = self._orig_fallback_worktree_store
 
     def test_remote_docker_conf_reads_optional_values(self):
@@ -390,6 +392,28 @@ class ZsvCompileTest(unittest.TestCase):
 
         self.assertEqual([str(main_jar)], jars)
 
+    def test_collect_web_classes_files_maps_spring_config(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            main_xml = root / "conf" / "springConfigXml" / "core.xml"
+            premium_xml = premium / "conf" / "springConfigXml" / "crypto.xml"
+            main_xml.parent.mkdir(parents=True)
+            premium_xml.parent.mkdir(parents=True)
+            main_xml.write_text("<beans/>", encoding="utf-8")
+            premium_xml.write_text("<beans/>", encoding="utf-8")
+
+            files = compile.collect_web_classes_files(
+                str(root),
+                ["conf/springConfigXml/core.xml", "identity/src/main/java/Foo.java"],
+                ["conf/springConfigXml/crypto.xml"],
+                str(premium),
+            )
+
+        mapped = {item.relative_path: item.source for item in files}
+        self.assertEqual(str(main_xml), mapped["springConfigXml/core.xml"])
+        self.assertEqual(str(premium_xml), mapped["springConfigXml/crypto.xml"])
+
     def test_deploy_uses_unique_remote_staging_per_compile(self):
         compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375")
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
@@ -436,6 +460,50 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertIn(staging_prefix, install_scripts[0])
         self.assertIn(str(copied_jar), scp_scripts[0])
         self.assertNotIn(str(worktree_target / "identity-5.0.0.jar"), scp_scripts[0])
+
+    def test_deploy_syncs_changed_web_classes_archive(self):
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375")
+        compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
+        compile.git_summary = lambda _root: ("abc123 test", "abc123")
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            worktree_target = root / "identity" / "target"
+            worktree_target.mkdir(parents=True)
+            premium_xml = premium / "conf" / "springConfigXml" / "crypto.xml"
+            premium_xml.parent.mkdir(parents=True)
+            premium_xml.write_text("<beans/>", encoding="utf-8")
+            (root / "pom.xml").write_text("<project/>", encoding="utf-8")
+            (root / "identity" / "pom.xml").write_text("<project/>", encoding="utf-8")
+            jar_copy_root = Path(td) / "jar-copy"
+            jar_copy_target = jar_copy_root / "zstack" / "identity" / "target"
+            jar_copy_target.mkdir(parents=True)
+            (jar_copy_target / "identity-5.0.0.jar").write_bytes(b"jar")
+            compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
+            compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: [
+                compile.WebClassesFile(str(premium_xml), "springConfigXml/crypto.xml")
+            ]
+            runner = FakeRunner()
+
+            rc = compile.run_compile_flow(
+                address="172.26.213.50",
+                remote_lib=compile.DEFAULT_REMOTE_LIB,
+                no_deploy=False,
+                zstack_root=str(root),
+                premium_root=str(premium),
+                docker_container_override="zsv-remote",
+                runner=runner,
+            )
+
+        self.assertEqual(0, rc)
+        shell_scripts = [
+            cmd[-1] for cmd, _kwargs in runner.calls
+            if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]
+        ]
+        self.assertTrue(any("zsv_scp_web_classes_archive_to_remote" in script for script in shell_scripts))
+        self.assertTrue(any("zsv_remote_install_web_classes_archive" in script for script in shell_scripts))
+        self.assertTrue(any("/usr/local/zstack/apache-tomcat/webapps/zstack/WEB-INF/classes" in script for script in shell_scripts))
 
 if __name__ == "__main__":
     unittest.main()

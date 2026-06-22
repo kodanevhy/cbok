@@ -770,6 +770,7 @@ def _docker_stream_archive_to_container(
     excludes = (
         "--exclude .git "
         "--exclude target "
+        "--exclude '*/target' "
         "--exclude .idea "
         "--exclude .gradle "
         "--exclude node_modules "

@@ -148,12 +148,14 @@ class WorktreeContainerTest(unittest.TestCase):
             if "tar -xzf - -C /tmp/cbok-zsv-src/zstack" in script
         ][0]
         self.assertIn("--exclude target", zstack_archive)
+        self.assertIn("*/target", zstack_archive)
         self.assertIn("--exclude premium", zstack_archive)
         sync_script = [
             script for script in shell_scripts
             if "rsync -a --delete" in script and "/work/zstack/" in script
         ][0]
         self.assertIn("--exclude target", sync_script)
+        self.assertIn("*/target", sync_script)
         self.assertIn("--exclude premium", sync_script)
         self.assertIn("rsync -a --delete", sync_script)
         self.assertIn("/work/zstack/premium/", sync_script)

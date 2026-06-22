@@ -124,7 +124,8 @@ class ZSphereTracker:
         self.primary_node = _required(primary_node, "primary_node")
         self.nodes = self._normalize_nodes([self.primary_node])
         self.runner = runner or cbok_utils.UnifiedProcessRunner()
-        self.schema_db_file = _required(db_file, "db_file")
+        self.schema_db_file = str(db_file).strip() if db_file else ""
+        self.discovered_nodes = False
 
     @staticmethod
     def _normalize_nodes(nodes):
@@ -283,8 +284,12 @@ class ZSphereTracker:
                 "falling back to primary node only",
                 self.primary_node)
             nodes = [self.primary_node]
+            self.discovered_nodes = False
         elif self.primary_node not in nodes:
             nodes.insert(0, self.primary_node)
+            self.discovered_nodes = True
+        else:
+            self.discovered_nodes = True
         self.nodes = self._normalize_nodes(nodes)
 
     def ensure_scriptlet(self, command):
@@ -310,9 +315,10 @@ class ZSphereTracker:
             LOG.error("Already up to date, interrupted before running upgrade")
             return 1, iso, state
 
-        result = command.ensure_remote_scriptlet(self.primary_node)
-        if getattr(result, "returncode", 0) != 0:
-            return result.returncode, iso, state
+        if not self.discovered_nodes:
+            result = command.ensure_remote_scriptlet(self.primary_node)
+            if getattr(result, "returncode", 0) != 0:
+                return result.returncode, iso, state
 
         repair_rc = schema_repair.run_schema_repair_for_file(
             address=self.primary_node,
@@ -344,4 +350,9 @@ class ZSphereTracker:
                 "last_upgraded_iso_modified_at",
                 "last_upgraded_at",
             ])
+            result = self.runner.run_command([
+                "bash", "-lc",
+                "source scriptlet/bootstrap.sh; "
+                f"zsv_ensure_ui_started {shlex.quote(self.primary_node)}",
+            ], cmd_purge_output=True)
         return result.returncode, iso, state
