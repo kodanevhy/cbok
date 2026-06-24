@@ -199,6 +199,7 @@ class SchemaRepairTest(unittest.TestCase):
         scripts = [cmd[-1] for cmd, _kwargs in runner.commands]
         self.assertIn("zsv_upgrade_latest", scripts[0])
         self.assertIn("zsv_ensure_ui_started 172.26.213.50", scripts[1])
+        self.assertIn("zsv_wait_resources_ready 172.26.213.50 1800 10", scripts[2])
 
     def test_upgrade_fails_when_ui_cannot_be_started(self):
         class UiFailRunner(FakeRunner):
@@ -257,10 +258,67 @@ class SchemaRepairTest(unittest.TestCase):
             saved,
         )
 
+    def test_upgrade_fails_when_resources_do_not_become_ready(self):
+        class HealthFailRunner(FakeRunner):
+            def run_command(self, cmd, **kwargs):
+                self.commands.append((cmd, kwargs))
+                rc = 1 if "zsv_wait_resources_ready" in cmd[-1] else 0
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=rc, stdout="", stderr="")
+
+        runner = HealthFailRunner()
+        bin_url = "http://example.invalid/ZStack-ZSphere-installer.bin"
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_type="bin",
+            upgrade_url=bin_url,
+            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
+            primary_node="172.26.213.50",
+            runner=runner,
+        )
+        original_discover = zsv_service.discover_management_nodes
+        original_repair = schema_repair.run_schema_repair_for_file
+        zsv_service.discover_management_nodes = lambda address, runner: [address]
+        schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        artifact = IsoInfo(
+            name="ZStack-ZSphere-installer.bin",
+            download_url=bin_url,
+            size="123",
+        )
+        state = SimpleNamespace(
+            latest_iso_name="",
+            latest_iso_modified_at=None,
+            last_upgraded_iso_name="",
+            last_upgraded_iso_modified_at=None,
+            last_upgraded_at=None,
+            save=lambda update_fields=None: None,
+        )
+        tracker.check = lambda: (artifact, state, True, True)
+
+        try:
+            rc, _artifact, _state = tracker.upgrade(FakeCommand())
+        finally:
+            schema_repair.run_schema_repair_for_file = original_repair
+            zsv_service.discover_management_nodes = original_discover
+
+        self.assertEqual(1, rc)
+        scripts = [cmd[-1] for cmd, _kwargs in runner.commands]
+        self.assertIn("zsv_ensure_ui_started 172.26.213.50", scripts[-2])
+        self.assertIn("zsv_wait_resources_ready 172.26.213.50 1800 10", scripts[-1])
+
     def test_scriptlet_bin_upgrade_runs_installer_with_u(self):
         scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
 
         self.assertIn('bash "$artifact_name" -u', scriptlet)
+
+    def test_scriptlet_waits_for_hosts_primary_and_backup_storage(self):
+        scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
+
+        self.assertIn("zsv_wait_resources_ready", scriptlet)
+        self.assertIn("HostVO", scriptlet)
+        self.assertIn("PrimaryStorageVO", scriptlet)
+        self.assertIn("BackupStorageVO", scriptlet)
+        self.assertIn("Enabled/Connected", scriptlet)
 
     def test_omitted_nodes_default_to_primary_until_discovery(self):
         tracker = ZSphereTracker(
@@ -385,7 +443,7 @@ class SchemaRepairTest(unittest.TestCase):
     def test_zsv_runtime_target_args_are_required_cli(self):
         required_by_method = {
             ZSphereCommands.restart_mn: ("--address",),
-            ZSphereCommands.compile: ("--zstack-root", "--premium-root", "--docker-container"),
+            ZSphereCommands.compile: ("--zstack-root", "--premium-root"),
             ZSphereCommands.groovy_test: (
                 "--zstack-branch",
                 "--premium-branch",

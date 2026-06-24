@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from cbok.bbx.zsv import worktree_container
 
@@ -86,6 +87,51 @@ class WorktreeContainerTest(unittest.TestCase):
         self.assertEqual(1, sum("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in shell_scripts))
         self.assertTrue(any("DOCKER_HOST=tcp://172.26.50.70:2375 docker create" in script for script in shell_scripts))
         self.assertTrue(any("-v zsv-m2:/var/maven/.m2" in script for script in shell_scripts))
+
+    def test_full_compile_reruns_when_worktree_head_changes(self):
+        with tempfile.TemporaryDirectory() as td:
+            zstack = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            self._write_repo(zstack)
+            self._write_premium(premium)
+            runner = FakeRunner()
+            store = worktree_container.InMemoryWorktreeContainerStore()
+            spec = worktree_container.WorktreeContainerSpec(
+                zstack_root=str(zstack),
+                premium_root=str(premium),
+                docker_host="",
+                image="compile-image:unit",
+            )
+            heads = {
+                str(zstack.resolve()): "zstack-old",
+                str(premium.resolve()): "premium-old",
+            }
+
+            def fake_git_head(root):
+                return heads[str(Path(root).resolve())]
+
+            with patch.object(worktree_container, "_git_head", side_effect=fake_git_head):
+                rc, first = worktree_container.ensure_worktree_container(
+                    runner,
+                    spec,
+                    state_store=store,
+                )
+                heads[str(premium.resolve())] = "premium-new"
+                rc2, second = worktree_container.ensure_worktree_container(
+                    runner,
+                    spec,
+                    state_store=store,
+                )
+
+        self.assertEqual(0, rc)
+        self.assertEqual(0, rc2)
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertTrue(first.full_compile_ran)
+        self.assertTrue(second.full_compile_ran)
+        self.assertEqual(first.container_name, second.container_name)
+        shell_scripts = self._shell_scripts(runner)
+        self.assertEqual(2, sum("./runMavenProfile premium" in script for script in shell_scripts))
 
     def test_full_compile_patches_run_maven_profile_and_still_uses_it_as_entrypoint(self):
         with tempfile.TemporaryDirectory() as td:

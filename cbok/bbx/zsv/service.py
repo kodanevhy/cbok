@@ -21,6 +21,8 @@ from cbok.bbx.zsv import schema_repair
 LOG = logging.getLogger(__name__)
 
 UPGRADE_TYPES = ("iso", "bin")
+UPGRADE_HEALTH_TIMEOUT_SECONDS = 30 * 60
+UPGRADE_HEALTH_POLL_INTERVAL_SECONDS = 10
 HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -355,4 +357,12 @@ class ZSphereTracker:
                 "source scriptlet/bootstrap.sh; "
                 f"zsv_ensure_ui_started {shlex.quote(self.primary_node)}",
             ], cmd_purge_output=True)
+            if result.returncode == 0:
+                result = self.runner.run_command([
+                    "bash", "-lc",
+                    "source scriptlet/bootstrap.sh; "
+                    f"zsv_wait_resources_ready {shlex.quote(self.primary_node)} "
+                    f"{UPGRADE_HEALTH_TIMEOUT_SECONDS} "
+                    f"{UPGRADE_HEALTH_POLL_INTERVAL_SECONDS}",
+                ], cmd_purge_output=True)
         return result.returncode, iso, state

@@ -65,13 +65,13 @@ class ZsvCompileTest(unittest.TestCase):
             remote_docker_m2_volume="zsv-m2",
         )
 
-        conf = compile.remote_docker_compile_from_conf("zsv-remote")
+        conf = compile.remote_docker_compile_from_conf()
 
         self.assertEqual("zstack-buildbin:debug7-arm64", conf.image)
         self.assertEqual("linux/arm64", conf.platform)
         self.assertEqual("tcp://172.26.50.70:2375", conf.docker_host)
         self.assertEqual("/zwork", conf.workdir)
-        self.assertEqual("zsv-remote", conf.container_name)
+        self.assertEqual("auto", conf.container_name)
         self.assertEqual("zsv-m2", conf.m2_volume)
         self.assertFalse(hasattr(conf, "premium_source"))
 
@@ -90,7 +90,6 @@ class ZsvCompileTest(unittest.TestCase):
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=True,
                 premium_root="/repo/premium",
-                docker_container_override="zsv-remote",
                 runner=runner,
             )
 
@@ -98,7 +97,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertIn("--zstack-root is required", "\n".join(logs.output))
         self.assertEqual([], runner.calls)
 
-    def test_run_compile_flow_requires_cli_container_name(self):
+    def test_run_compile_flow_defaults_to_worktree_container_name(self):
         compile.settings.CONF = _conf(
             remote_docker_host="tcp://172.26.50.70:2375",
             remote_docker_image="zstack-buildbin:debug7-arm64",
@@ -108,25 +107,30 @@ class ZsvCompileTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
+            premium = Path(td) / "premium"
             (root / "plugin" / "foo").mkdir(parents=True)
+            premium.mkdir(parents=True)
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             (root / "plugin" / "foo" / "pom.xml").write_text(
                 "<project/>", encoding="utf-8")
             runner = FakeRunner()
 
-            with self.assertLogs(compile.LOG.name, level="ERROR") as logs:
-                rc = compile.run_compile_flow(
-                    address=None,
-                    remote_lib=compile.DEFAULT_REMOTE_LIB,
-                    no_deploy=True,
-                    zstack_root=str(root),
-                    premium_root=str(root.parent / "premium"),
-                    runner=runner,
-                )
+            rc = compile.run_compile_flow(
+                address=None,
+                remote_lib=compile.DEFAULT_REMOTE_LIB,
+                no_deploy=True,
+                zstack_root=str(root),
+                premium_root=str(premium),
+                runner=runner,
+            )
 
-        self.assertEqual(1, rc)
-        self.assertIn("--docker-container is required", "\n".join(logs.output))
-        self.assertEqual([], runner.calls)
+        self.assertEqual(0, rc)
+        shell_scripts = [
+            cmd[-1] for cmd, _kwargs in runner.calls
+            if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]
+        ]
+        self.assertTrue(any("--name cbok-zsv-worktree-zstack-" in script for script in shell_scripts))
+        self.assertFalse(any("zsv-remote" in script for script in shell_scripts))
 
     def test_run_compile_flow_uses_remote_docker_daemon_without_bind_mounts(self):
         compile.settings.CONF = _conf(
@@ -155,7 +159,6 @@ class ZsvCompileTest(unittest.TestCase):
                 no_deploy=True,
                 zstack_root=str(root),
                 premium_root=str(premium),
-                docker_container_override="zsv-remote",
                 runner=runner,
             )
 
@@ -170,7 +173,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertTrue(any("DOCKER_HOST=tcp://172.26.50.70:2375 docker create" in script for script in shell_scripts))
         self.assertTrue(any("--platform linux/amd64" in script for script in shell_scripts))
         self.assertTrue(
-            any("docker exec -i zsv-remote" in script and "/tmp/cbok-zsv-src/zstack" in script for script in shell_scripts)
+            any("docker exec -i cbok-zsv-worktree-zstack-" in script and "/tmp/cbok-zsv-src/zstack" in script for script in shell_scripts)
         )
         archive_scripts = [script for script in shell_scripts if "tar $tar_extra_opts -C" in script and "docker exec -i" in script]
         self.assertTrue(any("COPYFILE_DISABLE=1 COPY_EXTENDED_ATTRIBUTES_DISABLE=1 tar $tar_extra_opts -C" in script for script in archive_scripts))
@@ -180,13 +183,14 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertTrue(any("--exclude .DS_Store" in script for script in archive_scripts))
         docker_cp_scripts = [
             script for script in shell_scripts
-            if "DOCKER_HOST=tcp://172.26.50.70:2375 docker cp zsv-remote:/tmp/cbok-zsv-out/" in script
+            if "DOCKER_HOST=tcp://172.26.50.70:2375 docker cp cbok-zsv-worktree-zstack-" in script
+            and ":/tmp/cbok-zsv-out/" in script
         ]
         self.assertTrue(docker_cp_scripts)
         self.assertFalse(any(str(root) in script for script in docker_cp_scripts))
         self.assertFalse(any(str(premium) in script for script in docker_cp_scripts))
         self.assertTrue(any("cbok-zsv-jars-" in script for script in docker_cp_scripts))
-        build_scripts = [script for script in shell_scripts if "docker exec zsv-remote bash -lc" in script]
+        build_scripts = [script for script in shell_scripts if "docker exec cbok-zsv-worktree-zstack-" in script and " bash -lc" in script]
         self.assertGreaterEqual(len(build_scripts), 3)
         self.assertTrue(any("./runMavenProfile premium" in script for script in build_scripts))
         self.assertTrue(any("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in build_scripts))
@@ -235,7 +239,6 @@ class ZsvCompileTest(unittest.TestCase):
                     no_deploy=True,
                     zstack_root=str(root),
                     premium_root=str(premium),
-                    docker_container_override="zsv-remote",
                     runner=runner,
                 )
 
@@ -442,7 +445,6 @@ class ZsvCompileTest(unittest.TestCase):
                 no_deploy=False,
                 zstack_root=str(root),
                 premium_root=str(premium),
-                docker_container_override="zsv-remote",
                 runner=runner,
             )
 
@@ -492,7 +494,6 @@ class ZsvCompileTest(unittest.TestCase):
                 no_deploy=False,
                 zstack_root=str(root),
                 premium_root=str(premium),
-                docker_container_override="zsv-remote",
                 runner=runner,
             )
 

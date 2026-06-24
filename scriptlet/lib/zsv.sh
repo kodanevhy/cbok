@@ -112,6 +112,68 @@ zsv_ensure_ui_started() {
   remote_exec "$address" zsv_start_ui_if_needed 12 5
 }
 
+_zsv_health_mysql() {
+  local sql="${1:?sql required}"
+
+  mysql -uroot -pzstack.mysql.password zstack -N -B -e "$sql" 2>/dev/null \
+    || mysql -uzstack -pzstack.password zstack -N -B -e "$sql"
+}
+
+_zsv_unready_resources() {
+  _zsv_health_mysql "
+SELECT CONCAT('Host ', IFNULL(name, ''), ' ', IFNULL(managementIp, ''), ' state=', state, ' status=', status)
+FROM HostVO
+WHERE state <> 'Enabled' OR status <> 'Connected'
+UNION ALL
+SELECT CONCAT('PrimaryStorage ', IFNULL(name, ''), ' ', IFNULL(type, ''), ' state=', state, ' status=', status)
+FROM PrimaryStorageVO
+WHERE state <> 'Enabled' OR status <> 'Connected'
+UNION ALL
+SELECT CONCAT('BackupStorage ', IFNULL(name, ''), ' ', IFNULL(type, ''), ' state=', state, ' status=', status)
+FROM BackupStorageVO
+WHERE state <> 'Enabled' OR status <> 'Connected'
+ORDER BY 1"
+}
+
+zsv_wait_local_resources_ready() {
+  local timeout_seconds="${1:-1800}"
+  local interval_seconds="${2:-10}"
+  local deadline now pending
+
+  require_cmd mysql
+  deadline=$(($(date +%s) + timeout_seconds))
+
+  while true; do
+    if ! pending="$(_zsv_unready_resources 2>&1)"; then
+      pending="resource health query failed: ${pending}"
+    fi
+    if [[ -z "$pending" ]]; then
+      log_info "all hosts, primary storages, and backup storages are Enabled/Connected"
+      return 0
+    fi
+
+    now=$(date +%s)
+    if (( now >= deadline )); then
+      echo "Timed out waiting for ZSphere resources to become Enabled/Connected after ${timeout_seconds}s:" >&2
+      printf '%s\n' "$pending" >&2
+      return 1
+    fi
+
+    log_info "waiting for ZSphere resources to become Enabled/Connected; pending:"
+    printf '%s\n' "$pending"
+    sleep "$interval_seconds"
+  done
+}
+
+zsv_wait_resources_ready() {
+  local address="${1:?address required}"
+  local timeout_seconds="${2:-1800}"
+  local interval_seconds="${3:-10}"
+
+  ensure_remote_scriptlet "$address"
+  remote_exec "$address" zsv_wait_local_resources_ready "$timeout_seconds" "$interval_seconds"
+}
+
 zsv_discover_management_nodes() {
   local address="${1:?address required}"
 

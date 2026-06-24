@@ -85,11 +85,6 @@ def zstack_root_from_workspace() -> str:
     return os.path.realpath(default_zstack_root())
 
 
-_DOCKER_DISABLED = frozenset(
-    ("", "none", "-", "disabled", "off", "false", "0"),
-)
-
-
 def _conf_get(section: str, option: str, default: str) -> str:
     conf = settings.CONF
     if conf.has_section(section) and conf.has_option(section, option):
@@ -106,13 +101,13 @@ def _normalize_docker_host(raw: str | None) -> str:
     return host
 
 
-def remote_docker_compile_from_conf(container_name: str) -> RemoteDockerCompileConfig:
+def remote_docker_compile_from_conf() -> RemoteDockerCompileConfig:
     return RemoteDockerCompileConfig(
         image=_conf_get("zsv_compile", "remote_docker_image", "registry.docker.zstack.io:80/buildbin:debug7"),
         platform=_conf_get("zsv_compile", "remote_docker_platform", "linux/amd64"),
         docker_host=_normalize_docker_host(_conf_get("zsv_compile", "remote_docker_host", "")),
         workdir=_conf_get("zsv_compile", "remote_docker_workdir", "/work").rstrip("/"),
-        container_name=container_name.strip(),
+        container_name="auto",
         m2_volume=_conf_get("zsv_compile", "remote_docker_m2_volume", "zsv-m2"),
     )
 
@@ -881,7 +876,6 @@ def run_compile_flow(
     no_deploy: bool,
     zstack_root: str | None = None,
     premium_root: str | None = None,
-    docker_container_override: str | None = None,
     runner,
 ) -> int:
     if not zstack_root:
@@ -893,10 +887,7 @@ def run_compile_flow(
         LOG.error("Not a ZStack Maven root (missing pom.xml): %s", root)
         return 1
 
-    if docker_container_override is None or docker_container_override.strip().lower() in _DOCKER_DISABLED:
-        LOG.error("--docker-container is required for remote Docker compile.")
-        return 1
-    remote_docker = remote_docker_compile_from_conf(docker_container_override)
+    remote_docker = remote_docker_compile_from_conf()
     if not remote_docker.docker_host:
         LOG.error("remote Docker compile requires [zsv_compile] remote_docker_host.")
         return 1

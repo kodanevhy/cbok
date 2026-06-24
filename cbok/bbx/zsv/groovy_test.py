@@ -103,16 +103,16 @@ class TestTarget:
 
 
 def default_test_image() -> str:
-    image = remote_docker_compile_from_conf("").image.strip()
+    image = remote_docker_compile_from_conf().image.strip()
     return image or FALLBACK_IMAGE
 
 
 def default_test_platform() -> str:
-    return remote_docker_compile_from_conf("").platform.strip()
+    return remote_docker_compile_from_conf().platform.strip()
 
 
 def default_test_docker_host() -> str:
-    return remote_docker_compile_from_conf("").docker_host.strip()
+    return remote_docker_compile_from_conf().docker_host.strip()
 
 
 def _safe_run_id(raw: str | None = None) -> str:
@@ -1001,7 +1001,7 @@ def run_groovy_test_flow(
         return 1
 
     runner = runner or cbok_utils.UnifiedProcessRunner()
-    docker_conf = remote_docker_compile_from_conf("")
+    docker_conf = remote_docker_compile_from_conf()
     run_id = _safe_run_id(run_id or f"{zstack_branch}-{premium_branch}")
     if work_root:
         root = Path(os.path.realpath(work_root))
