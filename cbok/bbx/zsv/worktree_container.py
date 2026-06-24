@@ -440,7 +440,7 @@ def ensure_worktree_container(
     if container_owner and container_owner.worktree_key != defaults.worktree_key:
         LOG.error(
             "Docker container %s is already bound to another worktree: %s (zstack: %s, premium: %s). "
-            "Use a unique --docker-container for this worktree.",
+            "Remove stale worktree container state or use a different worktree path.",
             defaults.container_name,
             container_owner.worktree_key,
             container_owner.zstack_root,
@@ -449,6 +449,14 @@ def ensure_worktree_container(
         return 1, None
 
     record, _created = store.get_or_create(defaults)
+    heads_changed = (
+        record.zstack_head != defaults.zstack_head
+        or record.premium_head != defaults.premium_head
+    )
+    if heads_changed and record.full_compile_done:
+        record.full_compile_done = False
+        store.save(record, update_fields=["full_compile_done"])
+
     container_created = False
     rc, container_created = ensure_container_exists(runner, spec, record.container_name)
     if rc != 0:

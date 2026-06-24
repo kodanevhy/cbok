@@ -335,9 +335,6 @@ class ZSphereCommands(base.BaseCommand):
         "--premium-root", metavar="<dir>", required=True,
         help="premium checkout root for the current worktree")
     @args.args(
-        "--docker-container", metavar="<name>", required=True,
-        help="Remote Docker worktree container name")
-    @args.args(
         "--no-deploy", action="store_true",
         help="Build and skip remote backup/copy")
     def compile(
@@ -346,7 +343,6 @@ class ZSphereCommands(base.BaseCommand):
             no_deploy=False,
             zstack_root=None,
             premium_root=None,
-            docker_container=None,
     ):
         """
         Build changed modules in a remote Docker worktree container.
@@ -367,7 +363,6 @@ class ZSphereCommands(base.BaseCommand):
             no_deploy=no_deploy,
             zstack_root=zstack_root,
             premium_root=premium_root,
-            docker_container_override=docker_container,
             runner=self.p_runner,
         )
 

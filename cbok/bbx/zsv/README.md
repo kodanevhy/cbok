@@ -5,14 +5,13 @@ worktree container and can deploy the resulting JARs to a ZSphere/ZStack node.
 
 ## Remote Docker compile
 
-The command always compiles through a Docker daemon. The container name is a
-required CLI argument:
+The command always compiles through a Docker daemon. CBoK derives a stable
+remote container name from the current worktree and reuses it on later runs:
 
 ```bash
 cbok zsv compile --address 172.26.213.50 \
   --zstack-root /path/to/zstack \
-  --premium-root /path/to/premium \
-  --docker-container zsv-remote
+  --premium-root /path/to/premium
 ```
 
 Configure the remote daemon and build image in `[zsv_compile]`:
@@ -38,13 +37,14 @@ backup_root = /var/lib/zstack/agent-replace-backup
 
 Behavior:
 
-- Reuses the named worktree container on the configured remote Docker daemon.
+- Reuses the worktree container on the configured remote Docker daemon.
+- Creates the worktree container and runs the full premium profile preparation
+  only when the container has not completed full compile before.
 - Streams local `zstack/` and `premium/` worktrees into the container with
   `docker exec` tar pipes, so the remote daemon does not need local filesystem
   paths.
 - Mounts `remote_docker_m2_volume` at `/var/maven/.m2` and links `/root/.m2`
   to it.
-- Runs the full premium profile preparation once per tracked worktree container.
 - Copies successful module build outputs to this command's local JAR copy
   directory and deploys from there, without writing build outputs back into the
   source worktree.
