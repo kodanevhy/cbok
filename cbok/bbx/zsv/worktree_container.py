@@ -13,12 +13,14 @@ from dataclasses import dataclass
 LOG = logging.getLogger(__name__)
 
 DEFAULT_WORKDIR = "/work"
-DEFAULT_M2_VOLUME = "zsv-m2"
+DEFAULT_M2_VOLUME = "auto"
+DEFAULT_M2_VOLUME_PREFIX = "zsv-m2"
 MAVEN_REPO = "/var/maven/.m2/repository"
-FULL_COMPILE_THREADS = "12"
 FULL_COMPILE_CMD = "./runMavenProfile premium"
 SOURCE_EXCLUDES = (
     "--exclude .git "
+    "--exclude build "
+    "--exclude '*/build' "
     "--exclude target "
     "--exclude '*/target' "
     "--exclude .idea "
@@ -33,6 +35,8 @@ SOURCE_EXCLUDES = (
 )
 RSYNC_EXCLUDES = (
     "--exclude .git "
+    "--exclude build "
+    "--exclude '*/build' "
     "--exclude target "
     "--exclude '*/target' "
     "--exclude .idea "
@@ -58,6 +62,8 @@ class WorktreeContainerSpec:
     workdir: str = DEFAULT_WORKDIR
     container_name: str = "auto"
     m2_volume: str = DEFAULT_M2_VOLUME
+    identity_zstack_root: str = ""
+    identity_premium_root: str | None = None
 
 
 @dataclass
@@ -89,27 +95,6 @@ class WorktreeContainerHandle:
     work_zstack: str
     work_premium: str
     full_compile_ran: bool
-
-
-class InMemoryWorktreeContainerStore:
-    def __init__(self):
-        self.records: dict[str, WorktreeContainerRecord] = {}
-
-    def get_or_create(self, defaults: WorktreeContainerRecord):
-        existing = self.records.get(defaults.worktree_key)
-        if existing:
-            return existing, False
-        self.records[defaults.worktree_key] = defaults
-        return defaults, True
-
-    def save(self, record, update_fields=None):
-        self.records[record.worktree_key] = record
-
-    def find_by_container_name(self, container_name: str):
-        for record in self.records.values():
-            if record.container_name == container_name:
-                return record
-        return None
 
 
 class DjangoWorktreeContainerStore:
@@ -153,17 +138,15 @@ class DjangoWorktreeContainerStore:
         ).first()
 
 
-_FALLBACK_STORE = InMemoryWorktreeContainerStore()
-
-
 def default_state_store():
     try:
         from django.apps import apps
-        if apps.ready:
-            return DjangoWorktreeContainerStore()
-    except Exception:
-        LOG.debug("Django app registry is not ready; using in-memory zsv container state")
-    return _FALLBACK_STORE
+    except Exception as exc:
+        raise RuntimeError("Django app registry is required for zsv worktree container state") from exc
+
+    if not apps.ready:
+        raise RuntimeError("Django app registry is not ready for zsv worktree container state")
+    return DjangoWorktreeContainerStore()
 
 
 def normalize_docker_host(raw: str | None) -> str:
@@ -178,13 +161,16 @@ def normalize_docker_host(raw: str | None) -> str:
 
 
 def worktree_key_for_spec(spec: WorktreeContainerSpec) -> str:
+    identity_zstack_root = spec.identity_zstack_root or spec.zstack_root
+    identity_premium_root = spec.identity_premium_root if spec.identity_premium_root is not None else spec.premium_root
     parts = [
-        os.path.realpath(spec.zstack_root),
-        os.path.realpath(spec.premium_root) if spec.premium_root else "",
+        os.path.realpath(identity_zstack_root),
+        os.path.realpath(identity_premium_root) if identity_premium_root else "",
         normalize_docker_host(spec.docker_host),
         spec.image.strip(),
         (spec.platform or "").strip(),
         (spec.workdir or DEFAULT_WORKDIR).rstrip("/") or DEFAULT_WORKDIR,
+        (spec.m2_volume or DEFAULT_M2_VOLUME).strip(),
     ]
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
@@ -199,8 +185,17 @@ def container_name_for_spec(spec: WorktreeContainerSpec, worktree_key: str) -> s
     raw = (spec.container_name or "").strip()
     if raw and raw.lower() != "auto":
         return raw
-    root_name = _safe_docker_token(os.path.basename(os.path.realpath(spec.zstack_root)))
+    identity_zstack_root = spec.identity_zstack_root or spec.zstack_root
+    root_name = _safe_docker_token(os.path.basename(os.path.realpath(identity_zstack_root)))
     return f"cbok-zsv-worktree-{root_name}-{worktree_key[:16]}"
+
+
+def m2_volume_for_spec(spec: WorktreeContainerSpec, worktree_key: str) -> str:
+    raw = (spec.m2_volume or "").strip()
+    if raw.lower() in ("none", "-", "disabled", "off", "false", "0"):
+        return ""
+    prefix = DEFAULT_M2_VOLUME_PREFIX if raw.lower() in ("", "auto") else _safe_docker_token(raw)
+    return f"{prefix}-{worktree_key[:16]}"
 
 
 def _git_head(root: str | None) -> str:
@@ -387,8 +382,6 @@ def full_compile_script(spec: WorktreeContainerSpec) -> str:
     script = f"""
 set -euo pipefail
 cd {shlex.quote(work_zstack)}
-sed -i -E 's|mvn( -T [^ ]+)? -Dmaven.test.skip=true -P premium clean install|mvn -T {shlex.quote(FULL_COMPILE_THREADS)} -Dmaven.test.skip=true -P premium clean install|' runMavenProfile
-grep -q 'mvn -T {shlex.quote(FULL_COMPILE_THREADS)} -Dmaven.test.skip=true -P premium clean install' runMavenProfile
 {FULL_COMPILE_CMD}
 cd {shlex.quote(work_zstack)}/testlib
 mvn clean install -Dmaven.test.skip=true
@@ -402,18 +395,20 @@ fi
 
 def _default_record(spec: WorktreeContainerSpec) -> WorktreeContainerRecord:
     key = worktree_key_for_spec(spec)
+    identity_zstack_root = spec.identity_zstack_root or spec.zstack_root
+    identity_premium_root = spec.identity_premium_root if spec.identity_premium_root is not None else spec.premium_root
     return WorktreeContainerRecord(
         worktree_key=key,
-        zstack_root=os.path.realpath(spec.zstack_root),
-        premium_root=os.path.realpath(spec.premium_root) if spec.premium_root else "",
+        zstack_root=os.path.realpath(identity_zstack_root),
+        premium_root=os.path.realpath(identity_premium_root) if identity_premium_root else "",
         docker_host=normalize_docker_host(spec.docker_host),
         image=spec.image,
         platform=spec.platform or "",
         workdir=spec.workdir,
         container_name=container_name_for_spec(spec, key),
-        m2_volume=spec.m2_volume or "",
-        zstack_head=_git_head(spec.zstack_root),
-        premium_head=_git_head(spec.premium_root),
+        m2_volume=m2_volume_for_spec(spec, key),
+        zstack_head=_git_head(identity_zstack_root),
+        premium_head=_git_head(identity_premium_root),
     )
 
 
@@ -433,6 +428,8 @@ def ensure_worktree_container(
         workdir=(spec.workdir or DEFAULT_WORKDIR).rstrip("/") or DEFAULT_WORKDIR,
         container_name=spec.container_name or "auto",
         m2_volume=spec.m2_volume or DEFAULT_M2_VOLUME,
+        identity_zstack_root=os.path.realpath(spec.identity_zstack_root) if spec.identity_zstack_root else "",
+        identity_premium_root=os.path.realpath(spec.identity_premium_root) if spec.identity_premium_root else None,
     )
     store = state_store or default_state_store()
     defaults = _default_record(spec)
@@ -449,15 +446,20 @@ def ensure_worktree_container(
         return 1, None
 
     record, _created = store.get_or_create(defaults)
-    heads_changed = (
-        record.zstack_head != defaults.zstack_head
-        or record.premium_head != defaults.premium_head
-    )
-    if heads_changed and record.full_compile_done:
-        record.full_compile_done = False
-        store.save(record, update_fields=["full_compile_done"])
-
     container_created = False
+    spec = WorktreeContainerSpec(
+        zstack_root=spec.zstack_root,
+        premium_root=spec.premium_root,
+        docker_host=spec.docker_host,
+        image=spec.image,
+        platform=spec.platform,
+        workdir=spec.workdir,
+        container_name=spec.container_name,
+        m2_volume=record.m2_volume,
+        identity_zstack_root=spec.identity_zstack_root,
+        identity_premium_root=spec.identity_premium_root,
+    )
+
     rc, container_created = ensure_container_exists(runner, spec, record.container_name)
     if rc != 0:
         return rc, None

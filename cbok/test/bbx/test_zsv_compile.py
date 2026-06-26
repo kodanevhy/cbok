@@ -11,6 +11,27 @@ from cbok.bbx.zsv import worktree_container
 from cbok.conf import config as cbok_config
 
 
+class FakeWorktreeContainerStore:
+    def __init__(self):
+        self.records = {}
+
+    def get_or_create(self, defaults):
+        existing = self.records.get(defaults.worktree_key)
+        if existing:
+            return existing, False
+        self.records[defaults.worktree_key] = defaults
+        return defaults, True
+
+    def save(self, record, update_fields=None):
+        self.records[record.worktree_key] = record
+
+    def find_by_container_name(self, container_name):
+        for record in self.records.values():
+            if record.container_name == container_name:
+                return record
+        return None
+
+
 class FakeRunner:
     def __init__(self):
         self.calls = []
@@ -44,8 +65,9 @@ class ZsvCompileTest(unittest.TestCase):
         self._orig_git = compile._git
         self._orig_local_jar_copy_root_for_root = compile._local_jar_copy_root_for_root
         self._orig_collect_changed_web_classes_files = compile.collect_changed_web_classes_files
-        self._orig_fallback_worktree_store = worktree_container._FALLBACK_STORE
-        worktree_container._FALLBACK_STORE = worktree_container.InMemoryWorktreeContainerStore()
+        self._orig_default_state_store = worktree_container.default_state_store
+        self._worktree_store = FakeWorktreeContainerStore()
+        worktree_container.default_state_store = lambda: self._worktree_store
 
     def tearDown(self):
         compile.settings.CONF = self._orig_conf
@@ -54,7 +76,7 @@ class ZsvCompileTest(unittest.TestCase):
         compile._git = self._orig_git
         compile._local_jar_copy_root_for_root = self._orig_local_jar_copy_root_for_root
         compile.collect_changed_web_classes_files = self._orig_collect_changed_web_classes_files
-        worktree_container._FALLBACK_STORE = self._orig_fallback_worktree_store
+        worktree_container.default_state_store = self._orig_default_state_store
 
     def test_remote_docker_conf_reads_optional_values(self):
         compile.settings.CONF = _conf(
@@ -74,6 +96,13 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual("auto", conf.container_name)
         self.assertEqual("zsv-m2", conf.m2_volume)
         self.assertFalse(hasattr(conf, "premium_source"))
+
+    def test_remote_docker_conf_defaults_to_worktree_scoped_m2(self):
+        compile.settings.CONF = _conf()
+
+        conf = compile.remote_docker_compile_from_conf()
+
+        self.assertEqual("auto", conf.m2_volume)
 
     def test_zsv_compile_config_does_not_expose_profile_switch(self):
         option_names = [opt.name for opt in cbok_config.ZSV_COMPILE.options]
@@ -193,9 +222,9 @@ class ZsvCompileTest(unittest.TestCase):
         build_scripts = [script for script in shell_scripts if "docker exec cbok-zsv-worktree-zstack-" in script and " bash -lc" in script]
         self.assertGreaterEqual(len(build_scripts), 3)
         self.assertTrue(any("./runMavenProfile premium" in script for script in build_scripts))
-        self.assertTrue(any("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in build_scripts))
+        self.assertFalse(any("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in build_scripts))
         self.assertTrue(any("cd /work/zstack/testlib" in script for script in build_scripts))
-        self.assertIn("mvn -DskipTests clean install -pl plugin/foo", build_scripts[-1])
+        self.assertNotIn("mvn -DskipTests clean install -pl plugin/foo", build_scripts[-1])
         self.assertIn("sync_target /work/zstack /tmp/cbok-zsv-out/zstack plugin/foo", build_scripts[-1])
         self.assertIn('local props="$target/maven-archiver/pom.properties"', build_scripts[-1])
         self.assertIn('cp "$jar" "$dest/"', build_scripts[-1])
@@ -315,6 +344,44 @@ class ZsvCompileTest(unittest.TestCase):
 
         self.assertEqual(["identity"], main)
         self.assertEqual(["mevoco"], prem)
+
+    def test_auto_detect_modules_uses_top_commit_even_when_upstream_exists(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            (root / "storage").mkdir(parents=True)
+            (root / "storage" / "pom.xml").write_text("<project/>", encoding="utf-8")
+            (premium / "crypto").mkdir(parents=True)
+            (premium / "crypto" / "pom.xml").write_text("<project/>", encoding="utf-8")
+
+            def fake_git(repo, *args):
+                repo = os.path.realpath(repo)
+                if args == ("diff", "--name-only", "HEAD"):
+                    return subprocess.CompletedProcess(["git"], 0, "", "")
+                if args == ("ls-files", "--others", "--exclude-standard"):
+                    return subprocess.CompletedProcess(["git"], 0, "", "")
+                if args == ("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"):
+                    raise AssertionError("upstream must not be used to detect changed modules")
+                if args == ("merge-base", "origin/feature", "HEAD"):
+                    raise AssertionError("merge-base must not be used to detect changed modules")
+                if args == ("diff", "--name-only", "base", "HEAD"):
+                    raise AssertionError("base ref diff must not be used to detect changed modules")
+                if args == ("rev-parse", "--verify", "HEAD^"):
+                    return subprocess.CompletedProcess(["git"], 0, "parent\n", "")
+                if args == ("diff", "--name-only", "HEAD^", "HEAD"):
+                    out = {
+                        os.path.realpath(root): "storage/src/main/java/org/zstack/storage/encrypt/RemoteOnly.java\n",
+                        os.path.realpath(premium): "crypto/src/main/java/org/zstack/crypto/keyprovider/KeyProviderAvailabilityApiInterceptor.java\n",
+                    }.get(repo, "")
+                    return subprocess.CompletedProcess(["git"], 0, out, "")
+                return subprocess.CompletedProcess(["git"], 0, "", "")
+
+            compile._git = fake_git
+
+            main, prem = compile.auto_detect_modules(str(root), str(premium))
+
+        self.assertEqual(["storage"], main)
+        self.assertEqual(["crypto"], prem)
 
     def test_auto_detect_modules_includes_implementers_of_changed_interfaces(self):
         with tempfile.TemporaryDirectory() as td:

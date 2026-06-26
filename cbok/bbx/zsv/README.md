@@ -22,7 +22,7 @@ remote_docker_host = tcp://172.26.50.70:2375
 remote_docker_image = registry.docker.zstack.io:80/buildbin:debug7
 remote_docker_platform = linux/amd64
 remote_docker_workdir = /work
-remote_docker_m2_volume = zsv-m2
+remote_docker_m2_volume = auto
 ```
 
 Configure stable deployment paths in `[zsv_deploy]`:
@@ -43,8 +43,10 @@ Behavior:
 - Streams local `zstack/` and `premium/` worktrees into the container with
   `docker exec` tar pipes, so the remote daemon does not need local filesystem
   paths.
-- Mounts `remote_docker_m2_volume` at `/var/maven/.m2` and links `/root/.m2`
-  to it.
+- Mounts a worktree-scoped Maven volume at `/var/maven/.m2` and links
+  `/root/.m2` to it. `remote_docker_m2_volume = auto` uses the `zsv-m2`
+  prefix; a custom value is treated as a prefix, not as one shared Maven
+  repository across worktrees.
 - Copies successful module build outputs to this command's local JAR copy
   directory and deploys from there, without writing build outputs back into the
   source worktree.

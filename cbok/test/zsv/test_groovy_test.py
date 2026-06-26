@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from cbok.bbx.zsv import groovy_test
+from cbok.bbx.zsv import worktree_container
 
 
 class FakeRunner:
@@ -41,10 +42,35 @@ class FakeRunner:
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
 
+class FakeWorktreeContainerStore:
+    def __init__(self):
+        self.records = {}
+
+    def get_or_create(self, defaults):
+        existing = self.records.get(defaults.worktree_key)
+        if existing:
+            return existing, False
+        self.records[defaults.worktree_key] = defaults
+        return defaults, True
+
+    def save(self, record, update_fields=None):
+        self.records[record.worktree_key] = record
+
+    def find_by_container_name(self, container_name):
+        for record in self.records.values():
+            if record.container_name == container_name:
+                return record
+        return None
+
+
 class GroovyContainerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        self._orig_default_state_store = worktree_container.default_state_store
+        self._worktree_store = FakeWorktreeContainerStore()
+        worktree_container.default_state_store = lambda: self._worktree_store
+        self.addCleanup(self._restore_state_store)
         self._orig_remote_docker_compile_from_conf = groovy_test.remote_docker_compile_from_conf
         self.addCleanup(self._restore_compile_conf)
         groovy_test.remote_docker_compile_from_conf = lambda _container_name="": groovy_test.RemoteDockerCompileConfig(
@@ -61,6 +87,9 @@ class GroovyContainerTest(unittest.TestCase):
         self.zstack_repo.mkdir()
         self.premium_repo.mkdir()
         self._write_minimal_repo_sources()
+
+    def _restore_state_store(self):
+        worktree_container.default_state_store = self._orig_default_state_store
 
     def _restore_compile_conf(self):
         groovy_test.remote_docker_compile_from_conf = self._orig_remote_docker_compile_from_conf
@@ -180,7 +209,7 @@ class GroovyContainerTest(unittest.TestCase):
         self.assertTrue(any("docker create" in script and "--name cbok-zsv-worktree" in script for script in shell_scripts))
         self.assertTrue(any("COPYFILE_DISABLE=1 COPY_EXTENDED_ATTRIBUTES_DISABLE=1 tar $tar_extra_opts -C" in script and "/tmp/cbok-zsv-src/zstack" in script for script in shell_scripts))
         self.assertTrue(any("./runMavenProfile premium" in script for script in shell_scripts))
-        self.assertTrue(any("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in shell_scripts))
+        self.assertFalse(any("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in shell_scripts))
         self.assertTrue(any("cd /work/zstack/testlib" in script for script in shell_scripts))
         self.assertTrue(any("docker cp " in script and ":/tmp/cbok-zsv-cases" in script for script in shell_scripts))
         run_script = (work_root / "remote-run.sh").read_text(encoding="utf-8")
@@ -222,7 +251,7 @@ class GroovyContainerTest(unittest.TestCase):
         self.assertTrue(
             any("DOCKER_HOST=tcp://172.26.50.70:2375 docker create" in script for script in shell_scripts)
         )
-        self.assertTrue(any("-v zsv-m2:/var/maven/.m2" in script for script in shell_scripts))
+        self.assertTrue(any("-v zsv-m2-" in script and ":/var/maven/.m2" in script for script in shell_scripts))
         self.assertTrue(
             any("docker exec -i cbok-zsv-worktree" in script and "tar -xzf - -C /tmp/cbok-zsv-src/zstack" in script for script in shell_scripts)
         )
@@ -291,6 +320,107 @@ class GroovyContainerTest(unittest.TestCase):
                 for cmd, _kwargs in runner.commands
             )
         )
+
+    def test_generated_worktrees_overlay_source_worktree_changes(self):
+        runner = FakeRunner()
+        work_root = self.root / "run"
+
+        rc = groovy_test.run_groovy_test_flow(
+            zstack_branch="feature-zstack",
+            premium_branch="feature-premium",
+            test_class="org.zstack.test.integration.core.MustPassCase",
+            zstack_repo=str(self.zstack_repo),
+            premium_repo=str(self.premium_repo),
+            work_root=str(work_root),
+            runner=runner,
+        )
+
+        self.assertEqual(0, rc)
+        shell_scripts = self._shell_scripts(runner)
+        self.assertTrue(any(
+            f"source_repo={shlex.quote(str(self.zstack_repo.resolve()))}" in script
+            and f"target_worktree={shlex.quote(str((work_root / 'zstack').resolve()))}" in script
+            and "git -C \"$source_repo\" diff --binary HEAD | git -C \"$target_worktree\" apply --binary" in script
+            and "git -C \"$source_repo\" ls-files --others --exclude-standard -z" in script
+            for script in shell_scripts
+        ))
+        self.assertTrue(any(
+            f"source_repo={shlex.quote(str(self.premium_repo.resolve()))}" in script
+            and f"target_worktree={shlex.quote(str((work_root / 'premium').resolve()))}" in script
+            for script in shell_scripts
+        ))
+
+    def test_reused_worktree_container_incrementally_compiles_changed_modules(self):
+        runner = FakeRunner()
+        work_root = self.root / "run"
+        original_auto_detect = groovy_test.auto_detect_modules
+        groovy_test.auto_detect_modules = lambda _zstack, _premium: (["storage"], ["crypto"])
+        try:
+            rc1 = groovy_test.run_groovy_test_flow(
+                zstack_branch="feature-zstack",
+                premium_branch="feature-premium",
+                test_class="org.zstack.test.integration.core.MustPassCase",
+                zstack_repo=str(self.zstack_repo),
+                premium_repo=str(self.premium_repo),
+                work_root=str(work_root),
+                runner=runner,
+            )
+            rc2 = groovy_test.run_groovy_test_flow(
+                zstack_branch="feature-zstack",
+                premium_branch="feature-premium",
+                test_class="org.zstack.test.integration.core.MustPassCase",
+                zstack_repo=str(self.zstack_repo),
+                premium_repo=str(self.premium_repo),
+                work_root=str(work_root),
+                runner=runner,
+            )
+        finally:
+            groovy_test.auto_detect_modules = original_auto_detect
+
+        self.assertEqual(0, rc1)
+        self.assertEqual(0, rc2)
+        shell_scripts = self._shell_scripts(runner)
+        self.assertEqual(1, sum("./runMavenProfile premium" in script for script in shell_scripts))
+        self.assertTrue(any(
+            "mvn -Ppremium -DskipTests clean install -pl storage,premium/crypto" in script
+            for script in shell_scripts
+        ))
+
+    def test_different_run_roots_reuse_source_worktree_container(self):
+        runner = FakeRunner()
+        original_auto_detect = groovy_test.auto_detect_modules
+        groovy_test.auto_detect_modules = lambda _zstack, _premium: (["storage"], ["crypto"])
+        try:
+            rc1 = groovy_test.run_groovy_test_flow(
+                zstack_branch="feature-zstack",
+                premium_branch="feature-premium",
+                test_class="org.zstack.test.integration.core.MustPassCase",
+                zstack_repo=str(self.zstack_repo),
+                premium_repo=str(self.premium_repo),
+                work_root=str(self.root / "run-a"),
+                runner=runner,
+            )
+            rc2 = groovy_test.run_groovy_test_flow(
+                zstack_branch="feature-zstack",
+                premium_branch="feature-premium",
+                test_class="org.zstack.test.integration.core.MustPassCase",
+                zstack_repo=str(self.zstack_repo),
+                premium_repo=str(self.premium_repo),
+                work_root=str(self.root / "run-b"),
+                runner=runner,
+            )
+        finally:
+            groovy_test.auto_detect_modules = original_auto_detect
+
+        self.assertEqual(0, rc1)
+        self.assertEqual(0, rc2)
+        shell_scripts = self._shell_scripts(runner)
+        self.assertEqual(1, sum("./runMavenProfile premium" in script for script in shell_scripts))
+        self.assertEqual(1, sum("docker create" in script and "--name cbok-zsv-worktree" in script for script in shell_scripts))
+        self.assertTrue(any(
+            "mvn -Ppremium -DskipTests clean install -pl storage,premium/crypto" in script
+            for script in shell_scripts
+        ))
 
     def test_premium_case_runs_requested_class_in_premium_test_module(self):
         runner = FakeRunner()
