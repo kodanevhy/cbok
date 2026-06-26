@@ -15,6 +15,8 @@ from cbok.bbx.zsv.compile import _docker_env_prefix
 from cbok.bbx.zsv.compile import _docker_rm_container
 from cbok.bbx.zsv.compile import _docker_shell
 from cbok.bbx.zsv.compile import _normalize_docker_host
+from cbok.bbx.zsv.compile import auto_detect_modules
+from cbok.bbx.zsv.compile import maven_build_plan
 from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
 from cbok.bbx.zsv.worktree_container import WorktreeContainerSpec
 from cbok.bbx.zsv.worktree_container import ensure_worktree_container
@@ -710,6 +712,55 @@ def _worktrees_match_requested_refs(
     return True
 
 
+def _overlay_source_worktree_changes(runner, source_repo: str, target_worktree: Path) -> int:
+    source_repo = os.path.realpath(source_repo)
+    target_worktree = Path(os.path.realpath(target_worktree))
+    script = f"""
+set -euo pipefail
+source_repo={shlex.quote(source_repo)}
+target_worktree={shlex.quote(str(target_worktree))}
+
+git -C "$target_worktree" reset --hard HEAD >/dev/null
+git -C "$target_worktree" clean -fd >/dev/null
+
+if ! git -C "$source_repo" diff --quiet --binary HEAD; then
+  git -C "$source_repo" diff --binary HEAD | git -C "$target_worktree" apply --binary
+fi
+
+while IFS= read -r -d '' rel; do
+  src="$source_repo/$rel"
+  dst="$target_worktree/$rel"
+  mkdir -p "$(dirname "$dst")"
+  cp -Pp "$src" "$dst"
+done < <(git -C "$source_repo" ls-files --others --exclude-standard -z)
+"""
+    return _run_shell(runner, script)
+
+
+def _incremental_compile_changed_modules(runner, docker_host: str, handle, work_zstack: Path, work_premium: Path) -> int:
+    main_mods, prem_mods = auto_detect_modules(str(work_zstack), str(work_premium))
+    plan = maven_build_plan(main_mods, prem_mods)
+    if not plan.modules:
+        return 0
+
+    mvn_cmd = ["mvn"]
+    if plan.profiles:
+        mvn_cmd.append("-P" + ",".join(plan.profiles))
+    mvn_cmd.extend(["-DskipTests", "clean", "install", "-pl", ",".join(plan.modules)])
+    mvn_inner = " ".join(shlex.quote(c) for c in mvn_cmd)
+    LOG.info("Running incremental compile in %s: %s", handle.container_name, mvn_inner)
+    script = f"""
+set -euo pipefail
+cd {shlex.quote(handle.work_zstack)}
+{mvn_inner}
+"""
+    return _docker_shell(
+        runner,
+        docker_host,
+        ["exec", handle.container_name, "bash", "-lc", script],
+    )
+
+
 def _remove_container(runner, name: str, docker_host: str = "") -> None:
     if docker_host:
         _docker_rm_container(runner, docker_host, name)
@@ -1020,7 +1071,7 @@ def run_groovy_test_flow(
     if docker_host.lower() in ("none", "-", "disabled", "off", "false", "0"):
         docker_host = ""
     workdir = (docker_conf.workdir.strip() or DOCKER_WORK_ROOT).rstrip("/")
-    m2_volume = docker_conf.m2_volume.strip() or "zsv-m2"
+    m2_volume = docker_conf.m2_volume.strip() or "auto"
 
     partial_worktree = (work_zstack.exists() and not work_premium.exists()) or (
         work_premium.exists() and not work_zstack.exists()
@@ -1058,6 +1109,13 @@ def run_groovy_test_flow(
         if rc != 0:
             return rc
 
+    rc = _overlay_source_worktree_changes(runner, zstack_repo, work_zstack)
+    if rc != 0:
+        return rc
+    rc = _overlay_source_worktree_changes(runner, premium_repo, work_premium)
+    if rc != 0:
+        return rc
+
     _create_premium_link(work_zstack)
     target = _resolve_test_target(work_zstack, work_premium, test_class, test_mode)
     if target.needs_case_file and "." not in test_class:
@@ -1076,6 +1134,8 @@ def run_groovy_test_flow(
         workdir=workdir,
         container_name="auto",
         m2_volume=m2_volume,
+        identity_zstack_root=zstack_repo,
+        identity_premium_root=premium_repo,
     )
     rc, handle = ensure_worktree_container(
         runner,
@@ -1084,6 +1144,11 @@ def run_groovy_test_flow(
     )
     if rc != 0 or handle is None:
         return rc or 1
+
+    if not handle.full_compile_ran:
+        rc = _incremental_compile_changed_modules(runner, docker_host, handle, work_zstack, work_premium)
+        if rc != 0:
+            return rc
 
     if target.needs_case_file:
         rc = _docker_cp_file_to_container(

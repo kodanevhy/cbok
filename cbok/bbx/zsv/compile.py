@@ -108,7 +108,7 @@ def remote_docker_compile_from_conf() -> RemoteDockerCompileConfig:
         docker_host=_normalize_docker_host(_conf_get("zsv_compile", "remote_docker_host", "")),
         workdir=_conf_get("zsv_compile", "remote_docker_workdir", "/work").rstrip("/"),
         container_name="auto",
-        m2_volume=_conf_get("zsv_compile", "remote_docker_m2_volume", "zsv-m2"),
+        m2_volume=_conf_get("zsv_compile", "remote_docker_m2_volume", "auto"),
     )
 
 
@@ -727,12 +727,13 @@ def run_mvn_in_remote_docker(
     work_premium = handle.work_premium
     out_root = "/tmp/cbok-zsv-out"
     sync_targets = _docker_sync_target_lines(plan, work_zstack, work_premium, out_root)
+    compile_line = "" if handle.full_compile_ran else mvn_inner
     build_script = f"""
 set -euo pipefail
 rm -rf {out_root}
 mkdir -p {out_root}/zstack {out_root}/premium
 cd {shlex.quote(work_zstack)}
-{mvn_inner}
+{compile_line}
 {_docker_sync_target_function()}
 {sync_targets}
 """
@@ -742,7 +743,7 @@ cd {shlex.quote(work_zstack)}
         docker_host,
         workdir,
         remote.image,
-        mvn_inner,
+        "full compile already ran; syncing selected targets" if handle.full_compile_ran else mvn_inner,
     )
     rc = _docker_shell(
         runner,

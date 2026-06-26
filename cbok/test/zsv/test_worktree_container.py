@@ -29,6 +29,27 @@ class FakeRunner:
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
 
+class FakeWorktreeContainerStore:
+    def __init__(self):
+        self.records = {}
+
+    def get_or_create(self, defaults):
+        existing = self.records.get(defaults.worktree_key)
+        if existing:
+            return existing, False
+        self.records[defaults.worktree_key] = defaults
+        return defaults, True
+
+    def save(self, record, update_fields=None):
+        self.records[record.worktree_key] = record
+
+    def find_by_container_name(self, container_name):
+        for record in self.records.values():
+            if record.container_name == container_name:
+                return record
+        return None
+
+
 class WorktreeContainerTest(unittest.TestCase):
     def _write_repo(self, root: Path):
         (root / "testlib").mkdir(parents=True)
@@ -52,7 +73,7 @@ class WorktreeContainerTest(unittest.TestCase):
             self._write_repo(zstack)
             self._write_premium(premium)
             runner = FakeRunner()
-            store = worktree_container.InMemoryWorktreeContainerStore()
+            store = FakeWorktreeContainerStore()
             spec = worktree_container.WorktreeContainerSpec(
                 zstack_root=str(zstack),
                 premium_root=str(premium),
@@ -84,18 +105,18 @@ class WorktreeContainerTest(unittest.TestCase):
         self.assertEqual(first.container_name, second.container_name)
         shell_scripts = self._shell_scripts(runner)
         self.assertEqual(1, sum("./runMavenProfile premium" in script for script in shell_scripts))
-        self.assertEqual(1, sum("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in shell_scripts))
+        self.assertFalse(any("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in shell_scripts))
         self.assertTrue(any("DOCKER_HOST=tcp://172.26.50.70:2375 docker create" in script for script in shell_scripts))
-        self.assertTrue(any("-v zsv-m2:/var/maven/.m2" in script for script in shell_scripts))
+        self.assertTrue(any("-v zsv-m2-" in script and ":/var/maven/.m2" in script for script in shell_scripts))
 
-    def test_full_compile_reruns_when_worktree_head_changes(self):
+    def test_full_compile_does_not_rerun_when_worktree_head_changes(self):
         with tempfile.TemporaryDirectory() as td:
             zstack = Path(td) / "zstack"
             premium = Path(td) / "premium"
             self._write_repo(zstack)
             self._write_premium(premium)
             runner = FakeRunner()
-            store = worktree_container.InMemoryWorktreeContainerStore()
+            store = FakeWorktreeContainerStore()
             spec = worktree_container.WorktreeContainerSpec(
                 zstack_root=str(zstack),
                 premium_root=str(premium),
@@ -128,19 +149,52 @@ class WorktreeContainerTest(unittest.TestCase):
         self.assertIsNotNone(first)
         self.assertIsNotNone(second)
         self.assertTrue(first.full_compile_ran)
-        self.assertTrue(second.full_compile_ran)
+        self.assertFalse(second.full_compile_ran)
         self.assertEqual(first.container_name, second.container_name)
         shell_scripts = self._shell_scripts(runner)
-        self.assertEqual(2, sum("./runMavenProfile premium" in script for script in shell_scripts))
+        self.assertEqual(1, sum("./runMavenProfile premium" in script for script in shell_scripts))
 
-    def test_full_compile_patches_run_maven_profile_and_still_uses_it_as_entrypoint(self):
+    def test_m2_volume_is_scoped_to_worktree(self):
+        with tempfile.TemporaryDirectory() as td:
+            zstack_a = Path(td) / "task-a" / "zstack"
+            premium_a = Path(td) / "task-a" / "premium"
+            zstack_b = Path(td) / "task-b" / "zstack"
+            premium_b = Path(td) / "task-b" / "premium"
+            self._write_repo(zstack_a)
+            self._write_premium(premium_a)
+            self._write_repo(zstack_b)
+            self._write_premium(premium_b)
+
+            spec_a = worktree_container.WorktreeContainerSpec(
+                zstack_root=str(zstack_a),
+                premium_root=str(premium_a),
+                docker_host="",
+                image="compile-image:unit",
+                m2_volume="zsv-m2",
+            )
+            spec_b = worktree_container.WorktreeContainerSpec(
+                zstack_root=str(zstack_b),
+                premium_root=str(premium_b),
+                docker_host="",
+                image="compile-image:unit",
+                m2_volume="zsv-m2",
+            )
+
+            key_a = worktree_container.worktree_key_for_spec(spec_a)
+            key_b = worktree_container.worktree_key_for_spec(spec_b)
+
+        self.assertNotEqual(key_a, key_b)
+        self.assertEqual(f"zsv-m2-{key_a[:16]}", worktree_container.m2_volume_for_spec(spec_a, key_a))
+        self.assertEqual(f"zsv-m2-{key_b[:16]}", worktree_container.m2_volume_for_spec(spec_b, key_b))
+
+    def test_full_compile_uses_run_maven_profile_entrypoint(self):
         with tempfile.TemporaryDirectory() as td:
             zstack = Path(td) / "zstack"
             premium = Path(td) / "premium"
             self._write_repo(zstack)
             self._write_premium(premium)
             runner = FakeRunner()
-            store = worktree_container.InMemoryWorktreeContainerStore()
+            store = FakeWorktreeContainerStore()
             spec = worktree_container.WorktreeContainerSpec(
                 zstack_root=str(zstack),
                 premium_root=str(premium),
@@ -162,8 +216,8 @@ class WorktreeContainerTest(unittest.TestCase):
             if "testlib" in script and "./runMavenProfile premium" in script
         ]
         self.assertEqual(1, len(full_compile_scripts))
-        self.assertIn("sed -i -E", full_compile_scripts[0])
-        self.assertIn("mvn -T 12 -Dmaven.test.skip=true -P premium clean install", full_compile_scripts[0])
+        self.assertNotIn("sed -i -E", full_compile_scripts[0])
+        self.assertNotIn("mvn -T 12 -Dmaven.test.skip=true -P premium clean install", full_compile_scripts[0])
         self.assertIn("./runMavenProfile premium", full_compile_scripts[0])
 
     def test_source_sync_deletes_stale_sources_but_preserves_targets(self):
@@ -173,7 +227,7 @@ class WorktreeContainerTest(unittest.TestCase):
             self._write_repo(zstack)
             self._write_premium(premium)
             runner = FakeRunner()
-            store = worktree_container.InMemoryWorktreeContainerStore()
+            store = FakeWorktreeContainerStore()
             spec = worktree_container.WorktreeContainerSpec(
                 zstack_root=str(zstack),
                 premium_root=str(premium),
@@ -218,7 +272,7 @@ class WorktreeContainerTest(unittest.TestCase):
             self._write_repo(zstack_b)
             self._write_premium(premium_b)
             runner = FakeRunner()
-            store = worktree_container.InMemoryWorktreeContainerStore()
+            store = FakeWorktreeContainerStore()
             spec_a = worktree_container.WorktreeContainerSpec(
                 zstack_root=str(zstack_a),
                 premium_root=str(premium_a),

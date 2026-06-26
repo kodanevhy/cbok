@@ -84,8 +84,8 @@ ZSV_COMPILE = Group(
         help="Docker platform for compile and Groovy tests"),
         Option("remote_docker_workdir", default="/work",
         help="Workspace root inside the remote Docker container"),
-        Option("remote_docker_m2_volume", default="zsv-m2",
-        help="Docker volume name for Maven repository cache"),
+        Option("remote_docker_m2_volume", default="auto",
+        help="Docker volume prefix for worktree-scoped Maven repositories; auto uses zsv-m2"),
     ]
 )
 
