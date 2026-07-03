@@ -94,6 +94,10 @@ def _dedupe(items):
     return out
 
 
+def _is_node_address(value):
+    return bool(re.fullmatch(r"[A-Za-z0-9_.:-]+", value))
+
+
 def discover_management_nodes(address, runner):
     result = runner.run_command([
         "bash", "-lc",
@@ -105,7 +109,7 @@ def discover_management_nodes(address, runner):
     return _dedupe([
         line.strip()
         for line in (result.stdout or "").splitlines()
-        if line.strip()
+        if line.strip() and _is_node_address(line.strip())
     ])
 
 

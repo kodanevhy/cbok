@@ -29,6 +29,10 @@ ALLOWED_ROOTS = (
     ("kvmagent/kvmagent/", "kvmagent"),
     ("zstacklib/zstacklib/", "zstacklib"),
 )
+IGNORED_RUNTIME_ROOTS = (
+    "kvmagent/kvmagent/test/",
+    "zstacklib/zstacklib/test/",
+)
 
 
 class AgentReplaceError(Exception):
@@ -67,7 +71,7 @@ def run_git(cmd: list[str], cwd: str | None = None) -> str:
 def _append_paths(paths: list[str], output: str) -> None:
     for line in (output or "").splitlines():
         path = line.strip()
-        if path and path not in paths:
+        if path and not is_ignored_runtime_path(path) and path not in paths:
             paths.append(path)
 
 
@@ -142,6 +146,11 @@ def normalize_repo_path(path: str) -> str:
     return normalized
 
 
+def is_ignored_runtime_path(path: str) -> bool:
+    repo_path = normalize_repo_path(path)
+    return any(repo_path.startswith(root) for root in IGNORED_RUNTIME_ROOTS)
+
+
 def _local_path(repo: str, repo_path: str) -> str:
     root = os.path.abspath(repo)
     local_path = os.path.abspath(os.path.join(root, *repo_path.split("/")))
@@ -152,6 +161,8 @@ def _local_path(repo: str, repo_path: str) -> str:
 
 def map_changed_file(repo: str, path: str) -> ChangedFile:
     repo_path = normalize_repo_path(path)
+    if is_ignored_runtime_path(repo_path):
+        raise AgentReplaceError("changed file is in ignored test scope: %s" % repo_path)
     for root, package_name in ALLOWED_ROOTS:
         if repo_path.startswith(root):
             suffix = repo_path[len(root):]
@@ -213,6 +224,7 @@ def build_remote_apply_script(
 ) -> str:
     package_args = " ".join(shlex.quote(pkg) for pkg in unique_packages(files))
     restart_value = "true" if restart_agent else "false"
+    import_lines = "\n".join("import %s" % pkg for pkg in unique_packages(files))
     return f"""set -euo pipefail
 STAGE_DIR={shlex.quote(staging_dir)}
 SITE_PACKAGES={shlex.quote(site_packages)}
@@ -250,12 +262,13 @@ restart_kvmagent() {{
 }}
 check_kvmagent() {{
   if [[ -x /etc/init.d/zstack-kvmagent ]]; then
-    /etc/init.d/zstack-kvmagent status
+    /etc/init.d/zstack-kvmagent status && return 0
   elif command -v systemctl >/dev/null 2>&1; then
-    systemctl is-active zstack-kvmagent
+    systemctl is-active zstack-kvmagent && return 0
   else
-    service zstack-kvmagent status
+    service zstack-kvmagent status && return 0
   fi
+  pgrep -f 'from kvmagent import kdaemon' >/dev/null
 }}
 restore_on_error() {{
   local rc=$?
@@ -284,8 +297,7 @@ for pkg in "${{packages[@]}}"; do
   "$PYTHON" -m compileall -q "$SITE_PACKAGES/$pkg"
 done
 PYTHONPATH="$SITE_PACKAGES${{PYTHONPATH:+:$PYTHONPATH}}" "$PYTHON" - <<'PYEOF'
-import kvmagent
-import zstacklib
+{import_lines}
 PYEOF
 if [[ "$RESTART_AGENT" == "true" ]]; then
   restart_kvmagent
@@ -392,9 +404,12 @@ def run_agent_replace_flow(
             discovery = discover_changed_files(root)
             changed_paths = discovery.paths
         else:
-            discovery = DiscoverResult(paths=list(changed_paths), change_scope="explicit changed paths")
+            discovery = DiscoverResult(
+                paths=list(changed_paths),
+                change_scope="explicit changed paths",
+            )
         if not changed_paths:
-            LOG.error("No changed files found in utility root.")
+            LOG.error("No changed runtime files found in utility root.")
             return 1
         files = validate_changed_files(root, changed_paths)
     except AgentReplaceError as exc:

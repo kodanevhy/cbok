@@ -57,6 +57,28 @@ class FakeCommand:
 
 
 class SchemaRepairTest(unittest.TestCase):
+    def test_discover_management_nodes_ignores_ssh_banner_lines(self):
+        class Runner:
+            def run_command(self, cmd, **kwargs):
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout=(
+                        "Authorized users only. All activities may be monitored and reported.\n"
+                        "172.24.193.164\n"
+                        "mysql: [Warning] Using a password on the command line interface can be insecure.\n"
+                        "172.24.196.228\n"
+                        "172.24.241.203\n"
+                        "172.24.241.203\n"
+                    ),
+                    stderr="",
+                )
+
+        self.assertEqual(
+            ["172.24.193.164", "172.24.196.228", "172.24.241.203"],
+            zsv_service.discover_management_nodes("172.24.241.203", Runner()),
+        )
+
     def test_fetch_latest_artifact_accepts_exact_bin_url(self):
         bin_url = (
             "http://storage.zstack.io/mirror/zstack_feature-zsv-5.1.0-encryption/"

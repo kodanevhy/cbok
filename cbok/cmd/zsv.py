@@ -454,7 +454,10 @@ class ZSphereCommands(base.BaseCommand):
             LOG.error("replace_agent requires --utility-root.")
             return 1
         discovered = discover_management_nodes(primary_node, self.p_runner)
-        target_nodes = ",".join(discovered or [primary_node])
+        nodes = list(discovered or [])
+        if primary_node not in nodes:
+            nodes.append(primary_node)
+        target_nodes = ",".join(nodes)
         return run_agent_replace_flow(
             utility_root=utility_root,
             nodes=target_nodes,
