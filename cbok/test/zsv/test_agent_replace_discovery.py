@@ -47,6 +47,28 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
 
         self.assertIn("outside kvmagent/zstacklib runtime scope", str(ctx.exception))
 
+    def test_rejects_zbsprimarystorage_changes(self):
+        self.touch("zbsprimarystorage/zbsprimarystorage/zbsagent.py")
+
+        with self.assertRaises(agent_replace.AgentReplaceError) as ctx:
+            agent_replace.validate_changed_files(
+                self.repo,
+                ["zbsprimarystorage/zbsprimarystorage/zbsagent.py"],
+            )
+
+        self.assertIn("outside kvmagent/zstacklib runtime scope", str(ctx.exception))
+
+    def test_rejects_runtime_test_changes(self):
+        self.touch("kvmagent/kvmagent/test/test_zbs_storage_plugin.py")
+
+        with self.assertRaises(agent_replace.AgentReplaceError) as ctx:
+            agent_replace.validate_changed_files(
+                self.repo,
+                ["kvmagent/kvmagent/test/test_zbs_storage_plugin.py"],
+            )
+
+        self.assertIn("ignored test scope", str(ctx.exception))
+
     def test_rejects_deleted_runtime_file(self):
         with self.assertRaises(agent_replace.AgentReplaceError) as ctx:
             agent_replace.validate_changed_files(
@@ -55,6 +77,33 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
             )
 
         self.assertIn("does not exist", str(ctx.exception))
+
+    def test_discovery_ignores_runtime_test_paths(self):
+        calls = []
+        outputs = {
+            ("git", "diff", "--name-only", "--diff-filter=ACMRTD", "HEAD^", "HEAD"): "\n".join(
+                [
+                    "kvmagent/kvmagent/plugins/vm_plugin.py",
+                    "kvmagent/kvmagent/test/test_zbs_storage_plugin.py",
+                    "zstacklib/zstacklib/test/test_linux.py",
+                ]
+            ),
+            ("git", "diff", "--name-only", "--diff-filter=ACMRTD"): "",
+            ("git", "diff", "--name-only", "--cached", "--diff-filter=ACMRTD"): "",
+            ("git", "ls-files", "--others", "--exclude-standard"): "",
+        }
+
+        def runner(cmd, cwd=None):
+            calls.append(tuple(cmd))
+            return outputs.get(tuple(cmd), "")
+
+        result = agent_replace.discover_changed_files(
+            self.repo,
+            command_runner=runner,
+        )
+
+        self.assertEqual(["kvmagent/kvmagent/plugins/vm_plugin.py"], result.paths)
+        self.assertIn(("git", "diff", "--name-only", "--diff-filter=ACMRTD", "HEAD^", "HEAD"), calls)
 
     def test_discovers_top_commit_worktree_index_and_untracked_changes(self):
         calls = []
