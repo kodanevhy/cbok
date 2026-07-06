@@ -19,8 +19,6 @@ MAVEN_REPO = "/var/maven/.m2/repository"
 FULL_COMPILE_CMD = "./runMavenProfile premium"
 SOURCE_EXCLUDES = (
     "--exclude .git "
-    "--exclude build "
-    "--exclude '*/build' "
     "--exclude target "
     "--exclude '*/target' "
     "--exclude .idea "
@@ -35,8 +33,6 @@ SOURCE_EXCLUDES = (
 )
 RSYNC_EXCLUDES = (
     "--exclude .git "
-    "--exclude build "
-    "--exclude '*/build' "
     "--exclude target "
     "--exclude '*/target' "
     "--exclude .idea "

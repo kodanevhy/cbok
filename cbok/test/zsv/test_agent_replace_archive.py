@@ -54,7 +54,7 @@ class AgentReplaceArchiveTest(unittest.TestCase):
             "/tmp/cbok-zsv-agent",
             files,
             site_packages="/var/lib/zstack/virtualenv/kvm/lib/python2.7/site-packages",
-            kvm_virtualenv="/var/lib/zstack/virtualenv/kvm",
+            virtualenv="/var/lib/zstack/virtualenv/kvm",
             backup_root="/var/lib/zstack/agent-replace-backup",
             restart_agent=True,
         )
@@ -69,3 +69,47 @@ class AgentReplaceArchiveTest(unittest.TestCase):
         self.assertIn("zstack-kvmagent", script)
         self.assertNotIn('SITE_PACKAGES" == "auto"', script)
         self.assertNotIn("distutils.sysconfig", script)
+
+    def test_remote_apply_script_can_restart_ceph_primary_agent(self):
+        self.touch("cephprimarystorage/cephprimarystorage/cephagent.py")
+        files = agent_replace.validate_changed_files(
+            self.repo,
+            ["cephprimarystorage/cephprimarystorage/cephagent.py"],
+        )
+
+        script = agent_replace.build_remote_apply_script(
+            "/tmp/cbok-zsv-agent",
+            files,
+            site_packages="/var/lib/zstack/virtualenv/cephp/lib/python2.7/site-packages",
+            virtualenv="/var/lib/zstack/virtualenv/cephp",
+            backup_root="/var/lib/zstack/agent-replace-backup",
+            restart_agent=True,
+            service_name="zstack-ceph-primarystorage",
+            process_pattern="from cephprimarystorage import cdaemon",
+        )
+
+        self.assertIn("packages=(cephprimarystorage)", script)
+        self.assertIn("zstack-ceph-primarystorage", script)
+        self.assertIn("import cephprimarystorage", script)
+
+    def test_remote_apply_script_can_restart_zbs_primary_agent(self):
+        self.touch("zbsprimarystorage/zbsprimarystorage/zbsagent.py")
+        files = agent_replace.validate_changed_files(
+            self.repo,
+            ["zbsprimarystorage/zbsprimarystorage/zbsagent.py"],
+        )
+
+        script = agent_replace.build_remote_apply_script(
+            "/tmp/cbok-zsv-agent",
+            files,
+            site_packages="/var/lib/zstack/virtualenv/zbsp/lib/python2.7/site-packages",
+            virtualenv="/var/lib/zstack/virtualenv/zbsp",
+            backup_root="/var/lib/zstack/agent-replace-backup",
+            restart_agent=True,
+            service_name="zstack-zbs-primarystorage",
+            process_pattern="from zbsprimarystorage import zdaemon",
+        )
+
+        self.assertIn("packages=(zbsprimarystorage)", script)
+        self.assertIn("zstack-zbs-primarystorage", script)
+        self.assertIn("import zbsprimarystorage", script)

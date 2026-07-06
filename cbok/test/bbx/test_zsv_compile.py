@@ -65,8 +65,11 @@ class ZsvCompileTest(unittest.TestCase):
         self._orig_git = compile._git
         self._orig_local_jar_copy_root_for_root = compile._local_jar_copy_root_for_root
         self._orig_collect_changed_web_classes_files = compile.collect_changed_web_classes_files
+        self._orig_default_compile_state_store = compile.default_compile_deploy_state_store
         self._orig_default_state_store = worktree_container.default_state_store
         self._worktree_store = FakeWorktreeContainerStore()
+        self._compile_state_store = compile.InMemoryCompileDeployStateStore()
+        compile.default_compile_deploy_state_store = lambda: self._compile_state_store
         worktree_container.default_state_store = lambda: self._worktree_store
 
     def tearDown(self):
@@ -76,6 +79,7 @@ class ZsvCompileTest(unittest.TestCase):
         compile._git = self._orig_git
         compile._local_jar_copy_root_for_root = self._orig_local_jar_copy_root_for_root
         compile.collect_changed_web_classes_files = self._orig_collect_changed_web_classes_files
+        compile.default_compile_deploy_state_store = self._orig_default_compile_state_store
         worktree_container.default_state_store = self._orig_default_state_store
 
     def test_remote_docker_conf_reads_optional_values(self):
@@ -572,6 +576,115 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertTrue(any("zsv_scp_web_classes_archive_to_remote" in script for script in shell_scripts))
         self.assertTrue(any("zsv_remote_install_web_classes_archive" in script for script in shell_scripts))
         self.assertTrue(any("/usr/local/zstack/apache-tomcat/webapps/zstack/WEB-INF/classes" in script for script in shell_scripts))
+
+    def test_deploy_replays_previous_modules_removed_from_current_diff(self):
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375")
+        compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
+        compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: []
+        compile.git_summary = lambda _root: ("abc123 test", "abc123")
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            for module in ("identity", "storage"):
+                (root / module / "target").mkdir(parents=True)
+                (root / module / "pom.xml").write_text("<project/>", encoding="utf-8")
+            premium.mkdir(parents=True)
+            (root / "pom.xml").write_text("<project/>", encoding="utf-8")
+            jar_copy_root = Path(td) / "jar-copy"
+            for module in ("identity", "storage"):
+                target = jar_copy_root / "zstack" / module / "target"
+                target.mkdir(parents=True)
+                (target / f"{module}-5.0.0.jar").write_bytes(b"jar")
+            compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
+            remote = compile.remote_docker_compile_from_conf()
+            worktree_key = compile.compile_worktree_key(str(root), str(premium), remote)
+            self._compile_state_store.save_selection(
+                worktree_key,
+                str(root),
+                str(premium),
+                compile.CompileDeploySelection(["storage"], [], []),
+            )
+            runner = FakeRunner()
+
+            rc = compile.run_compile_flow(
+                address="172.26.213.50",
+                remote_lib=compile.DEFAULT_REMOTE_LIB,
+                no_deploy=False,
+                zstack_root=str(root),
+                premium_root=str(premium),
+                runner=runner,
+            )
+
+        self.assertEqual(0, rc)
+        shell_scripts = [
+            cmd[-1] for cmd, _kwargs in runner.calls
+            if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]
+        ]
+        scp_scripts = [s for s in shell_scripts if "zsv_scp_jars_to_remote" in s]
+        self.assertEqual(1, len(scp_scripts))
+        self.assertIn("identity-5.0.0.jar", scp_scripts[0])
+        self.assertIn("storage-5.0.0.jar", scp_scripts[0])
+        selection = self._compile_state_store.load_selection(worktree_key)
+        self.assertEqual(["identity"], selection.main_modules)
+        self.assertEqual([], selection.premium_modules)
+
+    def test_deploy_replays_previous_web_classes_when_current_diff_is_empty(self):
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375")
+        compile.auto_detect_modules = lambda _root, _premium_root=None: ([], [])
+        compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: []
+        compile.git_summary = lambda _root: ("abc123 test", "abc123")
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            premium_xml = premium / "conf" / "springConfigXml" / "crypto.xml"
+            premium_xml.parent.mkdir(parents=True)
+            premium_xml.write_text("<beans/>", encoding="utf-8")
+            (root / "pom.xml").parent.mkdir(parents=True, exist_ok=True)
+            (root / "pom.xml").write_text("<project/>", encoding="utf-8")
+            jar_copy_root = Path(td) / "jar-copy"
+            compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
+            remote = compile.remote_docker_compile_from_conf()
+            worktree_key = compile.compile_worktree_key(str(root), str(premium), remote)
+            self._compile_state_store.save_selection(
+                worktree_key,
+                str(root),
+                str(premium),
+                compile.CompileDeploySelection(
+                    [],
+                    [],
+                    [
+                        compile.CompileWebClassesState(
+                            "premium",
+                            "conf/springConfigXml/crypto.xml",
+                            "springConfigXml/crypto.xml",
+                        )
+                    ],
+                ),
+            )
+            runner = FakeRunner()
+
+            rc = compile.run_compile_flow(
+                address="172.26.213.50",
+                remote_lib=compile.DEFAULT_REMOTE_LIB,
+                no_deploy=False,
+                zstack_root=str(root),
+                premium_root=str(premium),
+                runner=runner,
+            )
+
+        self.assertEqual(0, rc)
+        shell_scripts = [
+            cmd[-1] for cmd, _kwargs in runner.calls
+            if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]
+        ]
+        self.assertTrue(any("zsv_scp_web_classes_archive_to_remote" in script for script in shell_scripts))
+        self.assertTrue(any("zsv_remote_install_web_classes_archive" in script for script in shell_scripts))
+        selection = self._compile_state_store.load_selection(worktree_key)
+        self.assertEqual([], selection.main_modules)
+        self.assertEqual([], selection.premium_modules)
+        self.assertEqual([], selection.web_classes)
 
 if __name__ == "__main__":
     unittest.main()

@@ -46,3 +46,26 @@ class ZsvWorktreeContainerState(models.Model):
     def __str__(self):
         status = "compiled" if self.full_compile_done else "pending"
         return f"{self.container_name}: {status}"
+
+
+class ZsvAgentReplaceState(models.Model):
+    worktree_key = models.CharField(max_length=64, unique=True)
+    utility_root = models.CharField(max_length=512)
+    last_deployed_paths = models.TextField(blank=True, default="")
+    last_deployed_at = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.utility_root}: agent replace"
+
+
+class ZsvCompileState(models.Model):
+    worktree_key = models.CharField(max_length=64, unique=True)
+    zstack_root = models.CharField(max_length=512)
+    premium_root = models.CharField(max_length=512, blank=True, default="")
+    last_main_modules = models.TextField(blank=True, default="")
+    last_premium_modules = models.TextField(blank=True, default="")
+    last_web_classes = models.TextField(blank=True, default="")
+    last_deployed_at = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.zstack_root}: compile"

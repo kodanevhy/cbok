@@ -11,12 +11,18 @@ from django.utils import timezone
 
 from cbok import settings
 from cbok.bbx.zsv.agent_replace import DEFAULT_BACKUP_ROOT
+from cbok.bbx.zsv.agent_replace import DEFAULT_CEPH_PRIMARY_SITE_PACKAGES
+from cbok.bbx.zsv.agent_replace import DEFAULT_CEPH_PRIMARY_VIRTUALENV
 from cbok.bbx.zsv.agent_replace import DEFAULT_KVM_VIRTUALENV
 from cbok.bbx.zsv.agent_replace import DEFAULT_SITE_PACKAGES
+from cbok.bbx.zsv.agent_replace import DEFAULT_ZBS_PRIMARY_SITE_PACKAGES
+from cbok.bbx.zsv.agent_replace import DEFAULT_ZBS_PRIMARY_VIRTUALENV
 from cbok.bbx.zsv.agent_replace import run_agent_replace_flow
 from cbok.bbx.zsv import UPGRADE_TYPES
 from cbok.bbx.zsv import ZSphereTracker
+from cbok.bbx.zsv.service import discover_ceph_primary_storage_nodes
 from cbok.bbx.zsv.service import discover_management_nodes
+from cbok.bbx.zsv.service import discover_zbs_primary_storage_nodes
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
 from cbok.bbx.zsv.compile import run_compile_flow
 from cbok.bbx.zsv.groovy_test import run_groovy_test_flow
@@ -249,14 +255,17 @@ class ZSphereCommands(base.BaseCommand):
                 return getattr(result, "returncode", 1) or 1
 
             nodes = discover_management_nodes(primary_node, self.p_runner)
+            ceph_nodes = discover_ceph_primary_storage_nodes(primary_node, self.p_runner)
             if not nodes:
                 LOG.warning(
                     "No management nodes discovered from primary node %s; "
                     "falling back to primary node only",
                     primary_node)
                 nodes = [primary_node]
-            elif primary_node not in nodes:
-                nodes.insert(0, primary_node)
+            nodes = [primary_node] + [
+                node for node in ceph_nodes + nodes
+                if node != primary_node
+            ]
 
             for node in nodes:
                 result = self.ensure_remote_scriptlet(node)
@@ -424,7 +433,7 @@ class ZSphereCommands(base.BaseCommand):
         )
 
     @args.action_description(
-        "Replace changed kvmagent/zstacklib files on all ZSV nodes")
+        "Replace changed kvmagent/zstacklib/ceph/zbs primary agent files on ZSV nodes")
     @args.args(
         "--primary-node", metavar="<primary_node>", required=True,
         help="Node used to discover ZSphere nodes")
@@ -436,7 +445,7 @@ class ZSphereCommands(base.BaseCommand):
         help="Only print detected files and nodes")
     @args.args(
         "--no-restart", action="store_true",
-        help="Copy files and compile, but do not restart zstack-kvmagent")
+        help="Copy files and compile, but do not restart changed agents")
     def replace_agent(
             self,
             primary_node=None,
@@ -445,7 +454,7 @@ class ZSphereCommands(base.BaseCommand):
             no_restart=False,
     ):
         """
-        Replace changed kvmagent/zstacklib files on all ZSV nodes.
+        Replace changed kvmagent/zstacklib/ceph/zbs primary agent files on ZSV nodes.
         """
         if not primary_node:
             LOG.error("replace_agent requires --primary-node.")
@@ -454,15 +463,33 @@ class ZSphereCommands(base.BaseCommand):
             LOG.error("replace_agent requires --utility-root.")
             return 1
         discovered = discover_management_nodes(primary_node, self.p_runner)
+        ceph_nodes = discover_ceph_primary_storage_nodes(primary_node, self.p_runner)
+        zbs_nodes = discover_zbs_primary_storage_nodes(primary_node, self.p_runner)
         nodes = list(discovered or [])
         if primary_node not in nodes:
             nodes.append(primary_node)
         target_nodes = ",".join(nodes)
+        ceph_target_nodes = ",".join(ceph_nodes)
+        zbs_target_nodes = ",".join(zbs_nodes)
         return run_agent_replace_flow(
             utility_root=utility_root,
             nodes=target_nodes,
             site_packages=_zsv_deploy_conf("site_packages", DEFAULT_SITE_PACKAGES),
             kvm_virtualenv=_zsv_deploy_conf("kvm_virtualenv", DEFAULT_KVM_VIRTUALENV),
+            ceph_primary_nodes=ceph_target_nodes,
+            ceph_primary_site_packages=_zsv_deploy_conf(
+                "ceph_primary_site_packages",
+                DEFAULT_CEPH_PRIMARY_SITE_PACKAGES),
+            ceph_primary_virtualenv=_zsv_deploy_conf(
+                "ceph_primary_virtualenv",
+                DEFAULT_CEPH_PRIMARY_VIRTUALENV),
+            zbs_primary_nodes=zbs_target_nodes,
+            zbs_primary_site_packages=_zsv_deploy_conf(
+                "zbs_primary_site_packages",
+                DEFAULT_ZBS_PRIMARY_SITE_PACKAGES),
+            zbs_primary_virtualenv=_zsv_deploy_conf(
+                "zbs_primary_virtualenv",
+                DEFAULT_ZBS_PRIMARY_VIRTUALENV),
             backup_root=_zsv_deploy_conf("backup_root", DEFAULT_BACKUP_ROOT),
             dry_run=dry_run,
             no_restart=no_restart,

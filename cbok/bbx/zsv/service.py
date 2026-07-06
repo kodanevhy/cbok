@@ -113,6 +113,36 @@ def discover_management_nodes(address, runner):
     ])
 
 
+def discover_ceph_primary_storage_nodes(address, runner):
+    result = runner.run_command([
+        "bash", "-lc",
+        "source scriptlet/bootstrap.sh; "
+        f"zsv_discover_ceph_primary_storage_nodes {shlex.quote(address)}",
+    ], cmd_purge_output=False)
+    if getattr(result, "returncode", 1) != 0:
+        return []
+    return _dedupe([
+        line.strip()
+        for line in (result.stdout or "").splitlines()
+        if line.strip() and _is_node_address(line.strip())
+    ])
+
+
+def discover_zbs_primary_storage_nodes(address, runner):
+    result = runner.run_command([
+        "bash", "-lc",
+        "source scriptlet/bootstrap.sh; "
+        f"zsv_discover_zbs_primary_storage_nodes {shlex.quote(address)}",
+    ], cmd_purge_output=False)
+    if getattr(result, "returncode", 1) != 0:
+        return []
+    return _dedupe([
+        line.strip()
+        for line in (result.stdout or "").splitlines()
+        if line.strip() and _is_node_address(line.strip())
+    ])
+
+
 class ZSphereTracker:
     def __init__(
             self,

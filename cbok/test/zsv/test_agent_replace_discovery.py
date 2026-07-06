@@ -22,12 +22,16 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
     def test_maps_runtime_package_changes(self):
         self.touch("kvmagent/kvmagent/plugins/vm_plugin.py")
         self.touch("zstacklib/zstacklib/utils/linux.py")
+        self.touch("cephprimarystorage/cephprimarystorage/cephagent.py")
+        self.touch("zbsprimarystorage/zbsprimarystorage/zbsagent.py")
 
         files = agent_replace.validate_changed_files(
             self.repo,
             [
                 "kvmagent/kvmagent/plugins/vm_plugin.py",
                 "zstacklib/zstacklib/utils/linux.py",
+                "cephprimarystorage/cephprimarystorage/cephagent.py",
+                "zbsprimarystorage/zbsprimarystorage/zbsagent.py",
             ],
         )
 
@@ -35,6 +39,10 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
         self.assertEqual("kvmagent", files[0].package_name)
         self.assertEqual("zstacklib/utils/linux.py", files[1].remote_path)
         self.assertEqual("zstacklib", files[1].package_name)
+        self.assertEqual("cephprimarystorage/cephagent.py", files[2].remote_path)
+        self.assertEqual("ceph-primary", files[2].runtime)
+        self.assertEqual("zbsprimarystorage/zbsagent.py", files[3].remote_path)
+        self.assertEqual("zbs-primary", files[3].runtime)
 
     def test_rejects_changes_outside_runtime_packages(self):
         self.touch("kvmagent/ansible/kvm.py")
@@ -45,18 +53,19 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
                 ["kvmagent/ansible/kvm.py"],
             )
 
-        self.assertIn("outside kvmagent/zstacklib runtime scope", str(ctx.exception))
+        self.assertIn("outside kvmagent/zstacklib/cephprimarystorage/zbsprimarystorage runtime scope", str(ctx.exception))
 
-    def test_rejects_zbsprimarystorage_changes(self):
+    def test_maps_zbsprimarystorage_changes(self):
         self.touch("zbsprimarystorage/zbsprimarystorage/zbsagent.py")
 
-        with self.assertRaises(agent_replace.AgentReplaceError) as ctx:
-            agent_replace.validate_changed_files(
-                self.repo,
-                ["zbsprimarystorage/zbsprimarystorage/zbsagent.py"],
-            )
+        files = agent_replace.validate_changed_files(
+            self.repo,
+            ["zbsprimarystorage/zbsprimarystorage/zbsagent.py"],
+        )
 
-        self.assertIn("outside kvmagent/zstacklib runtime scope", str(ctx.exception))
+        self.assertEqual("zbsprimarystorage/zbsagent.py", files[0].remote_path)
+        self.assertEqual("zbsprimarystorage", files[0].package_name)
+        self.assertEqual("zbs-primary", files[0].runtime)
 
     def test_rejects_runtime_test_changes(self):
         self.touch("kvmagent/kvmagent/test/test_zbs_storage_plugin.py")

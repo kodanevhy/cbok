@@ -183,6 +183,7 @@ if command -v mysql >/dev/null 2>&1; then
   sql=\"SELECT hostName AS node FROM zstack.ManagementNodeVO WHERE hostName IS NOT NULL AND hostName <> ''
 UNION
 SELECT managementIp AS node FROM zstack.HostVO WHERE managementIp IS NOT NULL AND managementIp <> ''
+AND status = 'Connected' AND hypervisorType = 'KVM'
 ORDER BY node\"
   nodes=\$(mysql -uroot -pzstack.mysql.password -N -B -e \"\$sql\" \\
     2>/dev/null || true)
@@ -194,6 +195,56 @@ fi
 
 if [[ -n \"\$nodes\" ]]; then
   printf '%s\n' \"\$nodes\" | awk 'NF && !seen[\$0]++'
+  exit 0
+fi
+
+"
+}
+
+zsv_discover_ceph_primary_storage_nodes() {
+  local address="${1:?address required}"
+
+  remote_bash "$address" "set -euo pipefail
+nodes=''
+if command -v mysql >/dev/null 2>&1; then
+  sql=\"SELECT DISTINCT hostname AS node FROM zstack.CephPrimaryStorageMonVO WHERE hostname IS NOT NULL AND hostname <> ''
+ORDER BY node\"
+  nodes=\$(mysql -uroot -pzstack.mysql.password -N -B -e \"\$sql\" \\
+    2>/dev/null || true)
+  if [[ -z \"\$nodes\" ]]; then
+    nodes=\$(mysql -uzstack -pzstack.password -N -B -e \"\$sql\" \\
+    2>/dev/null || true)
+  fi
+fi
+
+if [[ -n \"\$nodes\" ]]; then
+  printf '%s\n' \"\$nodes\" | awk 'NF && !seen[\$0]++'
+  exit 0
+fi
+
+"
+}
+
+zsv_discover_zbs_primary_storage_nodes() {
+  local address="${1:?address required}"
+
+  remote_bash "$address" "set -euo pipefail
+infos=''
+if command -v mysql >/dev/null 2>&1; then
+  sql=\"SELECT addonInfo FROM zstack.ExternalPrimaryStorageVO WHERE identity = 'zbs' AND addonInfo IS NOT NULL AND addonInfo <> ''\"
+  infos=\$(mysql -uroot -pzstack.mysql.password -N -B -e \"\$sql\" \\
+    2>/dev/null || true)
+  if [[ -z \"\$infos\" ]]; then
+    infos=\$(mysql -uzstack -pzstack.password -N -B -e \"\$sql\" \\
+    2>/dev/null || true)
+  fi
+fi
+
+if [[ -n \"\$infos\" ]]; then
+  printf '%s\n' \"\$infos\" \\
+    | grep -oE '\"addr\"[[:space:]]*:[[:space:]]*\"[^\"]+\"' \\
+    | sed -E 's/.*\"addr\"[[:space:]]*:[[:space:]]*\"([^\"]+)\".*/\1/' \\
+    | awk 'NF && !seen[\$0]++'
   exit 0
 fi
 

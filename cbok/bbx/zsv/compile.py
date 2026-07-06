@@ -3,6 +3,7 @@ ZStack: build changed modules from explicit zstack/premium worktree roots.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import posixpath
@@ -19,6 +20,7 @@ from pathlib import Path
 from cbok import settings
 from cbok.bbx.zsv.worktree_container import WorktreeContainerSpec
 from cbok.bbx.zsv.worktree_container import ensure_worktree_container
+from cbok.bbx.zsv.worktree_container import worktree_key_for_spec
 
 
 LOG = logging.getLogger(__name__)
@@ -40,6 +42,7 @@ _SKIP_JAR_SUFFIXES = (
 _AUTO_EXCLUDED_MODULES = frozenset(
     ("test", "testlib", "test-premium", "testlib-premium")
 )
+DEFAULT_BASE_REF = "origin/feature-zsv-5.1.0-encryption"
 MAVEN_PROFILE_PREPARE_CMD = "./runMavenProfile premium"
 RSYNC_SOURCE_EXCLUDES = "--exclude .git --exclude target --exclude '*/target' --exclude '._*' --exclude '.DS_Store' --exclude '__MACOSX'"
 SPRING_CONFIG_PREFIX = "conf/springConfigXml/"
@@ -65,6 +68,20 @@ class RemoteDockerCompileConfig:
 class WebClassesFile:
     source: str
     relative_path: str
+
+
+@dataclass(frozen=True)
+class CompileWebClassesState:
+    repo: str
+    source_relative_path: str
+    relative_path: str
+
+
+@dataclass(frozen=True)
+class CompileDeploySelection:
+    main_modules: list[str]
+    premium_modules: list[str]
+    web_classes: list[CompileWebClassesState]
 
 
 @dataclass(frozen=True)
@@ -168,6 +185,262 @@ def _dedupe(items: list[str]) -> list[str]:
     return out
 
 
+class CompileDeployStateError(Exception):
+    pass
+
+
+def _compile_worktree_spec(
+    zstack_root: str,
+    premium_root: str | None,
+    remote: RemoteDockerCompileConfig,
+) -> WorktreeContainerSpec:
+    return WorktreeContainerSpec(
+        zstack_root=zstack_root,
+        premium_root=premium_root,
+        docker_host=_normalize_docker_host(remote.docker_host),
+        image=remote.image,
+        platform=remote.platform,
+        workdir=remote.workdir or "/work",
+        container_name=remote.container_name,
+        m2_volume=remote.m2_volume,
+    )
+
+
+def compile_worktree_key(
+    zstack_root: str,
+    premium_root: str | None,
+    remote: RemoteDockerCompileConfig,
+) -> str:
+    return worktree_key_for_spec(_compile_worktree_spec(zstack_root, premium_root, remote))
+
+
+def _encode_list(items: list[str]) -> str:
+    return json.dumps(_dedupe(items), sort_keys=True)
+
+
+def _decode_list(value: str) -> list[str]:
+    if not value:
+        return []
+    try:
+        items = json.loads(value)
+    except ValueError as exc:
+        raise CompileDeployStateError("invalid compile deploy DB state: %s" % exc)
+    if not isinstance(items, list):
+        raise CompileDeployStateError("invalid compile deploy DB state: expected list")
+    return _dedupe([str(item) for item in items if str(item)])
+
+
+def _encode_web_classes(items: list[CompileWebClassesState]) -> str:
+    encoded = [
+        {
+            "repo": item.repo,
+            "source_relative_path": item.source_relative_path,
+            "relative_path": item.relative_path,
+        }
+        for item in _dedupe_web_classes_state(items)
+    ]
+    return json.dumps(encoded, sort_keys=True)
+
+
+def _decode_web_classes(value: str) -> list[CompileWebClassesState]:
+    if not value:
+        return []
+    try:
+        items = json.loads(value)
+    except ValueError as exc:
+        raise CompileDeployStateError("invalid compile deploy web classes DB state: %s" % exc)
+    if not isinstance(items, list):
+        raise CompileDeployStateError("invalid compile deploy web classes DB state: expected list")
+    out: list[CompileWebClassesState] = []
+    for item in items:
+        if not isinstance(item, dict):
+            raise CompileDeployStateError("invalid compile deploy web classes DB state: expected object")
+        repo = str(item.get("repo") or "")
+        source_relative_path = str(item.get("source_relative_path") or "")
+        relative_path = str(item.get("relative_path") or "")
+        if repo not in ("zstack", "premium") or not source_relative_path or not relative_path:
+            raise CompileDeployStateError("invalid compile deploy web classes DB state: missing fields")
+        out.append(CompileWebClassesState(repo, source_relative_path, relative_path))
+    return _dedupe_web_classes_state(out)
+
+
+def _dedupe_web_classes_state(items: list[CompileWebClassesState]) -> list[CompileWebClassesState]:
+    out: list[CompileWebClassesState] = []
+    seen: set[str] = set()
+    for item in items:
+        if item.relative_path in seen:
+            continue
+        seen.add(item.relative_path)
+        out.append(item)
+    return out
+
+
+def _dedupe_web_classes_files(items: list[WebClassesFile]) -> list[WebClassesFile]:
+    out: list[WebClassesFile] = []
+    seen: set[str] = set()
+    for item in items:
+        if item.relative_path in seen:
+            continue
+        seen.add(item.relative_path)
+        out.append(item)
+    return out
+
+
+def _relative_to_root(path: Path, root: Path) -> str | None:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return None
+
+
+def web_classes_state_from_files(
+    files: list[WebClassesFile],
+    zstack_root: str,
+    premium_root: str | None,
+) -> list[CompileWebClassesState]:
+    zstack_path = Path(zstack_root).resolve()
+    premium_path = Path(premium_root).resolve() if premium_root else None
+    out: list[CompileWebClassesState] = []
+    for item in files:
+        source = Path(item.source).resolve()
+        repo = "zstack"
+        source_relative_path = _relative_to_root(source, zstack_path)
+        if premium_path:
+            premium_relative = _relative_to_root(source, premium_path)
+            if premium_relative is not None:
+                repo = "premium"
+                source_relative_path = premium_relative
+        if source_relative_path is None:
+            raise CompileDeployStateError("web classes source is outside zstack/premium roots: %s" % item.source)
+        out.append(CompileWebClassesState(repo, source_relative_path, item.relative_path))
+    return _dedupe_web_classes_state(out)
+
+
+def web_classes_files_from_state(
+    selection: CompileDeploySelection,
+    zstack_root: str,
+    premium_root: str | None,
+) -> list[WebClassesFile]:
+    out: list[WebClassesFile] = []
+    for item in selection.web_classes:
+        if item.repo == "premium":
+            if not premium_root:
+                raise CompileDeployStateError("previous premium web classes deploy requires premium root")
+            root = Path(premium_root)
+        else:
+            root = Path(zstack_root)
+        source = root / item.source_relative_path
+        if not source.is_file():
+            raise CompileDeployStateError("previous web classes source is missing: %s" % source)
+        out.append(WebClassesFile(str(source), item.relative_path))
+    return _dedupe_web_classes_files(out)
+
+
+def current_compile_deploy_selection(
+    main_modules: list[str],
+    premium_modules: list[str],
+    web_classes_files: list[WebClassesFile],
+    zstack_root: str,
+    premium_root: str | None,
+) -> CompileDeploySelection:
+    return CompileDeploySelection(
+        _dedupe(main_modules),
+        _dedupe(premium_modules),
+        web_classes_state_from_files(web_classes_files, zstack_root, premium_root),
+    )
+
+
+def merge_compile_deploy_selection(
+    current: CompileDeploySelection,
+    previous: CompileDeploySelection,
+    zstack_root: str,
+    premium_root: str | None,
+) -> tuple[CompileDeploySelection, list[WebClassesFile]]:
+    current_web_files = web_classes_files_from_state(current, zstack_root, premium_root)
+    previous_web_files = web_classes_files_from_state(previous, zstack_root, premium_root)
+    merged_web_files = _dedupe_web_classes_files(current_web_files + previous_web_files)
+    return CompileDeploySelection(
+        _dedupe(current.main_modules + previous.main_modules),
+        _dedupe(current.premium_modules + previous.premium_modules),
+        web_classes_state_from_files(merged_web_files, zstack_root, premium_root),
+    ), merged_web_files
+
+
+class InMemoryCompileDeployStateStore:
+    def __init__(self):
+        self.selections_by_key: dict[str, CompileDeploySelection] = {}
+
+    def load_selection(self, worktree_key: str) -> CompileDeploySelection:
+        return self.selections_by_key.get(worktree_key, CompileDeploySelection([], [], []))
+
+    def save_selection(
+        self,
+        worktree_key: str,
+        zstack_root: str,
+        premium_root: str | None,
+        selection: CompileDeploySelection,
+    ) -> None:
+        self.selections_by_key[worktree_key] = selection
+
+
+class DjangoCompileDeployStateStore:
+    def load_selection(self, worktree_key: str) -> CompileDeploySelection:
+        from cbok.bbx.models import ZsvCompileState
+
+        obj = ZsvCompileState.objects.filter(worktree_key=worktree_key).first()
+        if not obj:
+            return CompileDeploySelection([], [], [])
+        return CompileDeploySelection(
+            _decode_list(obj.last_main_modules),
+            _decode_list(obj.last_premium_modules),
+            _decode_web_classes(obj.last_web_classes),
+        )
+
+    def save_selection(
+        self,
+        worktree_key: str,
+        zstack_root: str,
+        premium_root: str | None,
+        selection: CompileDeploySelection,
+    ) -> None:
+        from django.utils import timezone
+
+        from cbok.bbx.models import ZsvCompileState
+
+        obj, _created = ZsvCompileState.objects.get_or_create(
+            worktree_key=worktree_key,
+            defaults={
+                "zstack_root": zstack_root,
+                "premium_root": premium_root or "",
+            },
+        )
+        obj.zstack_root = zstack_root
+        obj.premium_root = premium_root or ""
+        obj.last_main_modules = _encode_list(selection.main_modules)
+        obj.last_premium_modules = _encode_list(selection.premium_modules)
+        obj.last_web_classes = _encode_web_classes(selection.web_classes)
+        obj.last_deployed_at = timezone.now()
+        obj.save(update_fields=[
+            "zstack_root",
+            "premium_root",
+            "last_main_modules",
+            "last_premium_modules",
+            "last_web_classes",
+            "last_deployed_at",
+        ])
+
+
+def default_compile_deploy_state_store():
+    try:
+        from django.apps import apps
+    except Exception as exc:
+        raise CompileDeployStateError("Django app registry is required for zsv compile deploy state") from exc
+
+    if not apps.ready:
+        raise CompileDeployStateError("Django app registry is not ready for zsv compile deploy state")
+    return DjangoCompileDeployStateStore()
+
+
 def _is_auto_excluded(module: str) -> bool:
     head = module.split("/", 1)[0]
     return head in _AUTO_EXCLUDED_MODULES
@@ -214,6 +487,17 @@ def modules_from_changed_paths(
 
 
 def changed_paths_from_head_commit(repo_root: str) -> list[str]:
+    base_ref = _conf_get("zsv_compile", "base_ref", DEFAULT_BASE_REF)
+    base = _git(repo_root, "merge-base", base_ref, "HEAD") if base_ref else None
+    if base and base.returncode == 0:
+        base_hash = (base.stdout or "").strip()
+        if base_hash:
+            r = _git(repo_root, "diff", "--name-only", base_hash, "HEAD")
+            if r.returncode == 0:
+                return [line.strip() for line in (r.stdout or "").splitlines() if line.strip()]
+            LOG.warning("Failed to read changed files since %s in %s: %s",
+                        base_ref, repo_root, (r.stderr or "").strip())
+
     parent = _git(repo_root, "rev-parse", "--verify", "HEAD^")
     if parent.returncode == 0:
         r = _git(repo_root, "diff", "--name-only", "HEAD^", "HEAD")
@@ -705,15 +989,17 @@ def run_mvn_in_remote_docker(
     mvn_inner = " ".join(shlex.quote(c) for c in mvn_cmd)
 
     workdir = remote.workdir or "/work"
-    spec = WorktreeContainerSpec(
-        zstack_root=zstack_root,
-        premium_root=premium_root,
-        docker_host=docker_host,
-        image=remote.image,
-        platform=remote.platform,
-        workdir=workdir,
-        container_name=remote.container_name,
-        m2_volume=remote.m2_volume,
+    spec = _compile_worktree_spec(
+        zstack_root,
+        premium_root,
+        RemoteDockerCompileConfig(
+            image=remote.image,
+            platform=remote.platform,
+            docker_host=docker_host,
+            workdir=workdir,
+            container_name=remote.container_name,
+            m2_volume=remote.m2_volume,
+        ),
     )
     rc, handle = ensure_worktree_container(
         runner,
@@ -878,6 +1164,7 @@ def run_compile_flow(
     zstack_root: str | None = None,
     premium_root: str | None = None,
     runner,
+    compile_state_store=None,
 ) -> int:
     if not zstack_root:
         LOG.error("--zstack-root is required for remote Docker compile.")
@@ -907,6 +1194,32 @@ def run_compile_flow(
 
     user_main, user_prem = auto_detect_modules(root, remote_premium)
     web_classes_files = collect_changed_web_classes_files(root, remote_premium)
+    current_selection: CompileDeploySelection | None = None
+    state_store = None
+    worktree_key = ""
+    if not no_deploy:
+        try:
+            worktree_key = compile_worktree_key(root, remote_premium, remote_docker)
+            state_store = compile_state_store or default_compile_deploy_state_store()
+            previous_selection = state_store.load_selection(worktree_key)
+            current_selection = current_compile_deploy_selection(
+                user_main,
+                user_prem,
+                web_classes_files,
+                root,
+                remote_premium,
+            )
+            merged_selection, web_classes_files = merge_compile_deploy_selection(
+                current_selection,
+                previous_selection,
+                root,
+                remote_premium,
+            )
+            user_main = merged_selection.main_modules
+            user_prem = merged_selection.premium_modules
+        except CompileDeployStateError as exc:
+            LOG.error("%s", exc)
+            return 1
     if not user_main and not user_prem and not web_classes_files:
         LOG.error("No changed Maven modules or deployable web classes found from current HEAD commit.")
         return 1
@@ -988,4 +1301,10 @@ def run_compile_flow(
         )
         if rc != 0:
             return rc
+    if state_store and current_selection is not None:
+        try:
+            state_store.save_selection(worktree_key, root, remote_premium, current_selection)
+        except CompileDeployStateError as exc:
+            LOG.error("%s", exc)
+            return 1
     return 0
