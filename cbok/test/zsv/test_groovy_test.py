@@ -269,6 +269,29 @@ class GroovyContainerTest(unittest.TestCase):
         self.assertFalse(any("ln -sfn ../premium /work/zstack/premium" in script for script in shell_scripts))
         self.assertTrue(any("docker cp " in script and ":/tmp/cbok-zsv-groovy-run.sh" in script for script in shell_scripts))
 
+    def test_reuses_prepared_deploy_db_when_container_db_is_ready(self):
+        runner = FakeRunner()
+        work_root = self.root / "run"
+        original_db_ready = groovy_test._container_db_is_ready
+        groovy_test._container_db_is_ready = lambda _runner, _docker_host, _container_name: True
+        try:
+            rc = groovy_test.run_groovy_test_flow(
+                zstack_branch="feature-zstack",
+                premium_branch="feature-premium",
+                test_class="org.zstack.test.integration.core.MustPassCase",
+                zstack_repo=str(self.zstack_repo),
+                premium_repo=str(self.premium_repo),
+                work_root=str(work_root),
+                runner=runner,
+            )
+        finally:
+            groovy_test._container_db_is_ready = original_db_ready
+
+        self.assertEqual(0, rc)
+        run_script = (work_root / "remote-run.sh").read_text(encoding="utf-8")
+        self.assertIn("-DcbokReuseDeployDb=true", run_script)
+        self.assertIn('if (Boolean.getBoolean("cbokReuseDeployDb"))', run_script)
+
     def test_default_run_root_can_already_exist_for_run_id_reuse(self):
         runner = FakeRunner()
         run_id = f"unit-existing-root-{os.getpid()}"
