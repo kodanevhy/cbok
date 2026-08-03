@@ -3,6 +3,7 @@ ZStack: build changed modules from explicit zstack/premium worktree roots.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -211,7 +212,11 @@ def compile_worktree_key(
     premium_root: str | None,
     remote: RemoteDockerCompileConfig,
 ) -> str:
-    return worktree_key_for_spec(_compile_worktree_spec(zstack_root, premium_root, remote))
+    container_key = worktree_key_for_spec(
+        _compile_worktree_spec(zstack_root, premium_root, remote)
+    )
+    base_ref = _conf_get("zsv_compile", "base_ref", DEFAULT_BASE_REF)
+    return hashlib.sha256(f"{container_key}\0{base_ref}".encode("utf-8")).hexdigest()
 
 
 def _encode_list(items: list[str]) -> str:
@@ -486,17 +491,69 @@ def modules_from_changed_paths(
     return _dedupe(main), _dedupe(premium)
 
 
+def _remote_base_ref_fetch_spec(repo_root: str, base_ref: str) -> tuple[str, str, str] | None:
+    if "/" not in base_ref:
+        return None
+
+    remote, branch = base_ref.split("/", 1)
+    if not remote or not branch:
+        return None
+
+    r = _git(repo_root, "remote", "get-url", remote)
+    if r.returncode != 0:
+        return None
+
+    return remote, f"refs/heads/{branch}", f"refs/remotes/{remote}/{branch}"
+
+
+def sync_changed_paths_base_ref(repo_root: str) -> bool:
+    base_ref = _conf_get("zsv_compile", "base_ref", DEFAULT_BASE_REF)
+    if not base_ref:
+        return True
+
+    fetch_spec = _remote_base_ref_fetch_spec(repo_root, base_ref)
+    if fetch_spec is None:
+        LOG.error("Configured base ref %s must be a remote branch such as origin/<branch>", base_ref)
+        return False
+
+    remote, remote_ref, local_ref = fetch_spec
+    r = _git(repo_root, "fetch", remote, f"+{remote_ref}:{local_ref}")
+    if r.returncode == 0:
+        return True
+
+    LOG.error("Failed to fetch upstream base ref %s from %s in %s: %s",
+              base_ref, remote, repo_root, (r.stderr or "").strip())
+    return False
+
+
+def validate_changed_paths_base_ref(repo_root: str) -> bool:
+    base_ref = _conf_get("zsv_compile", "base_ref", DEFAULT_BASE_REF)
+    if not base_ref:
+        return True
+
+    if not sync_changed_paths_base_ref(repo_root):
+        return False
+
+    ancestor = _git(repo_root, "merge-base", "--is-ancestor", base_ref, "HEAD")
+    if ancestor.returncode == 0:
+        return True
+    if ancestor.returncode == 1:
+        LOG.error("Configured base ref %s is not an ancestor of HEAD in %s",
+                  base_ref, repo_root)
+    else:
+        LOG.error("Failed to check base ref %s in %s: %s",
+                  base_ref, repo_root, (ancestor.stderr or "").strip())
+    return False
+
+
 def changed_paths_from_head_commit(repo_root: str) -> list[str]:
     base_ref = _conf_get("zsv_compile", "base_ref", DEFAULT_BASE_REF)
-    base = _git(repo_root, "merge-base", base_ref, "HEAD") if base_ref else None
-    if base and base.returncode == 0:
-        base_hash = (base.stdout or "").strip()
-        if base_hash:
-            r = _git(repo_root, "diff", "--name-only", base_hash, "HEAD")
-            if r.returncode == 0:
-                return [line.strip() for line in (r.stdout or "").splitlines() if line.strip()]
-            LOG.warning("Failed to read changed files since %s in %s: %s",
-                        base_ref, repo_root, (r.stderr or "").strip())
+    if base_ref:
+        r = _git(repo_root, "diff", "--name-only", base_ref, "HEAD")
+        if r.returncode == 0:
+            return [line.strip() for line in (r.stdout or "").splitlines() if line.strip()]
+        LOG.warning("Failed to read changed files since %s in %s: %s",
+                    base_ref, repo_root, (r.stderr or "").strip())
 
     parent = _git(repo_root, "rev-parse", "--verify", "HEAD^")
     if parent.returncode == 0:
@@ -1190,6 +1247,10 @@ def run_compile_flow(
         LOG.error("premium root is not a directory: %s", premium_real_root)
         return 1
     if not validate_same_branch(root, premium_real_root):
+        return 1
+    if not validate_changed_paths_base_ref(root):
+        return 1
+    if not validate_changed_paths_base_ref(premium_real_root):
         return 1
 
     user_main, user_prem = auto_detect_modules(root, premium_real_root)

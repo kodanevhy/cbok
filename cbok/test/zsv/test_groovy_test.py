@@ -73,6 +73,8 @@ class GroovyContainerTest(unittest.TestCase):
         self.addCleanup(self._restore_state_store)
         self._orig_remote_docker_compile_from_conf = groovy_test.remote_docker_compile_from_conf
         self.addCleanup(self._restore_compile_conf)
+        self._orig_validate_changed_paths_base_ref = groovy_test.validate_changed_paths_base_ref
+        self.addCleanup(self._restore_base_ref_validation)
         groovy_test.remote_docker_compile_from_conf = lambda _container_name="": groovy_test.RemoteDockerCompileConfig(
             image="compile-image:unit",
             platform="linux/amd64",
@@ -81,6 +83,7 @@ class GroovyContainerTest(unittest.TestCase):
             container_name="",
             m2_volume="zsv-m2",
         )
+        groovy_test.validate_changed_paths_base_ref = lambda _root: True
         self.root = Path(self.tmp.name)
         self.zstack_repo = self.root / "source-zstack"
         self.premium_repo = self.root / "source-premium"
@@ -93,6 +96,9 @@ class GroovyContainerTest(unittest.TestCase):
 
     def _restore_compile_conf(self):
         groovy_test.remote_docker_compile_from_conf = self._orig_remote_docker_compile_from_conf
+
+    def _restore_base_ref_validation(self):
+        groovy_test.validate_changed_paths_base_ref = self._orig_validate_changed_paths_base_ref
 
     def _write_minimal_repo_sources(self):
         (self.zstack_repo / "testlib").mkdir(parents=True)

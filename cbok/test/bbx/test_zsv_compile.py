@@ -110,11 +110,45 @@ class ZsvCompileTest(unittest.TestCase):
 
         self.assertEqual("auto", conf.m2_volume)
 
+    def test_compile_deploy_state_key_is_scoped_to_base_ref(self):
+        compile.settings.CONF = _conf(base_ref="origin/feature")
+        remote = compile.remote_docker_compile_from_conf()
+        feature_key = compile.compile_worktree_key("/zstack", "/premium", remote)
+
+        compile.settings.CONF = _conf(base_ref="origin/zsv_5.1.0")
+        zsv_key = compile.compile_worktree_key("/zstack", "/premium", remote)
+
+        self.assertNotEqual(feature_key, zsv_key)
+
+    def test_validate_changed_paths_base_ref_fetches_upstream_branch_first(self):
+        compile.settings.CONF = _conf(base_ref="origin/feature/zsv")
+        calls = []
+
+        def fake_git(repo, *args):
+            calls.append(args)
+            if args == ("remote", "get-url", "origin"):
+                return subprocess.CompletedProcess(["git"], 0, "git@example.invalid/repo.git\n", "")
+            if args == ("fetch", "origin", "+refs/heads/feature/zsv:refs/remotes/origin/feature/zsv"):
+                return subprocess.CompletedProcess(["git"], 0, "", "")
+            if args == ("merge-base", "--is-ancestor", "origin/feature/zsv", "HEAD"):
+                return subprocess.CompletedProcess(["git"], 0, "", "")
+            raise AssertionError("unexpected git command: %s" % (args,))
+
+        compile._git = fake_git
+
+        self.assertTrue(compile.validate_changed_paths_base_ref("/repo"))
+        self.assertEqual([
+            ("remote", "get-url", "origin"),
+            ("fetch", "origin", "+refs/heads/feature/zsv:refs/remotes/origin/feature/zsv"),
+            ("merge-base", "--is-ancestor", "origin/feature/zsv", "HEAD"),
+        ], calls)
+
     def test_zsv_compile_config_does_not_expose_profile_switch(self):
         option_names = [opt.name for opt in cbok_config.ZSV_COMPILE.options]
 
         self.assertNotIn("run_maven_profile_premium", option_names)
         self.assertNotIn("remote_docker_premium_source", option_names)
+        self.assertIn("base_ref", option_names)
 
     def test_run_compile_flow_requires_zstack_root(self):
         runner = FakeRunner()
@@ -136,6 +170,7 @@ class ZsvCompileTest(unittest.TestCase):
         compile.settings.CONF = _conf(
             remote_docker_host="tcp://172.26.50.70:2375",
             remote_docker_image="zstack-buildbin:debug7-arm64",
+            base_ref="",
         )
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["plugin/foo"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
@@ -174,6 +209,7 @@ class ZsvCompileTest(unittest.TestCase):
             remote_docker_host="http://172.26.50.70:2375",
             remote_docker_workdir="/work",
             remote_docker_m2_volume="zsv-m2",
+            base_ref="",
         )
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["plugin/foo"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
@@ -237,7 +273,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertNotIn('rsync -a --delete "$target"/ "$dest"/', build_scripts[-1])
 
     def test_run_compile_flow_rejects_configured_premium_branch_mismatch(self):
-        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375")
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["plugin/foo"], [])
 
         with tempfile.TemporaryDirectory() as td:
@@ -281,7 +317,50 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertIn("zstack and premium branch names must be the same", "\n".join(logs.output))
         self.assertEqual([], runner.calls)
 
+    def test_run_compile_flow_rejects_base_ref_before_detecting_modules(self):
+        compile.settings.CONF = _conf(
+            remote_docker_host="tcp://172.26.50.70:2375",
+            base_ref="origin/feature",
+        )
+
+        def fail_auto_detect(_root, _premium_root=None):
+            raise AssertionError("auto_detect_modules should not run when base_ref is invalid")
+
+        compile.auto_detect_modules = fail_auto_detect
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            root.mkdir()
+            premium.mkdir()
+            (root / "pom.xml").write_text("<project/>", encoding="utf-8")
+
+            def fake_git(repo, *args):
+                if args == ("rev-parse", "--abbrev-ref", "HEAD"):
+                    return subprocess.CompletedProcess(["git"], 0, "feature\n", "")
+                if args == ("merge-base", "--is-ancestor", "origin/feature", "HEAD"):
+                    return subprocess.CompletedProcess(["git"], 1, "", "")
+                return subprocess.CompletedProcess(["git"], 0, "", "")
+
+            compile._git = fake_git
+            runner = FakeRunner()
+
+            with self.assertLogs(compile.LOG.name, level="ERROR") as logs:
+                rc = compile.run_compile_flow(
+                    address=None,
+                    remote_lib=compile.DEFAULT_REMOTE_LIB,
+                    no_deploy=True,
+                    zstack_root=str(root),
+                    premium_root=str(premium),
+                    runner=runner,
+                )
+
+        self.assertEqual(1, rc)
+        self.assertIn("Configured base ref origin/feature is not an ancestor", "\n".join(logs.output))
+        self.assertEqual([], runner.calls)
+
     def test_auto_detect_modules_combines_worktree_changes_and_head_commit(self):
+        compile.settings.CONF = _conf(base_ref="")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
             premium = Path(td) / "premium"
@@ -320,6 +399,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual(["volumebackup", "mevoco"], prem)
 
     def test_auto_detect_modules_falls_back_to_head_when_no_worktree_module_changed(self):
+        compile.settings.CONF = _conf(base_ref="")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
             premium = Path(td) / "premium"
@@ -352,6 +432,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual(["mevoco"], prem)
 
     def test_auto_detect_modules_uses_top_commit_even_when_upstream_exists(self):
+        compile.settings.CONF = _conf(base_ref="")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
             premium = Path(td) / "premium"
@@ -389,7 +470,27 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual(["storage"], main)
         self.assertEqual(["crypto"], prem)
 
+    def test_changed_paths_uses_configured_base_ref(self):
+        compile.settings.CONF = _conf(base_ref="origin/feature")
+        calls = []
+
+        def fake_git(repo, *args):
+            calls.append(args)
+            if args == ("diff", "--name-only", "origin/feature", "HEAD"):
+                return subprocess.CompletedProcess(["git"], 0, "storage/Feature.java\n", "")
+            raise AssertionError("unexpected git command: %s" % (args,))
+
+        compile._git = fake_git
+
+        paths = compile.changed_paths_from_head_commit("/repo")
+
+        self.assertEqual(["storage/Feature.java"], paths)
+        self.assertEqual([
+            ("diff", "--name-only", "origin/feature", "HEAD"),
+        ], calls)
+
     def test_auto_detect_modules_includes_implementers_of_changed_interfaces(self):
+        compile.settings.CONF = _conf(base_ref="")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
             premium = Path(td) / "premium"
@@ -491,7 +592,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual(str(premium_xml), mapped["springConfigXml/crypto.xml"])
 
     def test_deploy_uses_unique_remote_staging_per_compile(self):
-        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375")
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
@@ -543,7 +644,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertNotIn(str(worktree_target / "identity-5.0.0.jar"), scp_scripts[0])
 
     def test_deploy_syncs_changed_web_classes_archive(self):
-        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375")
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
@@ -586,7 +687,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertTrue(any("/usr/local/zstack/apache-tomcat/webapps/zstack/WEB-INF/classes" in script for script in shell_scripts))
 
     def test_deploy_replays_previous_modules_removed_from_current_diff(self):
-        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375")
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
         compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: []
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
@@ -638,7 +739,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual([], selection.premium_modules)
 
     def test_deploy_replays_previous_web_classes_when_current_diff_is_empty(self):
-        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375")
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
         compile.auto_detect_modules = lambda _root, _premium_root=None: ([], [])
         compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: []
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
