@@ -23,6 +23,7 @@ remote_docker_image = registry.docker.zstack.io:80/buildbin:debug7
 remote_docker_platform = linux/amd64
 remote_docker_workdir = /work
 remote_docker_m2_volume = auto
+remote_docker_min_free_gb = 20
 ```
 
 Configure stable deployment paths in `[zsv_deploy]`:
@@ -47,9 +48,45 @@ Behavior:
   `/root/.m2` to it. `remote_docker_m2_volume = auto` uses the `zsv-m2`
   prefix; a custom value is treated as a prefix, not as one shared Maven
   repository across worktrees.
+- Before creating a new worktree container, checks free space on the remote
+  Docker root filesystem. If it is below `remote_docker_min_free_gb`, cbok stops
+  and asks the AI to use the `cbok-zsv-container-cleanup` skill.
 - Copies successful module build outputs to this command's local JAR copy
   directory and deploys from there, without writing build outputs back into the
   source worktree.
+
+## Worktree container cleanup
+
+List reusable worktree containers and their recorded PR/MR links first:
+
+```bash
+cbok zsv list_worktree_container_prs
+```
+
+The output includes each container's zstack/premium root, current branch, and
+database-recorded PR/MR links. Review those PR/MR states outside cbok, then pass the
+explicit container names to delete:
+
+```bash
+cbok zsv prune_worktree_containers \
+  --container-name cbok-zsv-worktree-example-1234 \
+  --execute
+```
+
+Without `--execute`, `prune_worktree_containers` only previews the selected
+containers. Cleanup removes both the `cbok-zsv-worktree-*` container and the
+recorded `zsv-m2-*` Maven volume, then removes the matching cbok state rows
+after Docker cleanup succeeds. Both commands inspect records for
+`remote_docker_host` in `[zsv_compile]`, matching the remote Docker daemon used
+by compile.
+
+PR/MR links are stored in `bbx_zsvworktreecontainerpullrequest` when the
+worktree container record is created or refreshed by `cbok zsv compile`. Pass
+them explicitly to compile with one `--pr-url <repo>=<url>[,<repo>=<url>...]`,
+where `<repo>` is `zstack`, `premium`, `zstack-utility`, or `zstack-store`.
+`cbok zsv groovy_test` does not refresh PR/MR links.
+The list command only reads those recorded URLs; cbok does not query or decide
+PR/MR state.
 
 ## ARM64 Docker buildbin
 

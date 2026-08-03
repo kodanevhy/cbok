@@ -43,6 +43,8 @@ class FakeRunner:
         self.calls.append((cmd, kwargs))
         if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]:
             script = cmd[-1]
+            if "df -Pk /" in script:
+                return SimpleNamespace(returncode=0, stdout="%d\n" % (100 * 1024 * 1024), stderr="")
             if "docker inspect" in script:
                 return SimpleNamespace(returncode=1, stdout="", stderr="")
             if "docker create" in script:
@@ -91,6 +93,7 @@ class ZsvCompileTest(unittest.TestCase):
             remote_docker_host="http://172.26.50.70:2375",
             remote_docker_workdir="/zwork",
             remote_docker_m2_volume="zsv-m2",
+            remote_docker_min_free_gb="42",
         )
 
         conf = compile.remote_docker_compile_from_conf()
@@ -101,6 +104,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual("/zwork", conf.workdir)
         self.assertEqual("auto", conf.container_name)
         self.assertEqual("zsv-m2", conf.m2_volume)
+        self.assertEqual(42, conf.min_free_gb)
         self.assertFalse(hasattr(conf, "premium_source"))
 
     def test_remote_docker_conf_defaults_to_worktree_scoped_m2(self):
@@ -109,6 +113,7 @@ class ZsvCompileTest(unittest.TestCase):
         conf = compile.remote_docker_compile_from_conf()
 
         self.assertEqual("auto", conf.m2_volume)
+        self.assertEqual(20, conf.min_free_gb)
 
     def test_compile_deploy_state_key_is_scoped_to_base_ref(self):
         compile.settings.CONF = _conf(base_ref="origin/feature")
@@ -149,6 +154,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertNotIn("run_maven_profile_premium", option_names)
         self.assertNotIn("remote_docker_premium_source", option_names)
         self.assertIn("base_ref", option_names)
+        self.assertIn("remote_docker_min_free_gb", option_names)
 
     def test_run_compile_flow_requires_zstack_root(self):
         runner = FakeRunner()
@@ -191,6 +197,10 @@ class ZsvCompileTest(unittest.TestCase):
                 no_deploy=True,
                 zstack_root=str(root),
                 premium_root=str(premium),
+                pr_url=(
+                    "zstack=https://dev.zstack.io/zstackio/zstack/-/merge_requests/10001,"
+                    "premium=https://dev.zstack.io/zstackio/premium/-/merge_requests/20002"
+                ),
                 runner=runner,
             )
 
@@ -230,6 +240,10 @@ class ZsvCompileTest(unittest.TestCase):
                 no_deploy=True,
                 zstack_root=str(root),
                 premium_root=str(premium),
+                pr_url=(
+                    "zstack=https://dev.zstack.io/zstackio/zstack/-/merge_requests/10001,"
+                    "premium=https://dev.zstack.io/zstackio/premium/-/merge_requests/20002"
+                ),
                 runner=runner,
             )
 
@@ -242,6 +256,20 @@ class ZsvCompileTest(unittest.TestCase):
             if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]
         ]
         self.assertTrue(any("DOCKER_HOST=tcp://172.26.50.70:2375 docker create" in script for script in shell_scripts))
+        records = list(self._worktree_store.records.values())
+        self.assertEqual(
+            (
+                worktree_container.WorktreePullRequest(
+                    repo="zstack",
+                    pr_url="https://dev.zstack.io/zstackio/zstack/-/merge_requests/10001",
+                ),
+                worktree_container.WorktreePullRequest(
+                    repo="premium",
+                    pr_url="https://dev.zstack.io/zstackio/premium/-/merge_requests/20002",
+                ),
+            ),
+            records[0].pr_refs,
+        )
         self.assertTrue(any("--platform linux/amd64" in script for script in shell_scripts))
         self.assertTrue(
             any("docker exec -i cbok-zsv-worktree-zstack-" in script and "/tmp/cbok-zsv-src/zstack" in script for script in shell_scripts)
