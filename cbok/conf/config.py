@@ -86,6 +86,8 @@ ZSV_COMPILE = Group(
         help="Workspace root inside the remote Docker container"),
         Option("remote_docker_m2_volume", default="auto",
         help="Docker volume prefix for worktree-scoped Maven repositories; auto uses zsv-m2"),
+        Option("base_ref", default="origin/feature-zsv-5.1.0-encryption",
+        help="Remote branch used as changed-path base for ZSV incremental compile"),
     ]
 )
 

@@ -18,6 +18,7 @@ from cbok.bbx.zsv.compile import _normalize_docker_host
 from cbok.bbx.zsv.compile import auto_detect_modules
 from cbok.bbx.zsv.compile import maven_build_plan
 from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
+from cbok.bbx.zsv.compile import validate_changed_paths_base_ref
 from cbok.bbx.zsv.worktree_container import WorktreeContainerSpec
 from cbok.bbx.zsv.worktree_container import ensure_worktree_container
 
@@ -804,6 +805,11 @@ done < <(git -C "$source_repo" ls-files --others --exclude-standard -z)
 
 
 def _incremental_compile_changed_modules(runner, docker_host: str, handle, work_zstack: Path, work_premium: Path) -> int:
+    if not validate_changed_paths_base_ref(str(work_zstack)):
+        return 1
+    if work_premium.is_dir() and not validate_changed_paths_base_ref(str(work_premium)):
+        return 1
+
     main_mods, prem_mods = auto_detect_modules(str(work_zstack), str(work_premium))
     plan = maven_build_plan(main_mods, prem_mods)
     if not plan.modules:
