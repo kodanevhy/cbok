@@ -48,6 +48,21 @@ class ZsvWorktreeContainerState(models.Model):
         return f"{self.container_name}: {status}"
 
 
+class ZsvWorktreeContainerPullRequest(models.Model):
+    worktree_key = models.CharField(max_length=64)
+    repo = models.CharField(max_length=32)
+    pr_url = models.CharField(max_length=512)
+
+    class Meta:
+        unique_together = ("worktree_key", "repo", "pr_url")
+        indexes = [
+            models.Index(fields=["worktree_key"]),
+        ]
+
+    def __str__(self):
+        return f"{self.worktree_key}: {self.repo} {self.pr_url}"
+
+
 class ZsvAgentReplaceState(models.Model):
     worktree_key = models.CharField(max_length=64, unique=True)
     utility_root = models.CharField(max_length=512)

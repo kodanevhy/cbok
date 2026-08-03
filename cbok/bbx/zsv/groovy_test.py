@@ -1208,6 +1208,7 @@ def run_groovy_test_flow(
         m2_volume=m2_volume,
         identity_zstack_root=zstack_repo,
         identity_premium_root=premium_repo,
+        min_free_gb=docker_conf.min_free_gb,
     )
     rc, handle = ensure_worktree_container(
         runner,

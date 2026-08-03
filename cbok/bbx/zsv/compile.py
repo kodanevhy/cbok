@@ -19,8 +19,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cbok import settings
+from cbok.bbx.zsv.worktree_container import DEFAULT_MIN_FREE_GB
 from cbok.bbx.zsv.worktree_container import WorktreeContainerSpec
 from cbok.bbx.zsv.worktree_container import ensure_worktree_container
+from cbok.bbx.zsv.worktree_container import parse_worktree_pr_refs
 from cbok.bbx.zsv.worktree_container import worktree_key_for_spec
 
 
@@ -63,6 +65,7 @@ class RemoteDockerCompileConfig:
     workdir: str
     container_name: str
     m2_volume: str
+    min_free_gb: int = DEFAULT_MIN_FREE_GB
 
 
 @dataclass(frozen=True)
@@ -110,6 +113,15 @@ def _conf_get(section: str, option: str, default: str) -> str:
     return default
 
 
+def _conf_int(section: str, option: str, default: int) -> int:
+    value = _conf_get(section, option, str(default))
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        LOG.warning("Invalid [%s] %s=%r; using %s.", section, option, value, default)
+        return default
+
+
 def _normalize_docker_host(raw: str | None) -> str:
     host = (raw or "").strip()
     if host.startswith("http://"):
@@ -127,6 +139,7 @@ def remote_docker_compile_from_conf() -> RemoteDockerCompileConfig:
         workdir=_conf_get("zsv_compile", "remote_docker_workdir", "/work").rstrip("/"),
         container_name="auto",
         m2_volume=_conf_get("zsv_compile", "remote_docker_m2_volume", "auto"),
+        min_free_gb=_conf_int("zsv_compile", "remote_docker_min_free_gb", DEFAULT_MIN_FREE_GB),
     )
 
 
@@ -194,6 +207,7 @@ def _compile_worktree_spec(
     zstack_root: str,
     premium_root: str | None,
     remote: RemoteDockerCompileConfig,
+    pr_refs=(),
 ) -> WorktreeContainerSpec:
     return WorktreeContainerSpec(
         zstack_root=zstack_root,
@@ -204,6 +218,8 @@ def _compile_worktree_spec(
         workdir=remote.workdir or "/work",
         container_name=remote.container_name,
         m2_volume=remote.m2_volume,
+        pr_refs=tuple(pr_refs or ()),
+        min_free_gb=remote.min_free_gb,
     )
 
 
@@ -1085,6 +1101,7 @@ def run_mvn_in_remote_docker(
     remote: RemoteDockerCompileConfig,
     local_jar_copy_root: str,
     runner,
+    pr_refs=(),
 ) -> int:
     if not plan.modules:
         return 0
@@ -1107,7 +1124,9 @@ def run_mvn_in_remote_docker(
             workdir=workdir,
             container_name=remote.container_name,
             m2_volume=remote.m2_volume,
+            min_free_gb=remote.min_free_gb,
         ),
+        pr_refs=pr_refs,
     )
     rc, handle = ensure_worktree_container(
         runner,
@@ -1272,6 +1291,7 @@ def run_compile_flow(
     zstack_root: str | None = None,
     premium_root: str | None = None,
     extra_web_classes: list[str] | None = None,
+    pr_url: str | None = None,
     runner,
     compile_state_store=None,
 ) -> int:
@@ -1285,6 +1305,11 @@ def run_compile_flow(
         return 1
 
     remote_docker = remote_docker_compile_from_conf()
+    try:
+        pr_refs = parse_worktree_pr_refs(pr_url or "")
+    except ValueError as exc:
+        LOG.error("%s", exc)
+        return 1
     if not remote_docker.docker_host:
         LOG.error("remote Docker compile requires [zsv_compile] remote_docker_host.")
         return 1
@@ -1367,6 +1392,7 @@ def run_compile_flow(
         remote_docker,
         local_jar_copy_root,
         runner,
+        pr_refs=pr_refs,
     )
     if rc != 0:
         return rc

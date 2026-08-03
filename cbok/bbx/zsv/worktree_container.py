@@ -9,12 +9,12 @@ import subprocess
 from dataclasses import asdict
 from dataclasses import dataclass
 
-
 LOG = logging.getLogger(__name__)
 
 DEFAULT_WORKDIR = "/work"
 DEFAULT_M2_VOLUME = "auto"
 DEFAULT_M2_VOLUME_PREFIX = "zsv-m2"
+DEFAULT_MIN_FREE_GB = 20
 MAVEN_REPO = "/var/maven/.m2/repository"
 FULL_COMPILE_CMD = "./runMavenProfile premium"
 SOURCE_EXCLUDES = (
@@ -46,6 +46,13 @@ RSYNC_EXCLUDES = (
     "--exclude '*/__MACOSX'"
 )
 PREMIUM_DIR_EXCLUDES = "--exclude premium --exclude ./premium"
+PR_REPOS = ("zstack", "premium", "zstack-utility", "zstack-store")
+
+
+@dataclass(frozen=True)
+class WorktreePullRequest:
+    repo: str
+    pr_url: str
 
 
 @dataclass(frozen=True)
@@ -58,8 +65,10 @@ class WorktreeContainerSpec:
     workdir: str = DEFAULT_WORKDIR
     container_name: str = "auto"
     m2_volume: str = DEFAULT_M2_VOLUME
+    pr_refs: tuple[WorktreePullRequest, ...] = ()
     identity_zstack_root: str = ""
     identity_premium_root: str | None = None
+    min_free_gb: int = DEFAULT_MIN_FREE_GB
 
 
 @dataclass
@@ -73,6 +82,7 @@ class WorktreeContainerRecord:
     workdir: str
     container_name: str
     m2_volume: str
+    pr_refs: tuple[WorktreePullRequest, ...] = ()
     zstack_head: str = ""
     premium_head: str = ""
     full_compile_done: bool = False
@@ -97,8 +107,10 @@ class DjangoWorktreeContainerStore:
     def get_or_create(self, defaults: WorktreeContainerRecord):
         from cbok.bbx.models import ZsvWorktreeContainerState
 
+        pr_refs = tuple(defaults.pr_refs or ())
         values = asdict(defaults)
         key = values.pop("worktree_key")
+        values.pop("pr_refs", None)
         obj, created = ZsvWorktreeContainerState.objects.get_or_create(
             worktree_key=key,
             defaults=values,
@@ -121,10 +133,25 @@ class DjangoWorktreeContainerStore:
                     changed.append(field)
             if changed:
                 obj.save(update_fields=changed)
+        if pr_refs:
+            self.save_pull_requests(key, pr_refs)
         return obj, created
 
     def save(self, record, update_fields=None):
         record.save(update_fields=update_fields)
+
+    def save_pull_requests(self, worktree_key: str, pr_refs: tuple[WorktreePullRequest, ...]) -> None:
+        from cbok.bbx.models import ZsvWorktreeContainerPullRequest
+
+        ZsvWorktreeContainerPullRequest.objects.filter(worktree_key=worktree_key).delete()
+        ZsvWorktreeContainerPullRequest.objects.bulk_create([
+            ZsvWorktreeContainerPullRequest(
+                worktree_key=worktree_key,
+                repo=ref.repo,
+                pr_url=ref.pr_url,
+            )
+            for ref in pr_refs
+        ])
 
     def find_by_container_name(self, container_name: str):
         from cbok.bbx.models import ZsvWorktreeContainerState
@@ -207,6 +234,32 @@ def _git_head(root: str | None) -> str:
     return (result.stdout or "").strip()
 
 
+def parse_worktree_pr_refs(raw: str | None) -> tuple[WorktreePullRequest, ...]:
+    refs = []
+    seen = set()
+    for item in (raw or "").split(","):
+        text = (item or "").strip()
+        if not text:
+            continue
+        if "=" not in text:
+            raise ValueError(f"Invalid --pr-url {text!r}: expected <repo>=<url>.")
+        repo, url = text.split("=", 1)
+        repo = repo.strip().lower()
+        url = url.strip()
+        key = (repo, url)
+        if repo not in PR_REPOS:
+            raise ValueError(
+                f"Invalid --pr-url repo {repo!r}: expected one of {', '.join(PR_REPOS)}."
+            )
+        if not url:
+            raise ValueError(f"Invalid --pr-url {text!r}: URL is empty.")
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append(WorktreePullRequest(repo=repo, pr_url=url))
+    return tuple(refs)
+
+
 def _now() -> datetime.datetime:
     try:
         from django.utils import timezone
@@ -255,6 +308,62 @@ def _docker_running_state(runner, docker_host: str, container_name: str) -> bool
     return (getattr(result, "stdout", "") or "").strip().lower() == "true"
 
 
+def _docker_root_free_kb(runner, spec: WorktreeContainerSpec) -> int | None:
+    cmd = ["run", "--rm"]
+    if spec.platform:
+        cmd.extend(["--platform", spec.platform])
+    cmd.extend([
+        "--entrypoint",
+        "sh",
+        spec.image,
+        "-lc",
+        "df -Pk / | awk 'NR==2 {print $4}'",
+    ])
+    result = docker_shell_capture(runner, spec.docker_host, cmd)
+    if _returncode(result) != 0:
+        output = ((getattr(result, "stderr", "") or "") + (getattr(result, "stdout", "") or "")).strip()
+        if "no space left" in output.lower():
+            return 0
+        LOG.warning(
+            "Unable to check remote Docker free space before creating a worktree container: %s",
+            output,
+        )
+        return None
+    for line in (getattr(result, "stdout", "") or "").splitlines():
+        line = line.strip()
+        if line.isdigit():
+            return int(line)
+    LOG.warning("Unable to parse remote Docker free space from df output: %s", getattr(result, "stdout", "") or "")
+    return None
+
+
+def _ensure_enough_space_for_new_container(runner, spec: WorktreeContainerSpec, container_name: str) -> bool:
+    min_free_gb = max(0, int(getattr(spec, "min_free_gb", DEFAULT_MIN_FREE_GB) or 0))
+    if min_free_gb <= 0:
+        return True
+
+    free_kb = _docker_root_free_kb(runner, spec)
+    if free_kb is None:
+        return True
+
+    min_free_kb = min_free_gb * 1024 * 1024
+    if free_kb >= min_free_kb:
+        return True
+
+    free_gb = free_kb / 1024 / 1024
+    LOG.error(
+        "Remote Docker host %s has %.1f GiB free before creating %s; need at least %d GiB. "
+        "Use the cbok-zsv-container-cleanup skill: run `cbok zsv list_worktree_container_prs`, "
+        "check each PR/MR state with MCP, then delete reviewed containers with "
+        "`cbok zsv prune_worktree_containers --container-name <name> --execute`.",
+        normalize_docker_host(spec.docker_host) or "local",
+        free_gb,
+        container_name,
+        min_free_gb,
+    )
+    return False
+
+
 def _create_container(runner, spec: WorktreeContainerSpec, container_name: str) -> int:
     cmd = ["create", "--name", container_name]
     if spec.platform:
@@ -286,6 +395,8 @@ def ensure_container_exists(runner, spec: WorktreeContainerSpec, container_name:
     running = _docker_running_state(runner, spec.docker_host, container_name)
     created = False
     if running is None:
+        if not _ensure_enough_space_for_new_container(runner, spec, container_name):
+            return 1, created
         rc = _create_container(runner, spec, container_name)
         if rc != 0:
             return rc, created
@@ -410,6 +521,7 @@ def _default_record(spec: WorktreeContainerSpec) -> WorktreeContainerRecord:
         workdir=spec.workdir,
         container_name=container_name_for_spec(spec, key),
         m2_volume=m2_volume_for_spec(spec, key),
+        pr_refs=tuple(spec.pr_refs or ()),
         zstack_head=_git_head(identity_zstack_root),
         premium_head=_git_head(identity_premium_root),
     )
@@ -431,8 +543,10 @@ def ensure_worktree_container(
         workdir=(spec.workdir or DEFAULT_WORKDIR).rstrip("/") or DEFAULT_WORKDIR,
         container_name=spec.container_name or "auto",
         m2_volume=spec.m2_volume or DEFAULT_M2_VOLUME,
+        pr_refs=tuple(spec.pr_refs or ()),
         identity_zstack_root=os.path.realpath(spec.identity_zstack_root) if spec.identity_zstack_root else "",
         identity_premium_root=os.path.realpath(spec.identity_premium_root) if spec.identity_premium_root else None,
+        min_free_gb=max(0, int(spec.min_free_gb or 0)),
     )
     store = state_store or default_state_store()
     defaults = _default_record(spec)
@@ -459,8 +573,10 @@ def ensure_worktree_container(
         workdir=spec.workdir,
         container_name=spec.container_name,
         m2_volume=record.m2_volume,
+        pr_refs=tuple(spec.pr_refs or ()),
         identity_zstack_root=spec.identity_zstack_root,
         identity_premium_root=spec.identity_premium_root,
+        min_free_gb=spec.min_free_gb,
     )
 
     rc, container_created = ensure_container_exists(runner, spec, record.container_name)

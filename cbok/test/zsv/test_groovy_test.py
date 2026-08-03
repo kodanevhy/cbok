@@ -25,6 +25,8 @@ class FakeRunner:
 
     def _run_shell(self, cmd):
         script = cmd[-1]
+        if "df -Pk /" in script:
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="%d\n" % (100 * 1024 * 1024), stderr="")
         if "docker inspect" in script:
             name = shlex.split(script)[-1]
             if name in self.containers:
@@ -197,6 +199,8 @@ class GroovyContainerTest(unittest.TestCase):
         )
 
         self.assertEqual(0, rc)
+        records = list(self._worktree_store.records.values())
+        self.assertEqual((), records[0].pr_refs)
         self.assertEqual("../premium", os.readlink(work_root / "zstack" / "premium"))
         self.assertFalse(
             (

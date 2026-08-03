@@ -27,8 +27,11 @@ from cbok.bbx.zsv.service import discover_management_nodes
 from cbok.bbx.zsv.service import discover_zbs_primary_storage_nodes
 from cbok.bbx.zsv.service import ZsvHostDiscoveryError
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
+from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
 from cbok.bbx.zsv.compile import run_compile_flow
 from cbok.bbx.zsv.groovy_test import run_groovy_test_flow
+from cbok.bbx.zsv.worktree_prune import list_worktree_container_prs
+from cbok.bbx.zsv.worktree_prune import prune_worktree_containers
 from cbok.bbx.zsv.zstore_replace import run_zstore_replace_flow
 from cbok.cmd import args
 from cbok.cmd import base
@@ -354,6 +357,10 @@ class ZSphereCommands(base.BaseCommand):
         "--web-class", action="append", default=[],
         help="Extra conf/springConfigXml file to sync to WEB-INF/classes. "
              "Use zstack:<path> or premium:<path> to disambiguate.")
+    @args.args(
+        "--pr-url", metavar="<repo=url[,repo=url...]>",
+        help="PR/MR URLs linked to this worktree container; repo is zstack, "
+             "premium, zstack-utility, or zstack-store")
     def compile(
             self,
             address=None,
@@ -361,6 +368,7 @@ class ZSphereCommands(base.BaseCommand):
             zstack_root=None,
             premium_root=None,
             web_class=None,
+            pr_url=None,
     ):
         """
         Build changed modules in a remote Docker worktree container.
@@ -382,6 +390,7 @@ class ZSphereCommands(base.BaseCommand):
             zstack_root=zstack_root,
             premium_root=premium_root,
             extra_web_classes=web_class or [],
+            pr_url=pr_url or "",
             runner=self.p_runner,
         )
 
@@ -440,6 +449,38 @@ class ZSphereCommands(base.BaseCommand):
             run_id=run_id,
             keep_worktree=not refresh_worktree,
             runner=self.p_runner,
+        )
+
+    @args.action_description("List reusable ZSV worktree containers and PR/MR links")
+    def list_worktree_container_prs(self):
+        """List reusable ZSV worktree containers and PR/MR links"""
+        return list_worktree_container_prs(
+            docker_host=remote_docker_compile_from_conf().docker_host,
+        )
+
+    @args.action_description("Delete selected reusable ZSV worktree containers")
+    @args.args(
+        "--container-name", action="append", default=[], required=True,
+        help="cbok-zsv-worktree-* container name to delete; repeat for multiple containers")
+    @args.args(
+        "--dry-run", action="store_true",
+        help="Only print selected containers; this is also the default")
+    @args.args(
+        "--execute", action="store_true",
+        help="Remove selected Docker containers and their Maven volumes")
+    def prune_worktree_containers(
+            self,
+            container_name=None,
+            dry_run=False,
+            execute=False,
+    ):
+        """Delete selected reusable ZSV worktree containers"""
+        effective_dry_run = dry_run or not execute
+        return prune_worktree_containers(
+            self.p_runner,
+            container_names=container_name or [],
+            dry_run=effective_dry_run,
+            docker_host=remote_docker_compile_from_conf().docker_host,
         )
 
     @args.action_description(

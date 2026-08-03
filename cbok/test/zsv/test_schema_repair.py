@@ -444,6 +444,7 @@ class SchemaRepairTest(unittest.TestCase):
         stable_cli_args = {
             ZSphereCommands.compile: ("--remote-lib", "--docker-host"),
             ZSphereCommands.groovy_test: ("--image", "--platform", "--docker-host", "--m2-dir"),
+            ZSphereCommands.prune_worktree_containers: ("--docker-host",),
             ZSphereCommands.replace_agent: (
                 "--nodes",
                 "--site-packages",
@@ -475,6 +476,7 @@ class SchemaRepairTest(unittest.TestCase):
             ),
             ZSphereCommands.replace_agent: ("--primary-node", "--utility-root"),
             ZSphereCommands.install_ssh_key: ("--primary-node",),
+            ZSphereCommands.prune_worktree_containers: ("--container-name",),
         }
 
         for method, arg_names in required_by_method.items():

@@ -9,10 +9,12 @@ from cbok.bbx.zsv import worktree_container
 
 
 class FakeRunner:
-    def __init__(self, fail_on=None):
+    def __init__(self, fail_on=None, free_kb=100 * 1024 * 1024, df_error=""):
         self.commands = []
         self.containers = set()
         self.fail_on = fail_on
+        self.free_kb = free_kb
+        self.df_error = df_error
 
     def run_command(self, cmd, **kwargs):
         self.commands.append((cmd, kwargs))
@@ -20,6 +22,10 @@ class FakeRunner:
             script = cmd[-1]
             if self.fail_on and self.fail_on in script:
                 return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="failed")
+            if "df -Pk /" in script:
+                if self.df_error:
+                    return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr=self.df_error)
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=f"{self.free_kb}\n", stderr="")
             if "docker inspect" in script:
                 name = shlex.split(script)[-1]
                 if name in self.containers:
@@ -69,6 +75,41 @@ class WorktreeContainerTest(unittest.TestCase):
             if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]
         ]
 
+    def test_parse_worktree_pr_refs_validates_repo_prefixed_urls(self):
+        refs = worktree_container.parse_worktree_pr_refs(
+            "ZStack=https://github.com/kodanevhy/cbok/pull/78,"
+            "zstack=https://github.com/kodanevhy/cbok/pull/78,"
+            "premium=https://dev.zstack.io/zstackio/premium/-/merge_requests/2,"
+            "zstack-utility=https://dev.zstack.io/zstackio/zstack-utility/-/merge_requests/3,"
+            "zstack-store=https://dev.zstack.io/zstackio/zstack-store/-/merge_requests/4"
+        )
+
+        self.assertEqual(
+            (
+                worktree_container.WorktreePullRequest(
+                    repo="zstack",
+                    pr_url="https://github.com/kodanevhy/cbok/pull/78",
+                ),
+                worktree_container.WorktreePullRequest(
+                    repo="premium",
+                    pr_url="https://dev.zstack.io/zstackio/premium/-/merge_requests/2",
+                ),
+                worktree_container.WorktreePullRequest(
+                    repo="zstack-utility",
+                    pr_url="https://dev.zstack.io/zstackio/zstack-utility/-/merge_requests/3",
+                ),
+                worktree_container.WorktreePullRequest(
+                    repo="zstack-store",
+                    pr_url="https://dev.zstack.io/zstackio/zstack-store/-/merge_requests/4",
+                ),
+            ),
+            refs,
+        )
+        with self.assertRaises(ValueError):
+            worktree_container.parse_worktree_pr_refs("utility=https://example.test/pr/1")
+        with self.assertRaises(ValueError):
+            worktree_container.parse_worktree_pr_refs("badrepo=https://example.test/pr/1")
+
     def test_full_compile_runs_once_per_worktree_state(self):
         with tempfile.TemporaryDirectory() as td:
             zstack = Path(td) / "zstack"
@@ -111,6 +152,48 @@ class WorktreeContainerTest(unittest.TestCase):
         self.assertFalse(any("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in shell_scripts))
         self.assertTrue(any("DOCKER_HOST=tcp://172.26.50.70:2375 docker create" in script for script in shell_scripts))
         self.assertTrue(any("-v zsv-m2-" in script and ":/var/maven/.m2" in script for script in shell_scripts))
+
+    def test_worktree_record_stores_explicit_pr_refs(self):
+        with tempfile.TemporaryDirectory() as td:
+            zstack = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            self._write_repo(zstack)
+            self._write_premium(premium)
+            runner = FakeRunner()
+            store = FakeWorktreeContainerStore()
+            spec = worktree_container.WorktreeContainerSpec(
+                zstack_root=str(zstack),
+                premium_root=str(premium),
+                docker_host="",
+                image="compile-image:unit",
+                pr_refs=worktree_container.parse_worktree_pr_refs(
+                    "zstack=https://github.com/kodanevhy/cbok/pull/78,"
+                    "premium=https://dev.zstack.io/zstackio/premium/-/merge_requests/2"
+                ),
+            )
+
+            rc, handle = worktree_container.ensure_worktree_container(
+                runner,
+                spec,
+                state_store=store,
+            )
+
+        self.assertEqual(0, rc)
+        self.assertIsNotNone(handle)
+        records = list(store.records.values())
+        self.assertEqual(
+            (
+                worktree_container.WorktreePullRequest(
+                    repo="zstack",
+                    pr_url="https://github.com/kodanevhy/cbok/pull/78",
+                ),
+                worktree_container.WorktreePullRequest(
+                    repo="premium",
+                    pr_url="https://dev.zstack.io/zstackio/premium/-/merge_requests/2",
+                ),
+            ),
+            records[0].pr_refs,
+        )
 
     def test_full_compile_does_not_rerun_when_worktree_head_changes(self):
         with tempfile.TemporaryDirectory() as td:
@@ -189,6 +272,27 @@ class WorktreeContainerTest(unittest.TestCase):
         self.assertNotEqual(key_a, key_b)
         self.assertEqual(f"zsv-m2-{key_a[:16]}", worktree_container.m2_volume_for_spec(spec_a, key_a))
         self.assertEqual(f"zsv-m2-{key_b[:16]}", worktree_container.m2_volume_for_spec(spec_b, key_b))
+
+    def test_min_free_gb_does_not_change_worktree_key(self):
+        spec_a = worktree_container.WorktreeContainerSpec(
+            zstack_root="/zstack",
+            premium_root="/premium",
+            docker_host="tcp://172.26.50.70:2375",
+            image="compile-image:unit",
+            min_free_gb=20,
+        )
+        spec_b = worktree_container.WorktreeContainerSpec(
+            zstack_root="/zstack",
+            premium_root="/premium",
+            docker_host="tcp://172.26.50.70:2375",
+            image="compile-image:unit",
+            min_free_gb=40,
+        )
+
+        self.assertEqual(
+            worktree_container.worktree_key_for_spec(spec_a),
+            worktree_container.worktree_key_for_spec(spec_b),
+        )
 
     def test_full_compile_uses_run_maven_profile_entrypoint(self):
         with tempfile.TemporaryDirectory() as td:
@@ -341,6 +445,74 @@ class WorktreeContainerTest(unittest.TestCase):
         self.assertIsNone(handle2)
         self.assertEqual(commands_after_first, len(runner.commands))
         self.assertIn("already bound to another worktree", "\n".join(logs.output))
+
+    def test_new_container_requires_enough_remote_docker_space(self):
+        runner = FakeRunner(free_kb=5 * 1024 * 1024)
+        spec = worktree_container.WorktreeContainerSpec(
+            zstack_root="/zstack",
+            premium_root="/premium",
+            docker_host="tcp://172.26.50.70:2375",
+            image="compile-image:unit",
+            min_free_gb=20,
+        )
+
+        with self.assertLogs(worktree_container.LOG.name, level="ERROR") as logs:
+            rc, created = worktree_container.ensure_container_exists(
+                runner,
+                spec,
+                "cbok-zsv-worktree-low-space",
+            )
+
+        self.assertEqual(1, rc)
+        self.assertFalse(created)
+        shell_scripts = self._shell_scripts(runner)
+        self.assertTrue(any("df -Pk /" in script for script in shell_scripts))
+        self.assertFalse(any("docker create" in script for script in shell_scripts))
+        self.assertIn("cbok-zsv-container-cleanup", "\n".join(logs.output))
+
+    def test_new_container_treats_no_space_during_precheck_as_insufficient(self):
+        runner = FakeRunner(df_error="write /var/lib/docker: no space left on device")
+        spec = worktree_container.WorktreeContainerSpec(
+            zstack_root="/zstack",
+            premium_root="/premium",
+            docker_host="tcp://172.26.50.70:2375",
+            image="compile-image:unit",
+            min_free_gb=20,
+        )
+
+        with self.assertLogs(worktree_container.LOG.name, level="ERROR") as logs:
+            rc, created = worktree_container.ensure_container_exists(
+                runner,
+                spec,
+                "cbok-zsv-worktree-no-space",
+            )
+
+        self.assertEqual(1, rc)
+        self.assertFalse(created)
+        self.assertFalse(any("docker create" in script for script in self._shell_scripts(runner)))
+        self.assertIn("cbok-zsv-container-cleanup", "\n".join(logs.output))
+
+    def test_existing_container_does_not_require_space_precheck(self):
+        runner = FakeRunner(free_kb=5 * 1024 * 1024)
+        runner.containers.add("cbok-zsv-worktree-existing")
+        spec = worktree_container.WorktreeContainerSpec(
+            zstack_root="/zstack",
+            premium_root="/premium",
+            docker_host="",
+            image="compile-image:unit",
+            min_free_gb=20,
+        )
+
+        rc, created = worktree_container.ensure_container_exists(
+            runner,
+            spec,
+            "cbok-zsv-worktree-existing",
+        )
+
+        self.assertEqual(0, rc)
+        self.assertFalse(created)
+        shell_scripts = self._shell_scripts(runner)
+        self.assertFalse(any("df -Pk /" in script for script in shell_scripts))
 
 
 if __name__ == "__main__":
