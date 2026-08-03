@@ -93,30 +93,28 @@ def main():
     # to CBoK home
     os.chdir(cbok_utils.assert_cbok_home())
 
-    parser = argparse.ArgumentParser(prog="cbok", description="CBoK CLI")
+    command_groups = cbok_utils.discover_command_groups(CATEGORIES, BaseCommand)
+    parser = argparse.ArgumentParser(
+        prog="cbok",
+        description="CBoK CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=cbok_utils.format_command_catalog(command_groups),
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     # override Django DEBUG configuration, cuz if we in
     # production (DEBUG=False), the cbok cli also can be debug
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
-    base_command_method_names = {k for k, v in BaseCommand.__dict__.items() if callable(v) and not k.startswith("_")}
 
-    for cat_name, cls in CATEGORIES.items():
+    for cat_name, obj, commands in command_groups:
         cat_parser = subparsers.add_parser(cat_name, help=f"{cat_name} commands")
         cat_subparsers = cat_parser.add_subparsers(dest="command", required=True)
-        obj = cls()
-        for attr_name in dir(obj):
-            if attr_name.startswith("_"):
-                continue
-            if attr_name in base_command_method_names:
-                continue
-            method = getattr(obj, attr_name)
-            if callable(method):
-                cmd_parser = cat_subparsers.add_parser(attr_name, help=method.__doc__)
-                if hasattr(method, "_args"):
-                    for arg_args, arg_kwargs in method._args:
-                        cmd_parser.add_argument(*arg_args, **arg_kwargs)
-                cmd_parser.set_defaults(func=method)
+        for attr_name, method in commands:
+            cmd_parser = cat_subparsers.add_parser(attr_name, help=cbok_utils.command_description(method))
+            if hasattr(method, "_args"):
+                for arg_args, arg_kwargs in method._args:
+                    cmd_parser.add_argument(*arg_args, **arg_kwargs)
+            cmd_parser.set_defaults(func=method)
 
     args = parser.parse_args()
 

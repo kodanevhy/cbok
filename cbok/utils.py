@@ -19,6 +19,54 @@ LOG = logging.getLogger(__name__)
 CONF = settings.CONF
 
 
+def command_description(method):
+    desc = getattr(method, "_description", None) or getattr(method, "__doc__", "") or ""
+    return " ".join(str(desc).split())
+
+
+def discover_command_groups(categories, base_command_cls):
+    base_command_method_names = {
+        name
+        for name, method in base_command_cls.__dict__.items()
+        if callable(method) and not name.startswith("_")
+    }
+    groups = []
+    for cat_name, cls in categories.items():
+        obj = cls()
+        commands = []
+        for attr_name in dir(obj):
+            if attr_name.startswith("_"):
+                continue
+            if attr_name in base_command_method_names:
+                continue
+            method = getattr(obj, attr_name)
+            if callable(method):
+                commands.append((attr_name, method))
+        groups.append((cat_name, obj, commands))
+    return groups
+
+
+def format_command_catalog(command_groups):
+    entries = [
+        (f"{cat_name} {cmd_name}", method)
+        for cat_name, _obj, commands in command_groups
+        for cmd_name, method in commands
+    ]
+    if not entries:
+        return ""
+
+    command_width = max(len(command) for command, _method in entries)
+    lines = ["commands:"]
+    for cat_name, _obj, commands in command_groups:
+        lines.append(f"  {cat_name}:")
+        for cmd_name, method in commands:
+            command = f"{cat_name} {cmd_name}"
+            lines.append(f"    {command:<{command_width}}  {command_description(method)}")
+    lines.append("")
+    lines.append("Use 'cbok <category> <command> --help' for command options.")
+    return "\n".join(lines)
+
+
 def applications():
     install_apps = []
     for app in settings.CBoK_APPS:
