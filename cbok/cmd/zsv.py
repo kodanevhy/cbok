@@ -21,11 +21,15 @@ from cbok.bbx.zsv.agent_replace import run_agent_replace_flow
 from cbok.bbx.zsv import UPGRADE_TYPES
 from cbok.bbx.zsv import ZSphereTracker
 from cbok.bbx.zsv.service import discover_ceph_primary_storage_nodes
+from cbok.bbx.zsv.service import discover_healthy_kvm_host_nodes
+from cbok.bbx.zsv.service import discover_imagestore_backup_storage_nodes
 from cbok.bbx.zsv.service import discover_management_nodes
 from cbok.bbx.zsv.service import discover_zbs_primary_storage_nodes
+from cbok.bbx.zsv.service import ZsvHostDiscoveryError
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
 from cbok.bbx.zsv.compile import run_compile_flow
 from cbok.bbx.zsv.groovy_test import run_groovy_test_flow
+from cbok.bbx.zsv.zstore_replace import run_zstore_replace_flow
 from cbok.cmd import args
 from cbok.cmd import base
 
@@ -496,3 +500,27 @@ class ZSphereCommands(base.BaseCommand):
             runner=self.p_runner,
             ensure_remote_scriptlet=None if dry_run else self.ensure_remote_scriptlet,
         )
+
+    @args.action_description("Build and replace zstore and zstcli on healthy KVM hosts and ImageStore backup storage nodes")
+    @args.args(
+        "--primary-node", metavar="<primary_node>", required=True,
+        help="Node used to discover healthy KVM hosts")
+    @args.args(
+        "--zstore-root", metavar="<dir>", required=True,
+        help="zstack-store checkout root for the current worktree")
+    def replace_zstore(self, primary_node=None, zstore_root=None):
+        """Build and replace zstore and zstcli on healthy KVM hosts and ImageStore backup storage nodes"""
+        if not primary_node or not zstore_root:
+            LOG.error("replace_zstore requires --primary-node and --zstore-root.")
+            return 1
+        try:
+            nodes = discover_healthy_kvm_host_nodes(primary_node, self.p_runner)
+        except ZsvHostDiscoveryError as exc:
+            LOG.error("%s", exc)
+            return 1
+        bs_nodes = discover_imagestore_backup_storage_nodes(primary_node, self.p_runner)
+        for node in bs_nodes:
+            if node not in nodes:
+                nodes.append(node)
+        LOG.info("zstore deploy targets: %s", ", ".join(nodes))
+        return run_zstore_replace_flow(zstore_root, nodes, self.p_runner)

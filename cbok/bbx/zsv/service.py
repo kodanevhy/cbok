@@ -98,6 +98,10 @@ def _is_node_address(value):
     return bool(re.fullmatch(r"[A-Za-z0-9_.:-]+", value))
 
 
+class ZsvHostDiscoveryError(RuntimeError):
+    pass
+
+
 def discover_management_nodes(address, runner):
     result = runner.run_command([
         "bash", "-lc",
@@ -111,6 +115,25 @@ def discover_management_nodes(address, runner):
         for line in (result.stdout or "").splitlines()
         if line.strip() and _is_node_address(line.strip())
     ])
+
+
+def discover_healthy_kvm_host_nodes(address, runner):
+    result = runner.run_command([
+        "bash", "-lc",
+        "source scriptlet/bootstrap.sh; "
+        f"zsv_discover_healthy_kvm_hosts_from_primary {shlex.quote(address)}",
+    ], cmd_purge_output=False)
+    if getattr(result, "returncode", 1) != 0:
+        details = (getattr(result, "stderr", "") or getattr(result, "stdout", "") or "").strip()
+        raise ZsvHostDiscoveryError(details or f"failed to discover healthy KVM hosts from {address}")
+    nodes = _dedupe([
+        line.strip()
+        for line in (result.stdout or "").splitlines()
+        if line.strip() and _is_node_address(line.strip())
+    ])
+    if not nodes:
+        raise ZsvHostDiscoveryError(f"no healthy KVM hosts found from {address}")
+    return nodes
 
 
 def discover_ceph_primary_storage_nodes(address, runner):
@@ -133,6 +156,21 @@ def discover_zbs_primary_storage_nodes(address, runner):
         "bash", "-lc",
         "source scriptlet/bootstrap.sh; "
         f"zsv_discover_zbs_primary_storage_nodes {shlex.quote(address)}",
+    ], cmd_purge_output=False)
+    if getattr(result, "returncode", 1) != 0:
+        return []
+    return _dedupe([
+        line.strip()
+        for line in (result.stdout or "").splitlines()
+        if line.strip() and _is_node_address(line.strip())
+    ])
+
+
+def discover_imagestore_backup_storage_nodes(address, runner):
+    result = runner.run_command([
+        "bash", "-lc",
+        "source scriptlet/bootstrap.sh; "
+        f"zsv_discover_imagestore_bs_nodes_from_primary {shlex.quote(address)}",
     ], cmd_purge_output=False)
     if getattr(result, "returncode", 1) != 0:
         return []
