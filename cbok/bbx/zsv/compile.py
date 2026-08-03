@@ -1182,24 +1182,24 @@ def run_compile_flow(
     if not premium_root:
         LOG.error("--premium-root is required for remote Docker compile.")
         return 1
-    remote_premium = os.path.realpath(premium_root)
-    if not remote_premium:
+    premium_real_root = os.path.realpath(premium_root)
+    if not premium_real_root:
         LOG.error("Remote Docker compile requires premium source for ./runMavenProfile premium.")
         return 1
-    if not os.path.isdir(remote_premium):
-        LOG.error("premium root is not a directory: %s", remote_premium)
+    if not os.path.isdir(premium_real_root):
+        LOG.error("premium root is not a directory: %s", premium_real_root)
         return 1
-    if not validate_same_branch(root, remote_premium):
+    if not validate_same_branch(root, premium_real_root):
         return 1
 
-    user_main, user_prem = auto_detect_modules(root, remote_premium)
-    web_classes_files = collect_changed_web_classes_files(root, remote_premium)
+    user_main, user_prem = auto_detect_modules(root, premium_real_root)
+    web_classes_files = collect_changed_web_classes_files(root, premium_real_root)
     current_selection: CompileDeploySelection | None = None
     state_store = None
     worktree_key = ""
     if not no_deploy:
         try:
-            worktree_key = compile_worktree_key(root, remote_premium, remote_docker)
+            worktree_key = compile_worktree_key(root, premium_real_root, remote_docker)
             state_store = compile_state_store or default_compile_deploy_state_store()
             previous_selection = state_store.load_selection(worktree_key)
             current_selection = current_compile_deploy_selection(
@@ -1207,13 +1207,13 @@ def run_compile_flow(
                 user_prem,
                 web_classes_files,
                 root,
-                remote_premium,
+                premium_real_root,
             )
             merged_selection, web_classes_files = merge_compile_deploy_selection(
                 current_selection,
                 previous_selection,
                 root,
-                remote_premium,
+                premium_real_root,
             )
             user_main = merged_selection.main_modules
             user_prem = merged_selection.premium_modules
@@ -1233,7 +1233,7 @@ def run_compile_flow(
     print_plan(root, head_line, full_hash, grouped, plan)
 
     if grouped["premium"]:
-        if not remote_premium:
+        if not premium_real_root:
             LOG.error("Premium modules requested but premium source is not a directory.")
             return 1
 
@@ -1242,7 +1242,7 @@ def run_compile_flow(
 
     rc = run_mvn_in_remote_docker(
         root,
-        remote_premium,
+        premium_real_root,
         plan,
         remote_docker,
         local_jar_copy_root,
@@ -1303,7 +1303,7 @@ def run_compile_flow(
             return rc
     if state_store and current_selection is not None:
         try:
-            state_store.save_selection(worktree_key, root, remote_premium, current_selection)
+            state_store.save_selection(worktree_key, root, premium_real_root, current_selection)
         except CompileDeployStateError as exc:
             LOG.error("%s", exc)
             return 1
