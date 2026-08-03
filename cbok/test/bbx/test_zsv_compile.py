@@ -591,6 +591,77 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual(str(main_xml), mapped["springConfigXml/core.xml"])
         self.assertEqual(str(premium_xml), mapped["springConfigXml/crypto.xml"])
 
+    def test_collect_explicit_web_classes_files_maps_spring_config(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            main_xml = root / "conf" / "springConfigXml" / "VolumeManager.xml"
+            premium_xml = premium / "conf" / "springConfigXml" / "crypto.xml"
+            main_xml.parent.mkdir(parents=True)
+            premium_xml.parent.mkdir(parents=True)
+            main_xml.write_text("<beans/>", encoding="utf-8")
+            premium_xml.write_text("<beans/>", encoding="utf-8")
+
+            files = compile.collect_explicit_web_classes_files(
+                str(root),
+                str(premium),
+                [
+                    "zstack:conf/springConfigXml/VolumeManager.xml",
+                    "premium:conf/springConfigXml/crypto.xml",
+                ],
+            )
+
+        mapped = {item.relative_path: item.source for item in files}
+        self.assertEqual(str(main_xml.resolve()), mapped["springConfigXml/VolumeManager.xml"])
+        self.assertEqual(str(premium_xml.resolve()), mapped["springConfigXml/crypto.xml"])
+
+    def test_explicit_web_class_overrides_changed_file_with_same_target(self):
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
+        compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
+        compile.git_summary = lambda _root: ("abc123 test", "abc123")
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            zstack_xml = root / "conf" / "springConfigXml" / "HostAllocatorManager.xml"
+            premium_xml = premium / "conf" / "springConfigXml" / "HostAllocatorManager.xml"
+            zstack_xml.parent.mkdir(parents=True)
+            premium_xml.parent.mkdir(parents=True)
+            zstack_xml.write_text("<beans>zstack</beans>", encoding="utf-8")
+            premium_xml.write_text("<beans>premium</beans>", encoding="utf-8")
+            (root / "pom.xml").write_text("<project/>", encoding="utf-8")
+            (root / "identity").mkdir()
+            (root / "identity" / "pom.xml").write_text("<project/>", encoding="utf-8")
+            jar_copy_root = Path(td) / "jar-copy"
+            (jar_copy_root / "zstack").mkdir(parents=True)
+            (jar_copy_root / "premium").mkdir(parents=True)
+            compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
+            compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: [
+                compile.WebClassesFile(
+                    str(zstack_xml),
+                    "springConfigXml/HostAllocatorManager.xml",
+                )
+            ]
+
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = compile.run_compile_flow(
+                    address=None,
+                    remote_lib=compile.DEFAULT_REMOTE_LIB,
+                    no_deploy=True,
+                    zstack_root=str(root),
+                    premium_root=str(premium),
+                    extra_web_classes=[
+                        "premium:conf/springConfigXml/HostAllocatorManager.xml"
+                    ],
+                    runner=FakeRunner(),
+                )
+
+        self.assertEqual(0, rc)
+        output = stdout.getvalue()
+        self.assertIn(str(premium_xml.resolve()), output)
+        self.assertNotIn(str(zstack_xml.resolve()), output)
+
     def test_deploy_uses_unique_remote_staging_per_compile(self):
         compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
