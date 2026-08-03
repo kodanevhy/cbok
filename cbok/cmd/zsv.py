@@ -350,12 +350,17 @@ class ZSphereCommands(base.BaseCommand):
     @args.args(
         "--no-deploy", action="store_true",
         help="Build and skip remote backup/copy")
+    @args.args(
+        "--web-class", action="append", default=[],
+        help="Extra conf/springConfigXml file to sync to WEB-INF/classes. "
+             "Use zstack:<path> or premium:<path> to disambiguate.")
     def compile(
             self,
             address=None,
             no_deploy=False,
             zstack_root=None,
             premium_root=None,
+            web_class=None,
     ):
         """
         Build changed modules in a remote Docker worktree container.
@@ -376,6 +381,7 @@ class ZSphereCommands(base.BaseCommand):
             no_deploy=no_deploy,
             zstack_root=zstack_root,
             premium_root=premium_root,
+            extra_web_classes=web_class or [],
             runner=self.p_runner,
         )
 

@@ -633,6 +633,57 @@ def collect_changed_web_classes_files(zstack_root: str, premium_root: str | None
     return collect_web_classes_files(zstack_root, main_paths, premium_paths, premium_root)
 
 
+def collect_explicit_web_classes_files(
+    zstack_root: str,
+    premium_root: str | None,
+    paths: list[str] | None,
+) -> list[WebClassesFile]:
+    if not paths:
+        return []
+
+    zstack_base = Path(zstack_root).resolve()
+    premium_base = Path(premium_root).resolve() if premium_root else None
+    out: dict[str, WebClassesFile] = {}
+
+    for raw_path in paths:
+        value = str(raw_path or "").strip()
+        if not value:
+            continue
+
+        repo_base = zstack_base
+        if value.startswith("zstack:"):
+            value = value[len("zstack:"):]
+            repo_base = zstack_base
+        elif value.startswith("premium:"):
+            value = value[len("premium:"):]
+            if not premium_base:
+                raise CompileDeployStateError("explicit premium web class requires premium root")
+            repo_base = premium_base
+
+        source = Path(value)
+        if not source.is_absolute():
+            source = repo_base / value
+        source = source.resolve()
+
+        zstack_relative = _relative_to_root(source, zstack_base)
+        premium_relative = _relative_to_root(source, premium_base) if premium_base else None
+        source_relative = premium_relative or zstack_relative
+        if source_relative is None:
+            raise CompileDeployStateError("explicit web class is outside zstack/premium roots: %s" % raw_path)
+        if not source_relative.startswith(SPRING_CONFIG_PREFIX):
+            raise CompileDeployStateError("explicit web class must be under conf/springConfigXml/: %s" % raw_path)
+        if not source.is_file():
+            raise CompileDeployStateError("explicit web class source is missing: %s" % source)
+
+        target = source_relative[len(SPRING_CONFIG_PREFIX):].strip("/")
+        if not target:
+            raise CompileDeployStateError("explicit web class target is empty: %s" % raw_path)
+        relative_path = f"springConfigXml/{target}"
+        out[relative_path] = WebClassesFile(str(source), relative_path)
+
+    return list(out.values())
+
+
 _JAVA_SCAN_SKIP_DIRS = frozenset(
     (".git", ".idea", ".gradle", "target", "node_modules", "__pycache__")
 )
@@ -1220,6 +1271,7 @@ def run_compile_flow(
     no_deploy: bool,
     zstack_root: str | None = None,
     premium_root: str | None = None,
+    extra_web_classes: list[str] | None = None,
     runner,
     compile_state_store=None,
 ) -> int:
@@ -1254,7 +1306,14 @@ def run_compile_flow(
         return 1
 
     user_main, user_prem = auto_detect_modules(root, premium_real_root)
-    web_classes_files = collect_changed_web_classes_files(root, premium_real_root)
+    try:
+        web_classes_files = _dedupe_web_classes_files(
+            collect_explicit_web_classes_files(root, premium_real_root, extra_web_classes) +
+            collect_changed_web_classes_files(root, premium_real_root)
+        )
+    except CompileDeployStateError as exc:
+        LOG.error("%s", exc)
+        return 1
     current_selection: CompileDeploySelection | None = None
     state_store = None
     worktree_key = ""
