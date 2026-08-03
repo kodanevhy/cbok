@@ -366,10 +366,17 @@ def sync_sources_to_container(runner, spec: WorktreeContainerSpec, container_nam
 	rsync -a --delete {RSYNC_EXCLUDES} {PREMIUM_DIR_EXCLUDES} {upload_root}/zstack/ {shlex.quote(work_zstack)}/
 	{premium_sync}
 	"""
-    return docker_shell(
+    rc = docker_shell(
         runner,
         spec.docker_host,
         ["exec", container_name, "bash", "-lc", sync_script],
+    )
+    if rc != 0:
+        return rc
+    return docker_shell(
+        runner,
+        spec.docker_host,
+        ["exec", container_name, "bash", "-lc", f"rm -rf {shlex.quote(upload_root)}"],
     )
 
 

@@ -9,14 +9,17 @@ from cbok.bbx.zsv import worktree_container
 
 
 class FakeRunner:
-    def __init__(self):
+    def __init__(self, fail_on=None):
         self.commands = []
         self.containers = set()
+        self.fail_on = fail_on
 
     def run_command(self, cmd, **kwargs):
         self.commands.append((cmd, kwargs))
         if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]:
             script = cmd[-1]
+            if self.fail_on and self.fail_on in script:
+                return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="failed")
             if "docker inspect" in script:
                 name = shlex.split(script)[-1]
                 if name in self.containers:
@@ -260,6 +263,37 @@ class WorktreeContainerTest(unittest.TestCase):
         self.assertIn("rsync -a --delete", sync_script)
         self.assertIn("/work/zstack/premium/", sync_script)
         self.assertNotIn("ln -sfn ../premium", sync_script)
+        cleanup_scripts = [
+            script for script in shell_scripts
+            if "bash -lc 'rm -rf /tmp/cbok-zsv-src'" in script
+        ]
+        self.assertEqual(1, len(cleanup_scripts))
+        self.assertGreater(shell_scripts.index(cleanup_scripts[0]), shell_scripts.index(sync_script))
+
+    def test_source_sync_keeps_upload_staging_when_rsync_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            zstack = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            self._write_repo(zstack)
+            self._write_premium(premium)
+            runner = FakeRunner(fail_on="rsync -a --delete")
+            spec = worktree_container.WorktreeContainerSpec(
+                zstack_root=str(zstack),
+                premium_root=str(premium),
+                docker_host="",
+                image="compile-image:unit",
+            )
+
+            rc = worktree_container.sync_sources_to_container(
+                runner,
+                spec,
+                "cbok-zsv-worktree-test",
+            )
+
+        self.assertEqual(1, rc)
+        shell_scripts = self._shell_scripts(runner)
+        self.assertTrue(any("rsync -a --delete" in script for script in shell_scripts))
+        self.assertFalse(any("bash -lc 'rm -rf /tmp/cbok-zsv-src'" in script for script in shell_scripts))
 
     def test_rejects_reusing_container_name_for_different_worktree(self):
         with tempfile.TemporaryDirectory() as td:
