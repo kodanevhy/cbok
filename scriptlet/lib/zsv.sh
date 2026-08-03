@@ -201,6 +201,41 @@ fi
 "
 }
 
+zsv_discover_healthy_kvm_hosts_from_primary() {
+  local address="${1:?address required}"
+
+  remote_bash "$address" "set -euo pipefail
+rows=''
+if command -v mysql >/dev/null 2>&1; then
+  sql=\"SELECT IFNULL(managementIp, '') AS managementIp, IFNULL(state, '') AS state, IFNULL(status, '') AS status, IFNULL(name, '') AS name
+FROM zstack.HostVO
+WHERE hypervisorType = 'KVM'
+  AND managementIp NOT IN ('172.24.192.148', '172.24.254.225')
+ORDER BY managementIp\"
+  rows=\$(mysql -uroot -pzstack.mysql.password -N -B -e \"\$sql\" \\
+    2>/dev/null || true)
+  if [[ -z \"\$rows\" ]]; then
+    rows=\$(mysql -uzstack -pzstack.password -N -B -e \"\$sql\" \\
+    2>/dev/null || true)
+  fi
+fi
+
+if [[ -z \"\$rows\" ]]; then
+  echo \"no KVM hosts found from primary node ${address}\" >&2
+  exit 1
+fi
+
+bad=\$(printf '%s\n' \"\$rows\" | awk -F '\t' 'NF && (\$1 == \"\" || \$2 != \"Enabled\" || \$3 != \"Connected\") { printf \"  name=%s ip=%s state=%s status=%s\\n\", \$4, \$1, \$2, \$3 }')
+if [[ -n \"\$bad\" ]]; then
+  echo \"abnormal KVM hosts found from primary node ${address}:\" >&2
+  printf '%s\n' \"\$bad\" >&2
+  exit 1
+fi
+
+printf '%s\n' \"\$rows\" | awk -F '\t' 'NF && \$1 != \"\" { print \$1 }' | awk 'NF && !seen[\$0]++'
+"
+}
+
 zsv_discover_ceph_primary_storage_nodes() {
   local address="${1:?address required}"
 
@@ -245,6 +280,33 @@ if [[ -n \"\$infos\" ]]; then
     | grep -oE '\"addr\"[[:space:]]*:[[:space:]]*\"[^\"]+\"' \\
     | sed -E 's/.*\"addr\"[[:space:]]*:[[:space:]]*\"([^\"]+)\".*/\1/' \\
     | awk 'NF && !seen[\$0]++'
+  exit 0
+fi
+
+"
+}
+
+zsv_discover_imagestore_bs_nodes_from_primary() {
+  local address="${1:?address required}"
+
+  remote_bash "$address" "set -euo pipefail
+rows=''
+if command -v mysql >/dev/null 2>&1; then
+  sql=\"SELECT isbs.hostname FROM zstack.ImageStoreBackupStorageVO isbs
+JOIN zstack.BackupStorageVO bs ON isbs.uuid = bs.uuid
+WHERE bs.state = 'Enabled' AND bs.status = 'Connected'
+  AND isbs.hostname IS NOT NULL AND isbs.hostname <> ''
+ORDER BY isbs.hostname\"
+  rows=\$(mysql -uroot -pzstack.mysql.password -N -B -e \"\$sql\" \\
+    2>/dev/null || true)
+  if [[ -z \"\$rows\" ]]; then
+    rows=\$(mysql -uzstack -pzstack.password -N -B -e \"\$sql\" \\
+    2>/dev/null || true)
+  fi
+fi
+
+if [[ -n \"\$rows\" ]]; then
+  printf '%s\n' \"\$rows\" | awk 'NF && !seen[\$0]++'
   exit 0
 fi
 

@@ -1,8 +1,10 @@
 import configparser
+import io
 import os
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -510,16 +512,22 @@ class ZsvCompileTest(unittest.TestCase):
             compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
             runner = FakeRunner()
 
-            rc = compile.run_compile_flow(
-                address="172.26.213.50",
-                remote_lib=compile.DEFAULT_REMOTE_LIB,
-                no_deploy=False,
-                zstack_root=str(root),
-                premium_root=str(premium),
-                runner=runner,
-            )
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                rc = compile.run_compile_flow(
+                    address="172.26.213.50",
+                    remote_lib=compile.DEFAULT_REMOTE_LIB,
+                    no_deploy=False,
+                    zstack_root=str(root),
+                    premium_root=str(premium),
+                    runner=runner,
+                )
 
         self.assertEqual(0, rc)
+        self.assertIn(
+            "WARNING: compile finished but MN has not been restarted. Run: cbok zsv restart_mn --address 172.26.213.50",
+            stdout.getvalue(),
+        )
         shell_scripts = [
             cmd[-1] for cmd, _kwargs in runner.calls
             if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]

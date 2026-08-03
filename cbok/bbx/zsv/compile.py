@@ -1307,4 +1307,5 @@ def run_compile_flow(
         except CompileDeployStateError as exc:
             LOG.error("%s", exc)
             return 1
+    print(f"\nWARNING: compile finished but MN has not been restarted. Run: cbok zsv restart_mn --address {address}")
     return 0
