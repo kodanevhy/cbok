@@ -42,6 +42,9 @@ import org.zstack.testlib.Test
 class ContainerGroovyTest extends Test {
     @Override
     void setup() {
+        if (Boolean.getBoolean("cbokReuseDeployDb")) {
+            DEPLOY_DB = false
+        }
         API_PORTAL = false
         INCLUDE_CORE_SERVICES = false
         spring {
@@ -74,6 +77,9 @@ import org.zstack.testlib.premium.TestPremium
 class ContainerPremiumGroovyTest extends TestPremium {
     @Override
     void setup() {
+        if (Boolean.getBoolean("cbokReuseDeployDb")) {
+            DEPLOY_DB = false
+        }
         useSpring(makePremiumSpring())
     }
 
@@ -578,7 +584,7 @@ setup_mysql() {
 """
 
 
-def _surefire_command(target: TestTarget) -> str:
+def _surefire_command(target: TestTarget, reuse_deploy_db: bool = False) -> str:
     args = [
         _mvn_base(),
         "-DDB.url=jdbc:mysql://localhost:3306/",
@@ -589,6 +595,8 @@ def _surefire_command(target: TestTarget) -> str:
         "-DtrimStackTrace=false",
         f"-Dtest={target.surefire_test}",
     ]
+    if reuse_deploy_db:
+        args.append("-DcbokReuseDeployDb=true")
     if target.needs_case_file:
         args.extend([
             "-DsubCaseCollectionStrategy=Designated",
@@ -606,7 +614,43 @@ def _test_compile_command() -> str:
     ])
 
 
-def build_container_test_script(target: TestTarget, work_root: str = DOCKER_WORK_ROOT) -> str:
+def _reuse_deploy_db_patch_script(target: TestTarget, reuse_deploy_db: bool) -> str:
+    if not reuse_deploy_db:
+        return ""
+    return f"""\
+python - <<'PY'
+from __future__ import print_function
+import io
+import os
+
+suite = {target.surefire_test!r}
+marker = 'if (Boolean.getBoolean("cbokReuseDeployDb"))'
+target_name = suite + ".groovy"
+for root, _dirs, files in os.walk("src/test/groovy"):
+    if target_name not in files:
+        continue
+    path = os.path.join(root, target_name)
+    with io.open(path, encoding="utf-8") as fp:
+        text = fp.read()
+    if marker in text:
+        break
+    needle = "void setup() {{"
+    if needle not in text:
+        break
+    replacement = needle + '\\n        if (Boolean.getBoolean("cbokReuseDeployDb")) {{\\n            DEPLOY_DB = false\\n        }}'
+    with io.open(path, "w", encoding="utf-8") as fp:
+        fp.write(text.replace(needle, replacement, 1))
+    print("patched reuse deploy DB for", path)
+    break
+PY
+"""
+
+
+def build_container_test_script(
+        target: TestTarget,
+        work_root: str = DOCKER_WORK_ROOT,
+        reuse_deploy_db: bool = False,
+) -> str:
     test_dir = f"{work_root}/zstack/test"
     if target.premium:
         test_dir = f"{work_root}/zstack/premium/test-premium"
@@ -662,14 +706,36 @@ trap dump_failure_context EXIT
 {_mysql_script()}
 start_mysql
 cd {test_dir}
+{_reuse_deploy_db_patch_script(target, reuse_deploy_db)}
 {_test_compile_command()}
 {test_resource_copy}
 {_properties_patch_script(work_root)}
 patch_zstack_properties
 {_ukey_patch_script(work_root)}
 disable_ukey_util
-{_surefire_command(target)}
+{_surefire_command(target, reuse_deploy_db)}
 """
+
+
+def _container_db_is_ready(runner, docker_host: str, container_name: str) -> bool:
+    script = r"""mysql -uroot -N -e "
+SELECT COUNT(*) FROM zstack.schema_version WHERE success = 1;
+SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='zstack' AND table_name='ResourceVO';
+SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='zstack_rest' AND table_name='schema_version';
+" 2>/dev/null"""
+    result = _docker_shell_capture(
+        runner,
+        docker_host,
+        ["exec", container_name, "bash", "-lc", script],
+    )
+    if _returncode(result) != 0:
+        return False
+    values = [
+        int(line.strip())
+        for line in (result.stdout or "").splitlines()
+        if line.strip().isdigit()
+    ]
+    return len(values) == 3 and values[0] > 100 and values[1] == 1 and values[2] == 1
 
 
 def _cleanup_worktrees(
@@ -1150,6 +1216,10 @@ def run_groovy_test_flow(
         if rc != 0:
             return rc
 
+    reuse_deploy_db = _container_db_is_ready(runner, docker_host, handle.container_name)
+    if reuse_deploy_db:
+        LOG.info("Reusing prepared Groovy test database in %s.", handle.container_name)
+
     if target.needs_case_file:
         rc = _docker_cp_file_to_container(
             runner,
@@ -1166,5 +1236,5 @@ def run_groovy_test_flow(
         docker_host,
         handle.container_name,
         root / "remote-run.sh",
-        build_container_test_script(target, handle.workdir),
+        build_container_test_script(target, handle.workdir, reuse_deploy_db),
     )
