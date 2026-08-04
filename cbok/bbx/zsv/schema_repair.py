@@ -231,7 +231,89 @@ def _statement_body(statement: str) -> str:
     )
 
 
-def _is_duplicate_schema_replay_error(output: str) -> bool:
+def _sql_name(name: str) -> str:
+    return name.strip().strip("`").lower()
+
+
+def _table_name_from_ref(table_ref: str) -> str:
+    return table_ref.split(".")[-1].strip().strip("`")
+
+
+def _statement_table_aliases(statement: str) -> dict[str, str]:
+    body = _statement_body(statement)
+    aliases: dict[str, str] = {}
+    reserved = {"as", "set", "join", "where", "on", "inner", "left", "right", "cross", "full"}
+    table_ref = r"(?:`[^`]+`\.)?`[^`]+`|[A-Za-z_][A-Za-z0-9_]*"
+    for match in re.finditer(
+        rf"\b(?:UPDATE|JOIN|FROM)\s+(?P<table>{table_ref})(?:\s+(?:AS\s+)?(?P<alias>`?[A-Za-z_][A-Za-z0-9_]*`?))?",
+        body,
+        re.I,
+    ):
+        table = _table_name_from_ref(match.group("table"))
+        aliases[_sql_name(table)] = table
+        alias = match.group("alias")
+        if alias and _sql_name(alias) not in reserved:
+            aliases[_sql_name(alias)] = table
+    return aliases
+
+
+def _statement_drops_column(statement: str, table: str, column: str) -> bool:
+    body = _statement_body(statement)
+    call = re.match(
+        r"CALL\s+DROP_COLUMN\s*\(\s*['\"](?P<table>[^'\"]+)['\"]\s*,\s*['\"](?P<column>[^'\"]+)['\"]",
+        body,
+        re.I | re.S,
+    )
+    if call:
+        return _sql_name(call.group("table")) == _sql_name(table) and _sql_name(call.group("column")) == _sql_name(column)
+
+    table_ref = r"(?:`[^`]+`\.)?`[^`]+`|[A-Za-z_][A-Za-z0-9_]*"
+    alter = re.match(
+        rf"ALTER\s+TABLE\s+(?P<table>{table_ref})\s+DROP\s+(?:COLUMN\s+)?`?(?P<column>[A-Za-z_][A-Za-z0-9_]*)`?",
+        body,
+        re.I | re.S,
+    )
+    return bool(
+        alter
+        and _sql_name(_table_name_from_ref(alter.group("table"))) == _sql_name(table)
+        and _sql_name(alter.group("column")) == _sql_name(column)
+    )
+
+
+def _is_unknown_later_dropped_column_error(
+    output: str,
+    statement: str,
+    remaining_statements: list[str],
+) -> bool:
+    missing = re.search(r"\bERROR\s+1054\b.*\bUnknown column\s+'(?P<name>[^']+)'", output or "", re.I | re.S)
+    if not missing:
+        return False
+
+    parts = [_sql_name(part) for part in missing.group("name").split(".") if part]
+    if not parts:
+        return False
+    column = parts[-1]
+    qualifier = parts[-2] if len(parts) > 1 else ""
+    aliases = _statement_table_aliases(statement)
+    if qualifier:
+        tables = [aliases[qualifier]] if qualifier in aliases else [qualifier]
+    else:
+        tables = sorted(set(aliases.values()))
+        if len(tables) != 1:
+            return False
+
+    return any(
+        _statement_drops_column(candidate, table, column)
+        for candidate in remaining_statements
+        for table in tables
+    )
+
+
+def _is_schema_replay_already_applied_error(
+    output: str,
+    statement: str,
+    remaining_statements: list[str],
+) -> bool:
     patterns = (
         r"\bERROR\s+1050\b",  # table already exists
         r"\bERROR\s+1060\b",  # duplicate column
@@ -239,14 +321,17 @@ def _is_duplicate_schema_replay_error(output: str) -> bool:
         r"\bERROR\s+1022\b.*\bduplicate key\b",
         r"\bERROR\s+1005\b.*\berrno:\s*121\b",
     )
-    return any(re.search(pattern, output or "", re.I | re.S) for pattern in patterns)
+    return any(re.search(pattern, output or "", re.I | re.S) for pattern in patterns) or (
+        _is_unknown_later_dropped_column_error(output, statement, remaining_statements)
+    )
 
 
 def _apply_schema_sql_statements(address: str, source_sql_path: str, runner) -> int:
     source = Path(source_sql_path)
+    statements = _split_sql_statements(source.read_text(encoding="utf-8"))
     skipped = 0
     with tempfile.TemporaryDirectory() as td:
-        for index, statement in enumerate(_split_sql_statements(source.read_text(encoding="utf-8")), 1):
+        for index, statement in enumerate(statements, 1):
             if not _statement_body(statement).strip():
                 continue
 
@@ -257,17 +342,20 @@ def _apply_schema_sql_statements(address: str, source_sql_path: str, runner) -> 
             )
             result = _apply_schema_sql_file(address, str(statement_path), runner)
             rc = getattr(result, "returncode", 1) or 0
-            if rc != 0 and _is_duplicate_schema_replay_error(
-                "\n".join((getattr(result, "stdout", "") or "", getattr(result, "stderr", "") or ""))
+            output = "\n".join((getattr(result, "stdout", "") or "", getattr(result, "stderr", "") or ""))
+            if rc != 0 and _is_schema_replay_already_applied_error(
+                output,
+                statement,
+                statements[index:],
             ):
                 skipped += 1
-                LOG.warning("Skipped duplicate ZSV schema replay error at statement %s.", index)
+                LOG.warning("Skipped already-applied ZSV schema replay error at statement %s.", index)
                 continue
             if rc != 0:
                 return rc
 
     if skipped:
-        LOG.warning("Skipped %d duplicate ZSV schema replay error(s).", skipped)
+        LOG.warning("Skipped %d already-applied ZSV schema replay error(s).", skipped)
     return 0
 
 

@@ -884,7 +884,7 @@ class SchemaRepairTest(unittest.TestCase):
             flyway_calls,
         )
 
-    def test_schema_replay_executes_each_statement_and_skips_duplicate_errors(self):
+    def test_schema_replay_executes_each_statement_and_skips_already_applied_errors(self):
         original_apply = schema_repair._apply_schema_sql_file
 
         applied_statements = []
@@ -923,6 +923,13 @@ class SchemaRepairTest(unittest.TestCase):
                     stdout="ERROR 1060 (42S21) at line 1: Duplicate column name 'encrypted'",
                     stderr="",
                 )
+            if "UPDATE `zstack`.`VpcUserVpnGatewayVO`" in statement:
+                return subprocess.CompletedProcess(
+                    args=[],
+                    returncode=1,
+                    stdout="ERROR 1054 (42S22) at line 1: Unknown column 't.accountName' in 'on clause'",
+                    stderr="",
+                )
             return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
 
         schema_repair._apply_schema_sql_file = fake_apply
@@ -941,6 +948,10 @@ class SchemaRepairTest(unittest.TestCase):
                     "  ADD UNIQUE KEY `ukVpcVpnConnectionVO` (`connectionId`) USING BTREE;\n"
                     "ALTER TABLE `zstack`.`VolumeEO` ADD COLUMN `encrypted` tinyint(1) NOT NULL DEFAULT 0;\n"
                     "ALTER TABLE `zstack`.`VolumeBackupVO` ADD COLUMN `encrypted` tinyint(1) NOT NULL DEFAULT 0;\n"
+                    "UPDATE `zstack`.`VpcUserVpnGatewayVO` t\n"
+                    "    JOIN `zstack`.`AccountVO` a ON t.`accountName` = a.`name`\n"
+                    "    SET t.`accountUuid` = a.`uuid`;\n"
+                    "CALL DROP_COLUMN('VpcUserVpnGatewayVO', 'accountName');\n"
                     "UPDATE `zstack`.`VolumeBackupVO` SET `encrypted` = 1;\n",
                     encoding="utf-8",
                 )
@@ -963,6 +974,8 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertIn("ADD UNIQUE KEY `ukVpcVpnConnectionVO`", applied)
         self.assertIn("ALTER TABLE `zstack`.`VolumeEO` ADD COLUMN", applied)
         self.assertIn("ALTER TABLE `zstack`.`VolumeBackupVO` ADD COLUMN", applied)
+        self.assertIn("UPDATE `zstack`.`VpcUserVpnGatewayVO`", applied)
+        self.assertIn("CALL DROP_COLUMN('VpcUserVpnGatewayVO', 'accountName')", applied)
 
     def test_schema_replay_stops_at_failed_statement(self):
         original_apply = schema_repair._apply_schema_sql_file
@@ -998,6 +1011,59 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertEqual(2, len(applied_statements))
         self.assertIn("SELECT 1", applied_statements[0])
         self.assertIn("SELECT 2", applied_statements[1])
+
+    def test_schema_replay_does_not_skip_unexpected_unknown_column(self):
+        original_apply = schema_repair._apply_schema_sql_file
+        schema_repair._apply_schema_sql_file = lambda address, local_sql_path, runner: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="ERROR 1054 (42S22) at line 1: Unknown column 'unexpectedField' in 'field list'",
+            stderr="",
+        )
+
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                source = Path(td, "V5.1.0__schema.sql")
+                source.write_text("SELECT `unexpectedField` FROM `zstack`.`T`;\n", encoding="utf-8")
+
+                rc = schema_repair._apply_schema_sql_statements(
+                    address="172.26.213.50",
+                    source_sql_path=str(source),
+                    runner=FakeRunner(),
+                )
+        finally:
+            schema_repair._apply_schema_sql_file = original_apply
+
+        self.assertEqual(1, rc)
+
+    def test_schema_replay_does_not_skip_unknown_column_without_later_drop(self):
+        original_apply = schema_repair._apply_schema_sql_file
+        schema_repair._apply_schema_sql_file = lambda address, local_sql_path, runner: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="ERROR 1054 (42S22) at line 1: Unknown column 't.accountName' in 'on clause'",
+            stderr="",
+        )
+
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                source = Path(td, "V5.1.0__schema.sql")
+                source.write_text(
+                    "UPDATE `zstack`.`VpcUserVpnGatewayVO` t\n"
+                    "    JOIN `zstack`.`AccountVO` a ON t.`accountName` = a.`name`\n"
+                    "    SET t.`accountUuid` = a.`uuid`;\n",
+                    encoding="utf-8",
+                )
+
+                rc = schema_repair._apply_schema_sql_statements(
+                    address="172.26.213.50",
+                    source_sql_path=str(source),
+                    runner=FakeRunner(),
+                )
+        finally:
+            schema_repair._apply_schema_sql_file = original_apply
+
+        self.assertEqual(1, rc)
 
     def test_file_schema_repair_stops_before_flyway_repair_when_full_sql_apply_fails(self):
         repair_dirs = []
