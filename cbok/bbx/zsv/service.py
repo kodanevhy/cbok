@@ -14,6 +14,7 @@ import requests
 
 from django.utils import timezone
 
+from cbok.bbx.models import ZSphereUpgradeState
 from cbok import utils as cbok_utils
 from cbok.bbx.zsv import schema_repair
 
@@ -211,8 +212,6 @@ class ZSphereTracker:
         return normalized
 
     def get_state(self):
-        from cbok.bbx.models import ZSphereUpgradeState
-
         state, _ = ZSphereUpgradeState.objects.get_or_create(
             name=self.name,
             defaults={

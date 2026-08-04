@@ -9,6 +9,12 @@ import subprocess
 from dataclasses import asdict
 from dataclasses import dataclass
 
+from django.apps import apps
+from django.utils import timezone
+
+from cbok.bbx.models import ZsvWorktreeContainerPullRequest
+from cbok.bbx.models import ZsvWorktreeContainerState
+
 LOG = logging.getLogger(__name__)
 
 DEFAULT_WORKDIR = "/work"
@@ -105,8 +111,6 @@ class WorktreeContainerHandle:
 
 class DjangoWorktreeContainerStore:
     def get_or_create(self, defaults: WorktreeContainerRecord):
-        from cbok.bbx.models import ZsvWorktreeContainerState
-
         pr_refs = tuple(defaults.pr_refs or ())
         values = asdict(defaults)
         key = values.pop("worktree_key")
@@ -141,8 +145,6 @@ class DjangoWorktreeContainerStore:
         record.save(update_fields=update_fields)
 
     def save_pull_requests(self, worktree_key: str, pr_refs: tuple[WorktreePullRequest, ...]) -> None:
-        from cbok.bbx.models import ZsvWorktreeContainerPullRequest
-
         ZsvWorktreeContainerPullRequest.objects.filter(worktree_key=worktree_key).delete()
         ZsvWorktreeContainerPullRequest.objects.bulk_create([
             ZsvWorktreeContainerPullRequest(
@@ -154,19 +156,12 @@ class DjangoWorktreeContainerStore:
         ])
 
     def find_by_container_name(self, container_name: str):
-        from cbok.bbx.models import ZsvWorktreeContainerState
-
         return ZsvWorktreeContainerState.objects.filter(
             container_name=container_name,
         ).first()
 
 
 def default_state_store():
-    try:
-        from django.apps import apps
-    except Exception as exc:
-        raise RuntimeError("Django app registry is required for zsv worktree container state") from exc
-
     if not apps.ready:
         raise RuntimeError("Django app registry is not ready for zsv worktree container state")
     return DjangoWorktreeContainerStore()
@@ -262,7 +257,6 @@ def parse_worktree_pr_refs(raw: str | None) -> tuple[WorktreePullRequest, ...]:
 
 def _now() -> datetime.datetime:
     try:
-        from django.utils import timezone
         return timezone.now()
     except Exception:
         return datetime.datetime.now(datetime.timezone.utc)

@@ -1,11 +1,13 @@
 import os
 import sys
 
+import django
+
 
 def _resolve_and_reexec_venv():
     """
     If we're not already in the project venv, re-exec into it. Must run before
-    any cbok imports (e.g. utils->requests), so only uses stdlib os/sys.
+    any cbok imports (e.g. utils->requests).
     """
     def _venv_dir():
         if os.environ.get("CBOK_VENV"):
@@ -54,10 +56,11 @@ def _resolve_and_reexec_venv():
 def main():
     _resolve_and_reexec_venv()
 
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "cbok.settings")
+    django.setup()
+
     import argparse
     import logging
-
-    import django
 
     from cbok import __version__
     from cbok.cmd import bbx
@@ -83,11 +86,6 @@ def main():
 
         for handler in root.handlers:
             handler.setLevel(logging.DEBUG if debug else logging.INFO)
-
-    # To make logging sense, the logger only effective
-    # after Django setup
-    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "cbok.settings")
-    django.setup()
 
     # NOTE: means all we used file path in shell scripts are relative
     # to CBoK home
