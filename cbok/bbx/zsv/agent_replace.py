@@ -12,6 +12,12 @@ import tarfile
 import tempfile
 from pathlib import Path
 
+from django.apps import apps
+from django.utils import timezone
+
+from cbok import settings
+from cbok.bbx.models import ZsvAgentReplaceState
+
 
 LOG = logging.getLogger(__name__)
 
@@ -54,8 +60,6 @@ class AgentReplaceError(Exception):
 
 
 def default_utility_root() -> str:
-    from cbok import settings
-
     return os.path.realpath(
         os.path.join(
             settings.Workspace,
@@ -255,16 +259,10 @@ class InMemoryAgentReplaceStateStore:
 
 class DjangoAgentReplaceStateStore:
     def load_paths(self, worktree_key: str) -> list[str]:
-        from cbok.bbx.models import ZsvAgentReplaceState
-
         obj = ZsvAgentReplaceState.objects.filter(worktree_key=worktree_key).first()
         return _decode_paths(obj.last_deployed_paths) if obj else []
 
     def save_paths(self, worktree_key: str, utility_root: str, paths: list[str]) -> None:
-        from django.utils import timezone
-
-        from cbok.bbx.models import ZsvAgentReplaceState
-
         obj, _created = ZsvAgentReplaceState.objects.get_or_create(
             worktree_key=worktree_key,
             defaults={
@@ -278,11 +276,6 @@ class DjangoAgentReplaceStateStore:
 
 
 def default_agent_replace_state_store():
-    try:
-        from django.apps import apps
-    except Exception as exc:
-        raise AgentReplaceError("Django app registry is required for zsv agent replace state") from exc
-
     if not apps.ready:
         raise AgentReplaceError("Django app registry is not ready for zsv agent replace state")
     return DjangoAgentReplaceStateStore()

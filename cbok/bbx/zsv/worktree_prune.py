@@ -4,6 +4,9 @@ import logging
 import os
 import subprocess
 
+from cbok.bbx.models import ZsvCompileState
+from cbok.bbx.models import ZsvWorktreeContainerPullRequest
+from cbok.bbx.models import ZsvWorktreeContainerState
 from cbok.bbx.zsv.worktree_container import docker_shell_capture
 from cbok.bbx.zsv.worktree_container import normalize_docker_host
 from cbok.bbx.zsv.worktree_container import PR_REPOS
@@ -41,9 +44,6 @@ def _current_branch(repo_root: str) -> str:
 
 class DjangoPruneContainerStore:
     def list_records(self):
-        from cbok.bbx.models import ZsvWorktreeContainerPullRequest
-        from cbok.bbx.models import ZsvWorktreeContainerState
-
         records = list(ZsvWorktreeContainerState.objects.all().order_by("container_name"))
         keys = [record.worktree_key for record in records]
         refs_by_key = {key: [] for key in keys}
@@ -56,14 +56,9 @@ class DjangoPruneContainerStore:
         return records
 
     def delete_records(self, record, delete_compile_state: bool = False) -> None:
-        from cbok.bbx.models import ZsvWorktreeContainerPullRequest
-        from cbok.bbx.models import ZsvWorktreeContainerState
-
         ZsvWorktreeContainerPullRequest.objects.filter(worktree_key=record.worktree_key).delete()
         ZsvWorktreeContainerState.objects.filter(worktree_key=record.worktree_key).delete()
         if delete_compile_state:
-            from cbok.bbx.models import ZsvCompileState
-
             ZsvCompileState.objects.filter(
                 zstack_root=record.zstack_root,
                 premium_root=record.premium_root or "",

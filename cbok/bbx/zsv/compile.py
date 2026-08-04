@@ -18,7 +18,11 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from django.apps import apps
+from django.utils import timezone
+
 from cbok import settings
+from cbok.bbx.models import ZsvCompileState
 from cbok.bbx.zsv.worktree_container import DEFAULT_MIN_FREE_GB
 from cbok.bbx.zsv.worktree_container import WorktreeContainerSpec
 from cbok.bbx.zsv.worktree_container import ensure_worktree_container
@@ -406,8 +410,6 @@ class InMemoryCompileDeployStateStore:
 
 class DjangoCompileDeployStateStore:
     def load_selection(self, worktree_key: str) -> CompileDeploySelection:
-        from cbok.bbx.models import ZsvCompileState
-
         obj = ZsvCompileState.objects.filter(worktree_key=worktree_key).first()
         if not obj:
             return CompileDeploySelection([], [], [])
@@ -424,10 +426,6 @@ class DjangoCompileDeployStateStore:
         premium_root: str | None,
         selection: CompileDeploySelection,
     ) -> None:
-        from django.utils import timezone
-
-        from cbok.bbx.models import ZsvCompileState
-
         obj, _created = ZsvCompileState.objects.get_or_create(
             worktree_key=worktree_key,
             defaults={
@@ -452,11 +450,6 @@ class DjangoCompileDeployStateStore:
 
 
 def default_compile_deploy_state_store():
-    try:
-        from django.apps import apps
-    except Exception as exc:
-        raise CompileDeployStateError("Django app registry is required for zsv compile deploy state") from exc
-
     if not apps.ready:
         raise CompileDeployStateError("Django app registry is not ready for zsv compile deploy state")
     return DjangoCompileDeployStateStore()

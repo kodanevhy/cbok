@@ -7,9 +7,11 @@ import tempfile
 from urllib.parse import unquote
 from urllib.parse import urlparse
 
+from django.db.models import Q
 from django.utils import timezone
 
 from cbok import settings
+from cbok.bbx.models import ZSphereUpgradeState
 from cbok.bbx.zsv.agent_replace import DEFAULT_BACKUP_ROOT
 from cbok.bbx.zsv.agent_replace import DEFAULT_CEPH_PRIMARY_SITE_PACKAGES
 from cbok.bbx.zsv.agent_replace import DEFAULT_CEPH_PRIMARY_VIRTUALENV
@@ -66,9 +68,6 @@ def _upgrade_type_from_state(state):
 
 
 def _latest_upgrade_state(name=None, primary_node=None):
-    from django.db.models import Q
-    from cbok.bbx.models import ZSphereUpgradeState
-
     qs = ZSphereUpgradeState.objects.all()
     if name:
         qs = qs.filter(name=name)
