@@ -850,7 +850,9 @@ class SchemaRepairTest(unittest.TestCase):
         schema_repair._remote_applied_migrations = fake_applied
         schema_repair._run_remote_flyway = fake_flyway
         schema_repair._apply_schema_sql_file = (
-            lambda address, local_sql_path, runner: applied_sql_files.append(local_sql_path) or 0
+            lambda address, local_sql_path, runner:
+                applied_sql_files.append(Path(local_sql_path).read_text(encoding="utf-8"))
+                or subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
         )
         schema_repair._run_remote_flyway_repair = (
             lambda address, remote_dir, runner: repair_dirs.append(remote_dir) or 0
@@ -875,12 +877,127 @@ class SchemaRepairTest(unittest.TestCase):
 
         self.assertEqual(0, rc)
         self.assertEqual(["V5.1.0__schema.sql"], staged_files)
-        self.assertEqual([str(db_file)], applied_sql_files)
+        self.assertEqual(["CREATE TABLE IF NOT EXISTS `zstack`.`T` (`uuid` varchar(32));\n"], applied_sql_files)
         self.assertEqual([schema_repair.DEFAULT_REMOTE_SQL_DIR], repair_dirs)
         self.assertEqual(
             [schema_repair.DEFAULT_REMOTE_SQL_DIR, schema_repair.DEFAULT_REMOTE_SQL_DIR],
             flyway_calls,
         )
+
+    def test_schema_replay_executes_each_statement_and_skips_duplicate_errors(self):
+        original_apply = schema_repair._apply_schema_sql_file
+
+        applied_statements = []
+
+        def fake_apply(address, local_sql_path, runner):
+            statement = Path(local_sql_path).read_text(encoding="utf-8")
+            applied_statements.append(statement)
+            if "ExistingPlainCreateVO" in statement:
+                return subprocess.CompletedProcess(
+                    args=[],
+                    returncode=1,
+                    stdout="ERROR 1050 (42S01) at line 1: Table 'ExistingPlainCreateVO' already exists",
+                    stderr="",
+                )
+            if "ADD CONSTRAINT `fkEncryptedResourceKeyRefResourceVO`" in statement:
+                return subprocess.CompletedProcess(
+                    args=[],
+                    returncode=1,
+                    stdout=(
+                        'ERROR 1005 (HY000) at line 1: Can\'t create table `zstack`.`EncryptedResourceKeyRefVO` '
+                        '(errno: 121 "Duplicate key on write or update")'
+                    ),
+                    stderr="",
+                )
+            if "ADD UNIQUE KEY `ukVpcVpnConnectionVO`" in statement:
+                return subprocess.CompletedProcess(
+                    args=[],
+                    returncode=1,
+                    stdout="ERROR 1061 (42000) at line 1: Duplicate key name 'ukVpcVpnConnectionVO'",
+                    stderr="",
+                )
+            if "ALTER TABLE `zstack`.`VolumeEO` ADD COLUMN" in statement:
+                return subprocess.CompletedProcess(
+                    args=[],
+                    returncode=1,
+                    stdout="ERROR 1060 (42S21) at line 1: Duplicate column name 'encrypted'",
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        schema_repair._apply_schema_sql_file = fake_apply
+
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                source = Path(td, "V5.1.0__schema.sql")
+                source.write_text(
+                    "DELETE FROM `EncryptedResourceKeyRefVO`;\n"
+                    "CREATE TABLE `zstack`.`ExistingPlainCreateVO` (`uuid` char(32));\n"
+                    "CREATE TABLE `zstack`.`NewPlainCreateVO` (`uuid` char(32));\n"
+                    "ALTER TABLE `EncryptedResourceKeyRefVO`\n"
+                    "  ADD CONSTRAINT `fkEncryptedResourceKeyRefResourceVO` FOREIGN KEY (`resourceUuid`) "
+                    "REFERENCES `ResourceVO`(`uuid`);\n"
+                    "ALTER TABLE `zstack`.`VpcVpnConnectionVO`\n"
+                    "  ADD UNIQUE KEY `ukVpcVpnConnectionVO` (`connectionId`) USING BTREE;\n"
+                    "ALTER TABLE `zstack`.`VolumeEO` ADD COLUMN `encrypted` tinyint(1) NOT NULL DEFAULT 0;\n"
+                    "ALTER TABLE `zstack`.`VolumeBackupVO` ADD COLUMN `encrypted` tinyint(1) NOT NULL DEFAULT 0;\n"
+                    "UPDATE `zstack`.`VolumeBackupVO` SET `encrypted` = 1;\n",
+                    encoding="utf-8",
+                )
+
+                rc = schema_repair._apply_schema_sql_statements(
+                    address="172.26.213.50",
+                    source_sql_path=str(source),
+                    runner=FakeRunner(),
+                )
+        finally:
+            schema_repair._apply_schema_sql_file = original_apply
+
+        self.assertEqual(0, rc)
+        applied = "\n".join(applied_statements)
+        self.assertIn("DELETE FROM `EncryptedResourceKeyRefVO`", applied)
+        self.assertIn("CREATE TABLE `zstack`.`ExistingPlainCreateVO`", applied)
+        self.assertIn("CREATE TABLE `zstack`.`NewPlainCreateVO`", applied)
+        self.assertIn("UPDATE `zstack`.`VolumeBackupVO`", applied)
+        self.assertIn("ADD CONSTRAINT `fkEncryptedResourceKeyRefResourceVO`", applied)
+        self.assertIn("ADD UNIQUE KEY `ukVpcVpnConnectionVO`", applied)
+        self.assertIn("ALTER TABLE `zstack`.`VolumeEO` ADD COLUMN", applied)
+        self.assertIn("ALTER TABLE `zstack`.`VolumeBackupVO` ADD COLUMN", applied)
+
+    def test_schema_replay_stops_at_failed_statement(self):
+        original_apply = schema_repair._apply_schema_sql_file
+        applied_statements = []
+
+        def fake_apply(address, local_sql_path, runner):
+            applied_statements.append(Path(local_sql_path).read_text(encoding="utf-8"))
+            if len(applied_statements) == 2:
+                return subprocess.CompletedProcess(
+                    args=[],
+                    returncode=1,
+                    stdout="ERROR 1062 (23000) at line 1: Duplicate entry 'x' for key 'PRIMARY'",
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        schema_repair._apply_schema_sql_file = fake_apply
+
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                source = Path(td, "V5.1.0__schema.sql")
+                source.write_text("SELECT 1;\nSELECT 2;\nSELECT 3;\n", encoding="utf-8")
+
+                rc = schema_repair._apply_schema_sql_statements(
+                    address="172.26.213.50",
+                    source_sql_path=str(source),
+                    runner=FakeRunner(),
+                )
+        finally:
+            schema_repair._apply_schema_sql_file = original_apply
+
+        self.assertEqual(1, rc)
+        self.assertEqual(2, len(applied_statements))
+        self.assertIn("SELECT 1", applied_statements[0])
+        self.assertIn("SELECT 2", applied_statements[1])
 
     def test_file_schema_repair_stops_before_flyway_repair_when_full_sql_apply_fails(self):
         repair_dirs = []
@@ -909,7 +1026,12 @@ class SchemaRepairTest(unittest.TestCase):
             ),
             stderr="",
         )
-        schema_repair._apply_schema_sql_file = lambda address, local_sql_path, runner: 1
+        schema_repair._apply_schema_sql_file = lambda address, local_sql_path, runner: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="ERROR 1146 (42S02) at line 1: Table 'zstack.T' doesn't exist",
+            stderr="",
+        )
         schema_repair._run_remote_flyway_repair = (
             lambda address, remote_dir, runner: repair_dirs.append(remote_dir) or 0
         )
