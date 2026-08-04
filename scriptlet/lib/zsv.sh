@@ -458,10 +458,34 @@ bash \"\$flyway\" migrate -outOfOrder=true -user=zstack -password=zstack.passwor
 "
 }
 
+zsv_schema_flyway_repair() {
+  local address="${1:?address required}"
+  local remote_dir="${2:?remote SQL dir required}"
+  local dir_q url_q
+  dir_q=$(printf %q "$remote_dir")
+  url_q=$(printf %q "jdbc:mysql://${address}:3306/zstack")
+
+  remote_bash "$address" "set -euo pipefail
+flyway=
+for candidate in \\
+  /usr/local/zstack/apache-tomcat/webapps/zstack/WEB-INF/classes/tools/flyway-3.2.1/flyway \\
+  /usr/local/zstack/apache-tomcat-*/webapps/zstack/WEB-INF/classes/tools/flyway-3.2.1/flyway \\
+  /usr/local/zstack/upgrade/*/zstack/WEB-INF/classes/tools/flyway-3.2.1/flyway; do
+  if [[ -f \"\$candidate\" ]]; then
+    flyway=\"\$candidate\"
+    break
+  fi
+done
+[[ -n \"\$flyway\" ]] || die \"flyway not found under /usr/local/zstack\"
+[[ -d ${dir_q} ]] || die \"schema SQL dir missing: ${dir_q}\"
+bash \"\$flyway\" repair -outOfOrder=true -user=zstack -password=zstack.password -url=${url_q} -locations=filesystem:${dir_q}/
+"
+}
+
 zsv_schema_apply_sql_file() {
   local address="${1:?address required}"
   local local_sql="${2:?local SQL file required}"
-  local remote_sql="${3:-/tmp/cbok-zsv-schema-repair.sql}"
+  local remote_sql="${3:-/tmp/cbok-zsv-schema-apply.sql}"
 
   [[ -f "$local_sql" ]] || die "local SQL file missing: $local_sql"
   _cbok_scp "$local_sql" "root@${address}:${remote_sql}"
@@ -470,7 +494,7 @@ zsv_schema_apply_sql_file() {
   remote_sql_q=$(printf %q "$remote_sql")
   remote_bash "$address" "set -euo pipefail
 require_cmd mysql
-log_info \"applying schema repair SQL: ${remote_sql_q}\"
+log_info \"applying schema SQL: ${remote_sql_q}\"
 mysql -uzstack -pzstack.password < ${remote_sql_q}
 "
 }

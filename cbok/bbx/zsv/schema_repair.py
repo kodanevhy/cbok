@@ -18,7 +18,7 @@ from cbok.bbx.zsv.config import zstack_root_from_workspace
 LOG = logging.getLogger(__name__)
 
 DEFAULT_REMOTE_SQL_DIR = "/tmp/cbok-zsv-schema-sql"
-DEFAULT_REMOTE_REPAIR_SQL = "/tmp/cbok-zsv-schema-repair.sql"
+DEFAULT_REMOTE_APPLY_SQL = "/tmp/cbok-zsv-schema-apply.sql"
 ZSV_DB_DIR = "conf/db/zsv"
 DEFAULT_ZSV_SCHEMA_DB_FILE = os.path.join(ZSV_DB_DIR, "V5.1.0__schema.sql")
 
@@ -36,18 +36,6 @@ class ChecksumMismatch:
     version: str
     applied_checksum: int
     resolved_checksum: int
-
-
-@dataclass(frozen=True)
-class SchemaRepairReport:
-    version: str
-    version_rank: int
-    applied_checksum: int | None
-    resolved_checksum: int
-    missing_tables: list[str]
-    missing_columns: list[str]
-    view_names: list[str]
-    ddl_statements: list[str]
 
 
 def _git(root: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -122,31 +110,6 @@ def materialize_zsv_schema_db_file(
     return str(target)
 
 
-def split_sql_statements(sql: str) -> list[str]:
-    lines = []
-    for line in sql.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("--"):
-            continue
-        lines.append(line)
-    cleaned = "\n".join(lines)
-
-    statements: list[str] = []
-    current: list[str] = []
-    for ch in cleaned:
-        if ch == ";":
-            statement = "".join(current).strip()
-            if statement:
-                statements.append(statement)
-            current = []
-        else:
-            current.append(ch)
-    tail = "".join(current).strip()
-    if tail:
-        statements.append(tail)
-    return statements
-
-
 def parse_checksum_mismatches(output: str) -> list[ChecksumMismatch]:
     pattern = re.compile(
         r"Migration Checksum mismatch for migration (?P<version>[^\r\n]+)"
@@ -164,20 +127,6 @@ def parse_checksum_mismatches(output: str) -> list[ChecksumMismatch]:
     ]
 
 
-def build_repair_sql(report: SchemaRepairReport) -> str:
-    lines = [
-        f"-- cbok zsv schema repair for migration {report.version}",
-    ]
-    for statement in report.ddl_statements:
-        lines.append(statement.rstrip().rstrip(";") + ";")
-    lines.append(
-        "UPDATE `zstack`.`schema_version` SET `checksum` = "
-        f"{report.resolved_checksum} WHERE `version_rank` = {report.version_rank} "
-        f"AND `version` = {_sql_string(report.version)};"
-    )
-    return "\n".join(lines) + "\n"
-
-
 def _bash_scriptlet(expr: str) -> list[str]:
     return ["bash", "-lc", f"source scriptlet/bootstrap.sh; {expr}"]
 
@@ -192,32 +141,6 @@ def _remote_mysql_query(address: str, sql: str, runner) -> subprocess.CompletedP
         "zsv_mysql_query "
         f"{shlex.quote(address)} {shlex.quote(sql)}",
     )
-
-
-def _remote_mysql_scalar(address: str, sql: str, runner) -> str:
-    result = _remote_mysql_query(address, sql, runner)
-    if getattr(result, "returncode", 1) != 0:
-        raise RuntimeError(result.stdout or result.stderr or "remote mysql query failed")
-    lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
-    return lines[-1] if lines else ""
-
-
-def _remote_table_exists(address: str, table: str, runner) -> bool:
-    sql = (
-        "SELECT COUNT(*) FROM information_schema.tables "
-        "WHERE table_schema = 'zstack' AND table_name = "
-        f"{_sql_string(table)}"
-    )
-    return _remote_mysql_scalar(address, sql, runner) == "1"
-
-
-def _remote_column_exists(address: str, table: str, column: str, runner) -> bool:
-    sql = (
-        "SELECT COUNT(*) FROM information_schema.columns "
-        "WHERE table_schema = 'zstack' AND table_name = "
-        f"{_sql_string(table)} AND column_name = {_sql_string(column)}"
-    )
-    return _remote_mysql_scalar(address, sql, runner) == "1"
 
 
 def _remote_applied_migrations(
@@ -269,90 +192,49 @@ def _run_remote_flyway(address: str, remote_dir: str, runner) -> subprocess.Comp
     )
 
 
-def _apply_repair_sql(address: str, local_sql_path: str, runner) -> int:
+def _run_remote_flyway_repair(address: str, remote_dir: str, runner) -> int:
     result = _run_scriptlet(
         runner,
-        "zsv_schema_apply_sql_file "
-        f"{shlex.quote(address)} {shlex.quote(local_sql_path)} "
-        f"{shlex.quote(DEFAULT_REMOTE_REPAIR_SQL)}",
+        "zsv_schema_flyway_repair "
+        f"{shlex.quote(address)} {shlex.quote(remote_dir)}",
     )
     return getattr(result, "returncode", 1) or 0
 
 
-def _repair_report_for_mismatch(
+def _apply_schema_sql_file(address: str, local_sql_path: str, runner) -> int:
+    result = _run_scriptlet(
+        runner,
+        "zsv_schema_apply_sql_file "
+        f"{shlex.quote(address)} {shlex.quote(local_sql_path)} "
+        f"{shlex.quote(DEFAULT_REMOTE_APPLY_SQL)}",
+    )
+    return getattr(result, "returncode", 1) or 0
+
+
+def _apply_mismatch_sql_and_repair(
     *,
     address: str,
     migration: AppliedMigration,
     mismatch: ChecksumMismatch,
-    sql: str,
+    local_sql_path: str,
+    remote_sql_dir: str,
+    apply_repair: bool,
     runner,
-) -> SchemaRepairReport:
-    ddl_statements: list[str] = []
-    missing_tables: list[str] = []
-    missing_columns: list[str] = []
-    view_names: list[str] = []
-
-    for statement in split_sql_statements(sql):
-        normalized = " ".join(statement.split())
-        alter = re.match(
-            r"ALTER\s+TABLE\s+`zstack`\.`(?P<table>[^`]+)`\s+"
-            r"ADD\s+COLUMN\s+`(?P<column>[^`]+)`(?:\s|$)",
-            normalized,
-            re.I,
-        )
-        if alter:
-            table = alter.group("table")
-            column = alter.group("column")
-            if not _remote_column_exists(address, table, column, runner):
-                ddl_statements.append(statement)
-                missing_columns.append(f"{table}.{column}")
-            continue
-
-        create_table = re.match(
-            r"CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+`zstack`\.`(?P<table>[^`]+)`(?:\s|$)",
-            normalized,
-            re.I,
-        )
-        if create_table:
-            table = create_table.group("table")
-            if not _remote_table_exists(address, table, runner):
-                ddl_statements.append(statement)
-                missing_tables.append(table)
-            continue
-
-        view = re.match(
-            r"(?:DROP\s+VIEW\s+IF\s+EXISTS|CREATE\s+VIEW)\s+`zstack`\.`(?P<view>[^`]+)`(?:\s|$)",
-            normalized,
-            re.I,
-        )
-        if view:
-            ddl_statements.append(statement)
-            view_names.append(view.group("view"))
-            continue
-
-        update = re.match(
-            r"UPDATE\s+`zstack`\.`(?P<table>[^`]+)`(?:\s+\w+)?\s+SET\s+",
-            normalized,
-            re.I,
-        )
-        if update:
-            ddl_statements.append(statement)
-            continue
-
-        raise RuntimeError(
-            f"unsupported SQL in applied migration {migration.script}: {normalized[:160]}"
-        )
-
-    return SchemaRepairReport(
-        version=migration.version,
-        version_rank=migration.version_rank,
-        applied_checksum=migration.checksum,
-        resolved_checksum=mismatch.resolved_checksum,
-        missing_tables=missing_tables,
-        missing_columns=missing_columns,
-        view_names=sorted(set(view_names)),
-        ddl_statements=ddl_statements,
+) -> int:
+    LOG.warning(
+        "Applying ZSV schema migration %s for checksum %s -> %s before flyway repair.",
+        migration.script,
+        mismatch.applied_checksum,
+        mismatch.resolved_checksum,
     )
+    if not apply_repair:
+        print(f"Would apply {local_sql_path} and run flyway repair on {address}.")
+        return 1
+
+    rc = _apply_schema_sql_file(address, local_sql_path, runner)
+    if rc != 0:
+        return rc
+    return _run_remote_flyway_repair(address, remote_sql_dir, runner)
 
 
 def run_schema_repair_flow(
@@ -383,54 +265,42 @@ def run_schema_repair_flow(
         if rc != 0:
             return rc
 
-        for _attempt in range(10):
-            flyway_result = _run_remote_flyway(address, DEFAULT_REMOTE_SQL_DIR, runner)
-            if getattr(flyway_result, "returncode", 1) == 0:
-                LOG.info("ZSV schema checksums already match branch %s.", branch)
-                return 0
+        flyway_result = _run_remote_flyway(address, DEFAULT_REMOTE_SQL_DIR, runner)
+        if getattr(flyway_result, "returncode", 1) == 0:
+            LOG.info("ZSV schema checksums already match branch %s.", branch)
+            return 0
 
-            mismatches = parse_checksum_mismatches(flyway_result.stdout or "")
-            if not mismatches:
-                LOG.error("Flyway failed but no checksum mismatch was detected.")
-                return getattr(flyway_result, "returncode", 1) or 1
+        mismatches = parse_checksum_mismatches(flyway_result.stdout or "")
+        if not mismatches:
+            LOG.error("Flyway failed but no checksum mismatch was detected.")
+            return getattr(flyway_result, "returncode", 1) or 1
 
-            mismatch = mismatches[0]
-            migration = applied.get(mismatch.version)
-            path = applied_files.get(mismatch.version)
-            if not migration or not path:
-                LOG.error("Checksum mismatch %s is not in applied ZSV branch files.", mismatch.version)
-                return 1
+        mismatch = mismatches[0]
+        migration = applied.get(mismatch.version)
+        path = applied_files.get(mismatch.version)
+        if not migration or not path:
+            LOG.error("Checksum mismatch %s is not in applied ZSV branch files.", mismatch.version)
+            return 1
 
-            sql = read_branch_file(root, branch, path)
-            report = _repair_report_for_mismatch(
-                address=address,
-                migration=migration,
-                mismatch=mismatch,
-                sql=sql,
-                runner=runner,
-            )
-            LOG.warning(
-                "Repairing ZSV schema %s checksum %s -> %s; missing tables=%s, "
-                "missing columns=%s, refreshed views=%s",
-                report.version,
-                report.applied_checksum,
-                report.resolved_checksum,
-                ",".join(report.missing_tables) or "(none)",
-                ",".join(report.missing_columns) or "(none)",
-                ",".join(report.view_names) or "(none)",
-            )
-            repair_sql = build_repair_sql(report)
-            repair_path = os.path.join(td, f"repair-{report.version}.sql")
-            Path(repair_path).write_text(repair_sql, encoding="utf-8")
-            if not apply_repair:
-                print(repair_sql)
-                return 1
-            rc = _apply_repair_sql(address, repair_path, runner)
-            if rc != 0:
-                return rc
+        local_sql_path = os.path.join(local_sql_dir, os.path.basename(path))
+        rc = _apply_mismatch_sql_and_repair(
+            address=address,
+            migration=migration,
+            mismatch=mismatch,
+            local_sql_path=local_sql_path,
+            remote_sql_dir=DEFAULT_REMOTE_SQL_DIR,
+            apply_repair=apply_repair,
+            runner=runner,
+        )
+        if rc != 0:
+            return rc
 
-        LOG.error("Too many ZSV schema checksum repairs; aborting before upgrade.")
-        return 1
+        verify_result = _run_remote_flyway(address, DEFAULT_REMOTE_SQL_DIR, runner)
+        if getattr(verify_result, "returncode", 1) == 0:
+            LOG.info("ZSV schema checksums match after flyway repair.")
+            return 0
+        LOG.error("Flyway still failed after schema SQL apply and repair.")
+        return getattr(verify_result, "returncode", 1) or 1
 
 
 def run_schema_repair_for_file(
@@ -464,46 +334,36 @@ def run_schema_repair_for_file(
         if rc != 0:
             return rc
 
-        for _attempt in range(10):
-            flyway_result = _run_remote_flyway(address, DEFAULT_REMOTE_SQL_DIR, runner)
-            if getattr(flyway_result, "returncode", 1) == 0:
-                LOG.info("ZSV schema checksum already matches %s.", db_path)
-                return 0
+        flyway_result = _run_remote_flyway(address, DEFAULT_REMOTE_SQL_DIR, runner)
+        if getattr(flyway_result, "returncode", 1) == 0:
+            LOG.info("ZSV schema checksum already matches %s.", db_path)
+            return 0
 
-            mismatches = parse_checksum_mismatches(flyway_result.stdout or "")
-            if not mismatches:
-                LOG.error("Flyway failed but no checksum mismatch was detected.")
-                return getattr(flyway_result, "returncode", 1) or 1
+        mismatches = parse_checksum_mismatches(flyway_result.stdout or "")
+        if not mismatches:
+            LOG.error("Flyway failed but no checksum mismatch was detected.")
+            return getattr(flyway_result, "returncode", 1) or 1
 
-            mismatch = mismatches[0]
-            if mismatch.version != version:
-                LOG.error("Checksum mismatch %s does not match configured db_file %s.", mismatch.version, db_path)
-                return 1
+        mismatch = mismatches[0]
+        if mismatch.version != version:
+            LOG.error("Checksum mismatch %s does not match configured db_file %s.", mismatch.version, db_path)
+            return 1
 
-            sql = db_path.read_text(encoding="utf-8")
-            report = _repair_report_for_mismatch(
-                address=address,
-                migration=migration,
-                mismatch=mismatch,
-                sql=sql,
-                runner=runner,
-            )
-            LOG.warning(
-                "Repairing ZSV schema %s checksum %s -> %s; missing tables=%s, "
-                "missing columns=%s, refreshed views=%s",
-                report.version,
-                report.applied_checksum,
-                report.resolved_checksum,
-                ",".join(report.missing_tables) or "(none)",
-                ",".join(report.missing_columns) or "(none)",
-                ",".join(report.view_names) or "(none)",
-            )
-            repair_sql = build_repair_sql(report)
-            repair_path = os.path.join(td, f"repair-{report.version}.sql")
-            Path(repair_path).write_text(repair_sql, encoding="utf-8")
-            rc = _apply_repair_sql(address, repair_path, runner)
-            if rc != 0:
-                return rc
+        rc = _apply_mismatch_sql_and_repair(
+            address=address,
+            migration=migration,
+            mismatch=mismatch,
+            local_sql_path=str(db_path),
+            remote_sql_dir=DEFAULT_REMOTE_SQL_DIR,
+            apply_repair=True,
+            runner=runner,
+        )
+        if rc != 0:
+            return rc
 
-        LOG.error("Too many ZSV schema checksum repairs; aborting before upgrade.")
-        return 1
+        verify_result = _run_remote_flyway(address, DEFAULT_REMOTE_SQL_DIR, runner)
+        if getattr(verify_result, "returncode", 1) == 0:
+            LOG.info("ZSV schema checksum matches after flyway repair.")
+            return 0
+        LOG.error("Flyway still failed after schema SQL apply and repair.")
+        return getattr(verify_result, "returncode", 1) or 1

@@ -187,7 +187,6 @@ class ZSphereTracker:
             name=None,
             upgrade_type=None,
             upgrade_url=None,
-            db_file=None,
             primary_node=None,
             runner=None,
         ):
@@ -204,7 +203,6 @@ class ZSphereTracker:
         self.primary_node = _required(primary_node, "primary_node")
         self.nodes = self._normalize_nodes([self.primary_node])
         self.runner = runner or cbok_utils.UnifiedProcessRunner()
-        self.schema_db_file = str(db_file).strip() if db_file else ""
         self.discovered_nodes = False
 
     @staticmethod
@@ -391,13 +389,11 @@ class ZSphereTracker:
                 return result.returncode, iso, state
 
         with tempfile.TemporaryDirectory() as td:
-            db_file = self.schema_db_file
-            if not db_file:
-                try:
-                    db_file = schema_repair.materialize_zsv_schema_db_file(target_dir=td)
-                except RuntimeError as exc:
-                    LOG.error("Failed to resolve ZSV schema db file from base ref: %s", exc)
-                    return 1, iso, state
+            try:
+                db_file = schema_repair.materialize_zsv_schema_db_file(target_dir=td)
+            except RuntimeError as exc:
+                LOG.error("Failed to resolve ZSV schema db file from base ref: %s", exc)
+                return 1, iso, state
 
             repair_rc = schema_repair.run_schema_repair_for_file(
                 address=self.primary_node,
