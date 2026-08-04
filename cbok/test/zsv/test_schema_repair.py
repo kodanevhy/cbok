@@ -10,11 +10,6 @@ import requests
 from cbok.bbx.zsv import schema_repair
 from cbok.conf import config as cbok_config
 
-if "bs4" not in sys.modules:
-    bs4 = types.ModuleType("bs4")
-    bs4.BeautifulSoup = object
-    sys.modules["bs4"] = bs4
-
 if "django" not in sys.modules:
     django = types.ModuleType("django")
     django_utils = types.ModuleType("django.utils")
@@ -108,35 +103,27 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertEqual(bin_url, artifact.download_url)
         self.assertEqual("123", artifact.size)
 
-    def test_fetch_latest_artifact_does_not_download_exact_iso_when_type_is_stale(self):
-        iso_url = "http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso"
-        tracker = ZSphereTracker(
-            name="test-env",
-            upgrade_type="bin",
-            upgrade_url=iso_url,
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
-            primary_node="172.26.213.50",
-            runner=FakeRunner(),
-        )
-        original_head = zsv_service.requests.head
-        original_get = zsv_service.requests.get
-        zsv_service.requests.head = lambda *args, **kwargs: SimpleNamespace(
-            url=iso_url,
-            headers={"Content-Length": "123"},
-            raise_for_status=lambda: None,
-        )
-        zsv_service.requests.get = lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("exact artifact URL must not be downloaded as an index")
-        )
+    def test_tracker_rejects_upgrade_directory_url(self):
+        with self.assertRaisesRegex(ValueError, "exact \\.iso file URL"):
+            ZSphereTracker(
+                name="test-env",
+                upgrade_type="iso",
+                upgrade_url="http://example.invalid/latest/",
+                db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
+                primary_node="172.26.213.50",
+                runner=FakeRunner(),
+            )
 
-        try:
-            artifact = tracker.fetch_latest_iso()
-        finally:
-            zsv_service.requests.head = original_head
-            zsv_service.requests.get = original_get
-
-        self.assertEqual("ZStack-ZSphere-x86_64-DVD.iso", artifact.name)
-        self.assertEqual(iso_url, artifact.download_url)
+    def test_tracker_rejects_upgrade_url_type_mismatch(self):
+        with self.assertRaisesRegex(ValueError, "exact \\.bin file URL"):
+            ZSphereTracker(
+                name="test-env",
+                upgrade_type="bin",
+                upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
+                db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
+                primary_node="172.26.213.50",
+                runner=FakeRunner(),
+            )
 
     def test_fetch_exact_artifact_tolerates_local_metadata_probe_failure(self):
         bin_url = "http://example.invalid/ZStack-ZSphere-installer.bin"
@@ -369,7 +356,7 @@ class SchemaRepairTest(unittest.TestCase):
         tracker = ZSphereTracker(
             name="test-env",
             upgrade_type="iso",
-            upgrade_url="http://example.invalid/latest/",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
             db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=FakeRunner(),
@@ -432,11 +419,11 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertNotIn("--upgrade-type", options)
         self.assertNotIn("--db-file", options)
 
-    def test_check_reports_upgrade_type_from_latest_state(self):
+    def test_check_reports_upgrade_type_from_current_bin_url(self):
         state = SimpleNamespace(
             last_upgraded_iso_name="ZStack-ZSphere-installer-fv-2606181047-36.bin",
             latest_iso_name="",
-            iso_url="http://example.invalid/latest/",
+            iso_url="http://example.invalid/ZStack-ZSphere-installer.bin",
         )
 
         self.assertEqual("bin", _upgrade_type_from_state(state))
@@ -450,11 +437,11 @@ class SchemaRepairTest(unittest.TestCase):
 
         self.assertEqual("iso", _upgrade_type_from_state(state))
 
-    def test_check_infers_iso_type_from_latest_state(self):
+    def test_check_infers_iso_type_from_current_url(self):
         state = SimpleNamespace(
             last_upgraded_iso_name="",
             latest_iso_name="ZStack-ZSphere-x86_64-DVD.iso",
-            iso_url="http://example.invalid/latest/",
+            iso_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
         )
 
         self.assertEqual("iso", _upgrade_type_from_state(state))
@@ -469,6 +456,7 @@ class SchemaRepairTest(unittest.TestCase):
         for arg in required_args:
             self.assertIn(arg, options)
             self.assertTrue(options[arg]["required"])
+        self.assertIn("directory or index URLs are not supported", options["--upgrade-url"]["help"])
         self.assertIn("--db-file", options)
         self.assertFalse(options["--db-file"].get("required", False))
         self.assertIn("normally leave unset", options["--db-file"]["help"])
@@ -602,7 +590,7 @@ class SchemaRepairTest(unittest.TestCase):
         tracker = ZSphereTracker(
             name="test-env",
             upgrade_type="iso",
-            upgrade_url="http://example.invalid/latest/",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
             db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=runner,
@@ -655,7 +643,7 @@ class SchemaRepairTest(unittest.TestCase):
         tracker = ZSphereTracker(
             name="test-env",
             upgrade_type="iso",
-            upgrade_url="http://example.invalid/latest/",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
             db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=FakeRunner(),
@@ -681,7 +669,7 @@ class SchemaRepairTest(unittest.TestCase):
         tracker = ZSphereTracker(
             name="test-env",
             upgrade_type="iso",
-            upgrade_url="http://example.invalid/latest/",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
             db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=runner,
@@ -725,7 +713,7 @@ class SchemaRepairTest(unittest.TestCase):
         tracker = ZSphereTracker(
             name="test-env",
             upgrade_type="iso",
-            upgrade_url="http://example.invalid/latest/",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
             primary_node="172.26.213.50",
             runner=runner,
         )

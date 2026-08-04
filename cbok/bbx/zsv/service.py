@@ -7,10 +7,8 @@ import re
 import shlex
 import tempfile
 from urllib.parse import unquote
-from urllib.parse import urljoin
 from urllib.parse import urlparse
 
-from bs4 import BeautifulSoup
 import requests
 
 from django.utils import timezone
@@ -49,17 +47,6 @@ def _aware(dt):
     return timezone.make_aware(dt, timezone.get_current_timezone())
 
 
-def _parse_apache_datetime(value):
-    if not value:
-        return None
-    for fmt in ("%Y-%m-%d %H:%M", "%d-%b-%Y %H:%M"):
-        try:
-            return _aware(datetime.strptime(value.strip(), fmt))
-        except ValueError:
-            continue
-    return None
-
-
 def _normalize_upgrade_type(value):
     upgrade_type = value.strip().lower()
     if upgrade_type not in UPGRADE_TYPES:
@@ -85,8 +72,13 @@ def _artifact_type_from_url(url):
     return ""
 
 
-def _is_artifact_url(url, upgrade_type):
-    return unquote(urlparse(url).path).lower().endswith(_artifact_extension(upgrade_type))
+def _require_artifact_url(url, upgrade_type):
+    expected = _artifact_extension(upgrade_type)
+    artifact_type = _artifact_type_from_url(url)
+    if not artifact_type:
+        raise ValueError(f"upgrade_url must be an exact {expected} file URL")
+    if artifact_type != upgrade_type:
+        raise ValueError(f"upgrade_url must be an exact {expected} file URL for {upgrade_type} upgrade")
 
 
 def _artifact_name_from_url(url):
@@ -204,6 +196,7 @@ class ZSphereTracker:
         self.name = _required(name, "name")
         self.upgrade_type = _normalize_upgrade_type(_required(upgrade_type, "upgrade_type"))
         self.upgrade_url = _required(upgrade_url, "upgrade_url")
+        _require_artifact_url(self.upgrade_url, self.upgrade_type)
         self.iso_url = self.upgrade_url
         self.primary_node = _required(primary_node, "primary_node")
         self.nodes = self._normalize_nodes([self.primary_node])
@@ -244,9 +237,7 @@ class ZSphereTracker:
         return state
 
     def fetch_latest_iso(self):
-        if _artifact_type_from_url(self.upgrade_url):
-            return self._fetch_exact_artifact(self.upgrade_url)
-        return self._fetch_latest_from_index(self.upgrade_url)
+        return self._fetch_exact_artifact(self.upgrade_url)
 
     def _fetch_exact_artifact(self, artifact_url):
         try:
@@ -272,49 +263,6 @@ class ZSphereTracker:
             modified_at=modified_at,
             size=response.headers.get("Content-Length", ""),
         )
-
-    def _fetch_latest_from_index(self, index_url):
-        response = requests.get(index_url, timeout=20, headers=HTTP_HEADERS)
-        response.raise_for_status()
-
-        candidates = self._parse_artifact_rows(response.text, response.url)
-        if not candidates:
-            raise RuntimeError(
-                f"No {self.upgrade_type.upper()} artifact found from {index_url}")
-        return max(candidates, key=lambda iso: iso.modified_at or timezone.now())
-
-    def _parse_artifact_rows(self, html, base_url):
-        soup = BeautifulSoup(html, "html.parser")
-        candidates = []
-        text = soup.get_text("\n")
-
-        for link in soup.find_all("a", href=True):
-            href = link["href"]
-            if not _is_artifact_url(href, self.upgrade_type):
-                continue
-
-            name = unquote(link.get_text(strip=True) or _artifact_name_from_url(href))
-            line_match = re.search(
-                rf"{re.escape(name)}\s+"
-                r"(?P<modified>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})"
-                r"(?:\s+(?P<size>\S+))?",
-                text,
-            )
-            modified_at = None
-            size = ""
-            if line_match:
-                modified_at = _parse_apache_datetime(
-                    line_match.group("modified"))
-                size = line_match.group("size") or ""
-
-            candidates.append(IsoInfo(
-                name=name,
-                download_url=urljoin(base_url, href),
-                modified_at=modified_at,
-                size=size,
-            ))
-
-        return candidates
 
     def refresh_state(self, iso, persist_state=True):
         state = self.get_state(persist_source=persist_state)

@@ -307,7 +307,7 @@ class ZSphereCommands(base.BaseCommand):
         help="Upgrade package type: bin or iso")
     @args.args(
         "--upgrade-url", metavar="<url>", required=True,
-        help="BIN/ISO index URL or exact package URL")
+        help="Exact BIN/ISO package file URL; directory or index URLs are not supported")
     @args.args(
         "--db-file", metavar="<path>",
         help="Optional local ZSV schema SQL file for pre-upgrade Flyway checksum repair; normally leave unset unless explicitly required, cbok resolves it dynamically from configured base_ref")
