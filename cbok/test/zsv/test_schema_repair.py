@@ -50,6 +50,12 @@ class FakeCommand:
         return SimpleNamespace(returncode=0)
 
 
+def fake_materialize_schema_db_file(target_dir, **_kwargs):
+    path = Path(target_dir, "V5.1.0__schema.sql")
+    path.write_text("CREATE TABLE T(id int);\n", encoding="utf-8")
+    return str(path)
+
+
 class SchemaRepairTest(unittest.TestCase):
     def test_discover_management_nodes_ignores_ssh_banner_lines(self):
         class Runner:
@@ -81,7 +87,6 @@ class SchemaRepairTest(unittest.TestCase):
         tracker = ZSphereTracker(
             name="test-env",
             upgrade_url=bin_url,
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=FakeRunner(),
         )
@@ -106,7 +111,6 @@ class SchemaRepairTest(unittest.TestCase):
             ZSphereTracker(
                 name="test-env",
                 upgrade_url="http://example.invalid/latest/",
-                db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
                 primary_node="172.26.213.50",
                 runner=FakeRunner(),
             )
@@ -117,7 +121,6 @@ class SchemaRepairTest(unittest.TestCase):
                 name="test-env",
                 upgrade_type="bin",
                 upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
-                db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
                 primary_node="172.26.213.50",
                 runner=FakeRunner(),
             )
@@ -147,7 +150,6 @@ class SchemaRepairTest(unittest.TestCase):
         tracker = ZSphereTracker(
             name="test-env",
             upgrade_url=bin_url,
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=FakeRunner(),
         )
@@ -179,14 +181,15 @@ class SchemaRepairTest(unittest.TestCase):
             name="test-env",
             upgrade_type="bin",
             upgrade_url=bin_url,
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
         original_repair = schema_repair.run_schema_repair_for_file
+        original_materialize = schema_repair.materialize_zsv_schema_db_file
         zsv_service.discover_management_nodes = lambda address, runner: [address]
         schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
             download_url=bin_url,
@@ -205,6 +208,7 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
+            schema_repair.materialize_zsv_schema_db_file = original_materialize
             schema_repair.run_schema_repair_for_file = original_repair
             zsv_service.discover_management_nodes = original_discover
 
@@ -221,14 +225,15 @@ class SchemaRepairTest(unittest.TestCase):
             name="test-env",
             upgrade_type="bin",
             upgrade_url=bin_url,
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
         original_repair = schema_repair.run_schema_repair_for_file
+        original_materialize = schema_repair.materialize_zsv_schema_db_file
         zsv_service.discover_management_nodes = lambda address, runner: [address]
         schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
             download_url=bin_url,
@@ -247,6 +252,7 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
+            schema_repair.materialize_zsv_schema_db_file = original_materialize
             schema_repair.run_schema_repair_for_file = original_repair
             zsv_service.discover_management_nodes = original_discover
 
@@ -271,14 +277,15 @@ class SchemaRepairTest(unittest.TestCase):
             name="test-env",
             upgrade_type="bin",
             upgrade_url=bin_url,
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
         original_repair = schema_repair.run_schema_repair_for_file
+        original_materialize = schema_repair.materialize_zsv_schema_db_file
         zsv_service.discover_management_nodes = lambda address, runner: [address]
         schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
             download_url=bin_url,
@@ -297,6 +304,7 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
+            schema_repair.materialize_zsv_schema_db_file = original_materialize
             schema_repair.run_schema_repair_for_file = original_repair
             zsv_service.discover_management_nodes = original_discover
 
@@ -319,14 +327,15 @@ class SchemaRepairTest(unittest.TestCase):
             name="test-env",
             upgrade_type="bin",
             upgrade_url=bin_url,
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
         original_repair = schema_repair.run_schema_repair_for_file
+        original_materialize = schema_repair.materialize_zsv_schema_db_file
         zsv_service.discover_management_nodes = lambda address, runner: [address]
         schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
             download_url=bin_url,
@@ -345,6 +354,7 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
+            schema_repair.materialize_zsv_schema_db_file = original_materialize
             schema_repair.run_schema_repair_for_file = original_repair
             zsv_service.discover_management_nodes = original_discover
 
@@ -373,7 +383,6 @@ class SchemaRepairTest(unittest.TestCase):
             name="test-env",
             upgrade_type="iso",
             upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=FakeRunner(),
         )
@@ -385,7 +394,6 @@ class SchemaRepairTest(unittest.TestCase):
             name="test-env",
             upgrade_type="bin",
             upgrade_url="http://example.invalid/ZStack-ZSphere-installer.bin",
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=FakeRunner(),
         )
@@ -395,10 +403,10 @@ class SchemaRepairTest(unittest.TestCase):
 
         self.assertNotIn("--nodes", command)
         self.assertNotIn("--upgrade-type", command)
+        self.assertNotIn("--db-file", command)
         self.assertIn("--upgrade-url http://example.invalid/ZStack-ZSphere-installer.bin", command)
-        self.assertIn("--db-file /workspace/zstack/conf/db/zsv/V5.1.0__schema.sql", command)
 
-    def test_upgrade_command_omits_empty_db_file_for_dynamic_resolution(self):
+    def test_upgrade_command_does_not_include_db_file(self):
         tracker = ZSphereTracker(
             name="test-env",
             upgrade_type="bin",
@@ -442,7 +450,6 @@ class SchemaRepairTest(unittest.TestCase):
             name="test-env",
             upgrade_url="http://example.invalid/ZStack-ZSphere-installer.bin",
             primary_node="172.26.213.50",
-            db_file=None,
         )
 
         self.assertEqual("bin", tracker.upgrade_type)
@@ -459,10 +466,7 @@ class SchemaRepairTest(unittest.TestCase):
             self.assertTrue(options[arg]["required"])
         self.assertIn("directory or index URLs are not supported", options["--upgrade-url"]["help"])
         self.assertNotIn("--upgrade-type", options)
-        self.assertIn("--db-file", options)
-        self.assertFalse(options["--db-file"].get("required", False))
-        self.assertIn("normally leave unset", options["--db-file"]["help"])
-        self.assertIn("dynamically from configured base_ref", options["--db-file"]["help"])
+        self.assertNotIn("--db-file", options)
 
     def test_zsv_upgrade_commands_do_not_define_manual_schema_args(self):
         for method in (ZSphereCommands.check, ZSphereCommands.status, ZSphereCommands.upgrade):
@@ -475,6 +479,7 @@ class SchemaRepairTest(unittest.TestCase):
             self.assertNotIn("--schema-branch", option_names)
             self.assertNotIn("--no-apply-schema-repair", option_names)
             self.assertNotIn("--zstack-root", option_names)
+            self.assertNotIn("--db-file", option_names)
 
     def test_zsv_shared_settings_configure_base_ref_only(self):
         self.assertIn("zsv", [group.name for group in cbok_config.ALL_GROUPS])
@@ -554,27 +559,14 @@ class SchemaRepairTest(unittest.TestCase):
             ZSphereTracker(
                 name="test-env",
                 upgrade_type="bin",
-                db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
                 primary_node="172.26.213.50",
                 runner=FakeRunner(),
             )
-
-    def test_tracker_allows_empty_db_file_for_check_only_flow(self):
-        tracker = ZSphereTracker(
-            name="test-env",
-            upgrade_type="bin",
-            upgrade_url="http://example.invalid/ZStack-ZSphere-installer.bin",
-            primary_node="172.26.213.50",
-            runner=FakeRunner(),
-        )
-
-        self.assertEqual("", tracker.schema_db_file)
 
     def test_tracker_requires_name_and_primary_node(self):
         common = {
             "name": "test-env",
             "upgrade_url": "http://example.invalid/ZStack-ZSphere-installer.bin",
-            "db_file": "/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             "primary_node": "172.26.213.50",
             "runner": FakeRunner(),
         }
@@ -592,16 +584,17 @@ class SchemaRepairTest(unittest.TestCase):
             name="test-env",
             upgrade_type="iso",
             upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
         original_repair = schema_repair.run_schema_repair_for_file
+        original_materialize = schema_repair.materialize_zsv_schema_db_file
         zsv_service.discover_management_nodes = (
             lambda address, runner: ["172.26.213.50", "172.26.213.51"]
         )
         schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
         iso = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
             download_url="http://example.invalid/ZStack-ZSphere-installer.bin",
@@ -629,6 +622,7 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _iso, _state = tracker.upgrade(FakeCommand())
         finally:
+            schema_repair.materialize_zsv_schema_db_file = original_materialize
             schema_repair.run_schema_repair_for_file = original_repair
             zsv_service.discover_management_nodes = original_discover
 
@@ -645,7 +639,6 @@ class SchemaRepairTest(unittest.TestCase):
             name="test-env",
             upgrade_type="iso",
             upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
             runner=FakeRunner(),
         )
@@ -664,50 +657,7 @@ class SchemaRepairTest(unittest.TestCase):
             "\n".join(logs.output),
         )
 
-    def test_upgrade_repairs_configured_db_file_before_remote_upgrade(self):
-        runner = FakeRunner()
-        repairs = []
-        tracker = ZSphereTracker(
-            name="test-env",
-            upgrade_type="iso",
-            upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
-            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
-            primary_node="172.26.213.50",
-            runner=runner,
-        )
-        original_repair = schema_repair.run_schema_repair_for_file
-        original_discover = zsv_service.discover_management_nodes
-        schema_repair.run_schema_repair_for_file = lambda **kwargs: repairs.append(kwargs) or 0
-        zsv_service.discover_management_nodes = lambda address, runner: [address]
-        iso = IsoInfo(
-            name="ZStack-ZSphere-installer.bin",
-            download_url="http://example.invalid/ZStack-ZSphere-installer.bin",
-            size="123",
-        )
-        state = SimpleNamespace(
-            latest_iso_name="",
-            latest_iso_modified_at=None,
-            last_upgraded_iso_name="",
-            last_upgraded_iso_modified_at=None,
-            last_upgraded_at=None,
-            save=lambda update_fields=None: None,
-        )
-        tracker.check = lambda persist_state=True: (iso, state, True, True)
-
-        try:
-            rc, _iso, _state = tracker.upgrade(FakeCommand())
-        finally:
-            schema_repair.run_schema_repair_for_file = original_repair
-            zsv_service.discover_management_nodes = original_discover
-
-        self.assertEqual(0, rc)
-        self.assertEqual(1, len(repairs))
-        self.assertEqual("172.26.213.50", repairs[0]["address"])
-        self.assertEqual("/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql", repairs[0]["db_file"])
-        script = runner.commands[0][0][-1]
-        self.assertIn("zsv_upgrade_latest", script)
-
-    def test_upgrade_resolves_db_file_from_base_ref_when_not_provided(self):
+    def test_upgrade_resolves_db_file_from_base_ref(self):
         runner = FakeRunner()
         repairs = []
         materialized = []
@@ -856,60 +806,144 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertEqual(["V5.1.0__schema.sql"], staged_files)
         self.assertEqual([schema_repair.DEFAULT_REMOTE_SQL_DIR], flyway_dirs)
 
-    def test_repair_script_executes_missing_table_then_updates_checksum(self):
-        report = schema_repair.SchemaRepairReport(
-            version="5.1.0",
-            version_rank=168,
-            applied_checksum=421859272,
-            resolved_checksum=-1252689812,
-            missing_tables=["ScannerAlarmStateVO"],
-            missing_columns=[],
-            view_names=[],
-            ddl_statements=[
-                "CREATE TABLE IF NOT EXISTS `zstack`.`ScannerAlarmStateVO` (\n"
-                "    `uuid` varchar(32) NOT NULL UNIQUE,\n"
-                "    PRIMARY KEY (`uuid`)\n"
-                ") ENGINE=InnoDB DEFAULT CHARSET=utf8"
-            ],
+    def test_file_schema_repair_applies_full_db_file_then_runs_flyway_repair(self):
+        staged_files = []
+        applied_sql_files = []
+        repair_dirs = []
+        flyway_calls = []
+        original_stage = schema_repair._stage_sql_dir
+        original_applied = schema_repair._remote_applied_migrations
+        original_flyway = schema_repair._run_remote_flyway
+        original_apply = schema_repair._apply_schema_sql_file
+        original_repair = schema_repair._run_remote_flyway_repair
+
+        def fake_stage(address, local_dir, remote_dir, runner):
+            staged_files.extend(path.name for path in Path(local_dir).iterdir())
+            return 0
+
+        def fake_applied(address, scripts, runner):
+            return {
+                "5.1.0": schema_repair.AppliedMigration(
+                    version="5.1.0",
+                    version_rank=168,
+                    checksum=-152505803,
+                    script="V5.1.0__schema.sql",
+                )
+            }
+
+        def fake_flyway(address, remote_dir, runner):
+            flyway_calls.append(remote_dir)
+            if len(flyway_calls) == 1:
+                return subprocess.CompletedProcess(
+                    args=[],
+                    returncode=1,
+                    stdout=(
+                        "Migration Checksum mismatch for migration 5.1.0\n"
+                        "-> Applied to database : -152505803\n"
+                        "-> Resolved locally    : -373519170\n"
+                    ),
+                    stderr="",
+                )
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        schema_repair._stage_sql_dir = fake_stage
+        schema_repair._remote_applied_migrations = fake_applied
+        schema_repair._run_remote_flyway = fake_flyway
+        schema_repair._apply_schema_sql_file = (
+            lambda address, local_sql_path, runner: applied_sql_files.append(local_sql_path) or 0
+        )
+        schema_repair._run_remote_flyway_repair = (
+            lambda address, remote_dir, runner: repair_dirs.append(remote_dir) or 0
         )
 
-        script = schema_repair.build_repair_sql(report)
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                db_file = Path(td, "V5.1.0__schema.sql")
+                db_file.write_text("CREATE TABLE IF NOT EXISTS `zstack`.`T` (`uuid` varchar(32));\n")
 
-        self.assertIn("CREATE TABLE IF NOT EXISTS `zstack`.`ScannerAlarmStateVO`", script)
-        self.assertIn(
-            "UPDATE `zstack`.`schema_version` SET `checksum` = -1252689812 "
-            "WHERE `version_rank` = 168 AND `version` = '5.1.0'",
-            script,
-        )
+                rc = schema_repair.run_schema_repair_for_file(
+                    address="172.26.213.50",
+                    db_file=str(db_file),
+                    runner=FakeRunner(),
+                )
+        finally:
+            schema_repair._stage_sql_dir = original_stage
+            schema_repair._remote_applied_migrations = original_applied
+            schema_repair._run_remote_flyway = original_flyway
+            schema_repair._apply_schema_sql_file = original_apply
+            schema_repair._run_remote_flyway_repair = original_repair
 
-    def test_repair_report_allows_idempotent_zstack_update_statements(self):
-        migration = schema_repair.AppliedMigration(
-            version="5.1.0",
-            version_rank=168,
-            checksum=-1252689812,
-            script="V5.1.0__schema.sql",
-        )
-        mismatch = schema_repair.ChecksumMismatch(
-            version="5.1.0",
-            applied_checksum=-1252689812,
-            resolved_checksum=-577660424,
-        )
-        sql = (
-            "UPDATE `zstack`.`VolumeBackupVO` vb\n"
-            "SET vb.`encrypted` = 1\n"
-            "WHERE EXISTS (SELECT 1 FROM `zstack`.`EncryptedResourceKeyRefVO` keyRef\n"
-            "WHERE keyRef.`resourceUuid` = vb.`uuid`);\n"
+        self.assertEqual(0, rc)
+        self.assertEqual(["V5.1.0__schema.sql"], staged_files)
+        self.assertEqual([str(db_file)], applied_sql_files)
+        self.assertEqual([schema_repair.DEFAULT_REMOTE_SQL_DIR], repair_dirs)
+        self.assertEqual(
+            [schema_repair.DEFAULT_REMOTE_SQL_DIR, schema_repair.DEFAULT_REMOTE_SQL_DIR],
+            flyway_calls,
         )
 
-        report = schema_repair._repair_report_for_mismatch(
-            address="172.26.213.50",
-            migration=migration,
-            mismatch=mismatch,
-            sql=sql,
-            runner=FakeRunner(),
+    def test_file_schema_repair_stops_before_flyway_repair_when_full_sql_apply_fails(self):
+        repair_dirs = []
+        original_stage = schema_repair._stage_sql_dir
+        original_applied = schema_repair._remote_applied_migrations
+        original_flyway = schema_repair._run_remote_flyway
+        original_apply = schema_repair._apply_schema_sql_file
+        original_repair = schema_repair._run_remote_flyway_repair
+
+        schema_repair._stage_sql_dir = lambda address, local_dir, remote_dir, runner: 0
+        schema_repair._remote_applied_migrations = lambda address, scripts, runner: {
+            "5.1.0": schema_repair.AppliedMigration(
+                version="5.1.0",
+                version_rank=168,
+                checksum=-152505803,
+                script="V5.1.0__schema.sql",
+            )
+        }
+        schema_repair._run_remote_flyway = lambda address, remote_dir, runner: subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout=(
+                "Migration Checksum mismatch for migration 5.1.0\n"
+                "-> Applied to database : -152505803\n"
+                "-> Resolved locally    : -373519170\n"
+            ),
+            stderr="",
+        )
+        schema_repair._apply_schema_sql_file = lambda address, local_sql_path, runner: 1
+        schema_repair._run_remote_flyway_repair = (
+            lambda address, remote_dir, runner: repair_dirs.append(remote_dir) or 0
         )
 
-        self.assertEqual([sql.strip().rstrip(";")], report.ddl_statements)
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                db_file = Path(td, "V5.1.0__schema.sql")
+                db_file.write_text("CREATE TABLE IF NOT EXISTS `zstack`.`T` (`uuid` varchar(32));\n")
+
+                rc = schema_repair.run_schema_repair_for_file(
+                    address="172.26.213.50",
+                    db_file=str(db_file),
+                    runner=FakeRunner(),
+                )
+        finally:
+            schema_repair._stage_sql_dir = original_stage
+            schema_repair._remote_applied_migrations = original_applied
+            schema_repair._run_remote_flyway = original_flyway
+            schema_repair._apply_schema_sql_file = original_apply
+            schema_repair._run_remote_flyway_repair = original_repair
+
+        self.assertEqual(1, rc)
+        self.assertEqual([], repair_dirs)
+
+    def test_scriptlet_supports_flyway_repair_for_checksum_alignment(self):
+        scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
+
+        self.assertIn("zsv_schema_flyway_repair()", scriptlet)
+        self.assertIn('bash \\"\\$flyway\\" repair', scriptlet)
+
+    def test_bootstrap_exports_flyway_repair_scriptlet(self):
+        bootstrap = Path("scriptlet/bootstrap.sh").read_text(encoding="utf-8")
+
+        self.assertIn("_cbok_export_func zsv_schema_flyway_repair", bootstrap)
 
 
 if __name__ == "__main__":

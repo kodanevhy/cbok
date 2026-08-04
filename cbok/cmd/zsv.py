@@ -90,8 +90,6 @@ def _upgrade_command(tracker):
         "--primary-node",
         shlex.quote(tracker.primary_node),
     ]
-    if tracker.schema_db_file:
-        parts.extend(["--db-file", shlex.quote(tracker.schema_db_file)])
     return " ".join(parts)
 
 
@@ -120,12 +118,10 @@ class ZSphereCommands(base.BaseCommand):
             name=None,
             upgrade_url=None,
             primary_node=None,
-            db_file=None,
     ):
         return ZSphereTracker(
             name=name,
             upgrade_url=upgrade_url,
-            db_file=db_file,
             primary_node=primary_node,
             runner=self.p_runner,
         )
@@ -150,7 +146,6 @@ class ZSphereCommands(base.BaseCommand):
             name=state.name,
             upgrade_url=state.iso_url,
             primary_node=primary_node,
-            db_file=None,
         )
         iso, state, needs_upgrade, _new_iso_detected = tracker.check()
         _print_iso(tracker, iso, state, needs_upgrade)
@@ -283,16 +278,12 @@ class ZSphereCommands(base.BaseCommand):
         "--upgrade-url", metavar="<url>", required=True,
         help="Exact BIN/ISO package file URL; directory or index URLs are not supported")
     @args.args(
-        "--db-file", metavar="<path>",
-        help="Optional local ZSV schema SQL file for pre-upgrade Flyway checksum repair; normally leave unset unless explicitly required, cbok resolves it dynamically from configured base_ref")
-    @args.args(
         "--name", metavar="<name>", required=True,
         help="Tracked environment name")
     def upgrade(
             self,
             name=None,
             upgrade_url=None,
-            db_file=None,
             primary_node=None,
     ):
         """Upgrade ZSphere primary node with latest BIN/ISO package"""
@@ -300,7 +291,6 @@ class ZSphereCommands(base.BaseCommand):
             name=name,
             upgrade_url=upgrade_url,
             primary_node=primary_node,
-            db_file=db_file,
         )
         returncode, iso, state = tracker.upgrade(self)
         if returncode == 0:
