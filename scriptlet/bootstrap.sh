@@ -76,8 +76,6 @@ _cbok_export_func zsv_upgrade_latest
 _cbok_export_func zsv_mysql_query
 _cbok_export_func zsv_schema_stage_sql_dir
 _cbok_export_func zsv_schema_flyway_migrate
-_cbok_export_func zsv_schema_flyway_repair
-_cbok_export_func zsv_schema_apply_sql_file
 
 _cbok_export_func zsv_tomcat_lib_ensure_backup
 _cbok_export_func zsv_scp_jars_to_remote
