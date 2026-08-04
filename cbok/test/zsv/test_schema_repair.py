@@ -29,7 +29,6 @@ from cbok.bbx.zsv.service import IsoInfo
 from cbok.bbx.zsv.service import ZSphereTracker
 from cbok.bbx.zsv import service as zsv_service
 from cbok.cmd.zsv import _upgrade_command
-from cbok.cmd.zsv import _upgrade_type_from_state
 from cbok.cmd.zsv import ZSphereCommands
 
 
@@ -81,7 +80,6 @@ class SchemaRepairTest(unittest.TestCase):
         )
         tracker = ZSphereTracker(
             name="test-env",
-            upgrade_type="bin",
             upgrade_url=bin_url,
             db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
@@ -104,10 +102,9 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertEqual("123", artifact.size)
 
     def test_tracker_rejects_upgrade_directory_url(self):
-        with self.assertRaisesRegex(ValueError, "exact \\.iso file URL"):
+        with self.assertRaisesRegex(ValueError, "exact \\.iso or \\.bin file URL"):
             ZSphereTracker(
                 name="test-env",
-                upgrade_type="iso",
                 upgrade_url="http://example.invalid/latest/",
                 db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
                 primary_node="172.26.213.50",
@@ -115,7 +112,7 @@ class SchemaRepairTest(unittest.TestCase):
             )
 
     def test_tracker_rejects_upgrade_url_type_mismatch(self):
-        with self.assertRaisesRegex(ValueError, "exact \\.bin file URL"):
+        with self.assertRaisesRegex(ValueError, "does not match upgrade_type"):
             ZSphereTracker(
                 name="test-env",
                 upgrade_type="bin",
@@ -125,11 +122,30 @@ class SchemaRepairTest(unittest.TestCase):
                 runner=FakeRunner(),
             )
 
+    def test_tracker_infers_upgrade_type_from_bin_url(self):
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+            primary_node="172.26.213.50",
+            runner=FakeRunner(),
+        )
+
+        self.assertEqual("bin", tracker.upgrade_type)
+
+    def test_tracker_infers_upgrade_type_from_iso_url(self):
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
+            primary_node="172.26.213.50",
+            runner=FakeRunner(),
+        )
+
+        self.assertEqual("iso", tracker.upgrade_type)
+
     def test_fetch_exact_artifact_tolerates_local_metadata_probe_failure(self):
         bin_url = "http://example.invalid/ZStack-ZSphere-installer.bin"
         tracker = ZSphereTracker(
             name="test-env",
-            upgrade_type="bin",
             upgrade_url=bin_url,
             db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             primary_node="172.26.213.50",
@@ -378,7 +394,7 @@ class SchemaRepairTest(unittest.TestCase):
         command = _upgrade_command(tracker)
 
         self.assertNotIn("--nodes", command)
-        self.assertIn("--upgrade-type bin", command)
+        self.assertNotIn("--upgrade-type", command)
         self.assertIn("--upgrade-url http://example.invalid/ZStack-ZSphere-installer.bin", command)
         self.assertIn("--db-file /workspace/zstack/conf/db/zsv/V5.1.0__schema.sql", command)
 
@@ -419,35 +435,20 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertNotIn("--upgrade-type", options)
         self.assertNotIn("--db-file", options)
 
-    def test_check_reports_upgrade_type_from_current_bin_url(self):
-        state = SimpleNamespace(
-            last_upgraded_iso_name="ZStack-ZSphere-installer-fv-2606181047-36.bin",
-            latest_iso_name="",
-            iso_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+    def test_check_builds_tracker_from_current_artifact_url(self):
+        command = ZSphereCommands()
+        command.p_runner = FakeRunner()
+        tracker = command._tracker(
+            name="test-env",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+            primary_node="172.26.213.50",
+            db_file=None,
         )
 
-        self.assertEqual("bin", _upgrade_type_from_state(state))
-
-    def test_check_prefers_current_iso_url_over_previous_bin_upgrade(self):
-        state = SimpleNamespace(
-            last_upgraded_iso_name="ZStack-ZSphere-installer-fv-2606181047-36.bin",
-            latest_iso_name="ZStack-ZSphere-x86_64-DVD.iso",
-            iso_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
-        )
-
-        self.assertEqual("iso", _upgrade_type_from_state(state))
-
-    def test_check_infers_iso_type_from_current_url(self):
-        state = SimpleNamespace(
-            last_upgraded_iso_name="",
-            latest_iso_name="ZStack-ZSphere-x86_64-DVD.iso",
-            iso_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
-        )
-
-        self.assertEqual("iso", _upgrade_type_from_state(state))
+        self.assertEqual("bin", tracker.upgrade_type)
 
     def test_zsv_upgrade_requires_full_execution_args(self):
-        required_args = ("--name", "--upgrade-type", "--upgrade-url", "--primary-node")
+        required_args = ("--name", "--upgrade-url", "--primary-node")
         options = {
             arg: kwargs
             for args, kwargs in getattr(ZSphereCommands.upgrade, "_args", [])
@@ -457,6 +458,7 @@ class SchemaRepairTest(unittest.TestCase):
             self.assertIn(arg, options)
             self.assertTrue(options[arg]["required"])
         self.assertIn("directory or index URLs are not supported", options["--upgrade-url"]["help"])
+        self.assertNotIn("--upgrade-type", options)
         self.assertIn("--db-file", options)
         self.assertFalse(options["--db-file"].get("required", False))
         self.assertIn("normally leave unset", options["--db-file"]["help"])
@@ -568,17 +570,16 @@ class SchemaRepairTest(unittest.TestCase):
 
         self.assertEqual("", tracker.schema_db_file)
 
-    def test_tracker_requires_name_upgrade_type_and_primary_node(self):
+    def test_tracker_requires_name_and_primary_node(self):
         common = {
             "name": "test-env",
-            "upgrade_type": "bin",
             "upgrade_url": "http://example.invalid/ZStack-ZSphere-installer.bin",
             "db_file": "/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
             "primary_node": "172.26.213.50",
             "runner": FakeRunner(),
         }
 
-        for required in ("name", "upgrade_type", "primary_node"):
+        for required in ("name", "primary_node"):
             kwargs = dict(common)
             kwargs.pop(required)
             with self.assertRaisesRegex(ValueError, f"{required} is required"):
