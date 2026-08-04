@@ -23,6 +23,11 @@ from django.utils import timezone
 
 from cbok import settings
 from cbok.bbx.models import ZsvCompileState
+from cbok.bbx.zsv import base_ref as zsv_base_ref
+from cbok.bbx.zsv import config as zsv_config
+from cbok.bbx.zsv.config import DEFAULT_BASE_REF
+from cbok.bbx.zsv.config import default_zstack_root
+from cbok.bbx.zsv.config import zstack_root_from_workspace
 from cbok.bbx.zsv.worktree_container import DEFAULT_MIN_FREE_GB
 from cbok.bbx.zsv.worktree_container import WorktreeContainerSpec
 from cbok.bbx.zsv.worktree_container import ensure_worktree_container
@@ -49,7 +54,6 @@ _SKIP_JAR_SUFFIXES = (
 _AUTO_EXCLUDED_MODULES = frozenset(
     ("test", "testlib", "test-premium", "testlib-premium")
 )
-DEFAULT_BASE_REF = "origin/feature-zsv-5.1.0-encryption"
 MAVEN_PROFILE_PREPARE_CMD = "./runMavenProfile premium"
 RSYNC_SOURCE_EXCLUDES = "--exclude .git --exclude target --exclude '*/target' --exclude '._*' --exclude '.DS_Store' --exclude '__MACOSX'"
 SPRING_CONFIG_PREFIX = "conf/springConfigXml/"
@@ -100,14 +104,6 @@ class JavaInterfaceChange:
     @property
     def fqn(self) -> str:
         return f"{self.package}.{self.name}" if self.package else self.name
-
-
-def default_zstack_root() -> str:
-    return os.path.join(settings.Workspace, "Cursor", "zs", "zstack")
-
-
-def zstack_root_from_workspace() -> str:
-    return os.path.realpath(default_zstack_root())
 
 
 def _conf_get(section: str, option: str, default: str) -> str:
@@ -235,7 +231,7 @@ def compile_worktree_key(
     container_key = worktree_key_for_spec(
         _compile_worktree_spec(zstack_root, premium_root, remote)
     )
-    base_ref = _conf_get("zsv_compile", "base_ref", DEFAULT_BASE_REF)
+    base_ref = zsv_config.zsv_base_ref()
     return hashlib.sha256(f"{container_key}\0{base_ref}".encode("utf-8")).hexdigest()
 
 
@@ -501,42 +497,15 @@ def modules_from_changed_paths(
 
 
 def _remote_base_ref_fetch_spec(repo_root: str, base_ref: str) -> tuple[str, str, str] | None:
-    if "/" not in base_ref:
-        return None
-
-    remote, branch = base_ref.split("/", 1)
-    if not remote or not branch:
-        return None
-
-    r = _git(repo_root, "remote", "get-url", remote)
-    if r.returncode != 0:
-        return None
-
-    return remote, f"refs/heads/{branch}", f"refs/remotes/{remote}/{branch}"
+    return zsv_base_ref.remote_base_ref_fetch_spec(repo_root, base_ref, git_runner=_git)
 
 
 def sync_changed_paths_base_ref(repo_root: str) -> bool:
-    base_ref = _conf_get("zsv_compile", "base_ref", DEFAULT_BASE_REF)
-    if not base_ref:
-        return True
-
-    fetch_spec = _remote_base_ref_fetch_spec(repo_root, base_ref)
-    if fetch_spec is None:
-        LOG.error("Configured base ref %s must be a remote branch such as origin/<branch>", base_ref)
-        return False
-
-    remote, remote_ref, local_ref = fetch_spec
-    r = _git(repo_root, "fetch", remote, f"+{remote_ref}:{local_ref}")
-    if r.returncode == 0:
-        return True
-
-    LOG.error("Failed to fetch upstream base ref %s from %s in %s: %s",
-              base_ref, remote, repo_root, (r.stderr or "").strip())
-    return False
+    return zsv_base_ref.sync_base_ref(repo_root, git_runner=_git)
 
 
 def validate_changed_paths_base_ref(repo_root: str) -> bool:
-    base_ref = _conf_get("zsv_compile", "base_ref", DEFAULT_BASE_REF)
+    base_ref = zsv_config.zsv_base_ref()
     if not base_ref:
         return True
 
@@ -556,7 +525,7 @@ def validate_changed_paths_base_ref(repo_root: str) -> bool:
 
 
 def changed_paths_from_head_commit(repo_root: str) -> list[str]:
-    base_ref = _conf_get("zsv_compile", "base_ref", DEFAULT_BASE_REF)
+    base_ref = zsv_config.zsv_base_ref()
     if base_ref:
         r = _git(repo_root, "diff", "--name-only", base_ref, "HEAD")
         if r.returncode == 0:

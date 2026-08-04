@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import shlex
+import tempfile
 from urllib.parse import unquote
 from urllib.parse import urljoin
 from urllib.parse import urlparse
@@ -393,11 +394,20 @@ class ZSphereTracker:
             if getattr(result, "returncode", 0) != 0:
                 return result.returncode, iso, state
 
-        repair_rc = schema_repair.run_schema_repair_for_file(
-            address=self.primary_node,
-            db_file=self.schema_db_file,
-            runner=self.runner,
-        )
+        with tempfile.TemporaryDirectory() as td:
+            db_file = self.schema_db_file
+            if not db_file:
+                try:
+                    db_file = schema_repair.materialize_zsv_schema_db_file(target_dir=td)
+                except RuntimeError as exc:
+                    LOG.error("Failed to resolve ZSV schema db file from base ref: %s", exc)
+                    return 1, iso, state
+
+            repair_rc = schema_repair.run_schema_repair_for_file(
+                address=self.primary_node,
+                db_file=db_file,
+                runner=self.runner,
+            )
         if repair_rc != 0:
             return repair_rc, iso, state
 

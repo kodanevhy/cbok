@@ -72,6 +72,15 @@ LLM_API_KEY = Group(
     ]
 )
 
+ZSV = Group(
+    name="zsv",
+    title="zsv shared settings",
+    options=[
+        Option("base_ref", default="origin/feature-zsv-5.1.0-encryption",
+        help="Remote branch used as the shared ZSV base ref"),
+    ]
+)
+
 ZSV_COMPILE = Group(
     name="zsv_compile",
     title="zsv compile: remote Docker settings",
@@ -88,8 +97,6 @@ ZSV_COMPILE = Group(
         help="Docker volume prefix for worktree-scoped Maven repositories; auto uses zsv-m2"),
         Option("remote_docker_min_free_gb", default="20",
         help="Minimum remote Docker root free space before creating a new worktree container"),
-        Option("base_ref", default="origin/feature-zsv-5.1.0-encryption",
-        help="Remote branch used as changed-path base for ZSV incremental compile"),
     ]
 )
 
@@ -108,7 +115,7 @@ ZSV_DEPLOY = Group(
     ],
 )
 
-ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT, LLM_API_KEY,
+ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT, LLM_API_KEY, ZSV,
               ZSV_COMPILE, ZSV_DEPLOY]
 
 

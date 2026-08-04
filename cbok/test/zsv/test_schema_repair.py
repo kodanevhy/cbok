@@ -372,6 +372,19 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertIn("--upgrade-url http://example.invalid/ZStack-ZSphere-installer.bin", command)
         self.assertIn("--db-file /workspace/zstack/conf/db/zsv/V5.1.0__schema.sql", command)
 
+    def test_upgrade_command_omits_empty_db_file_for_dynamic_resolution(self):
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_type="bin",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+            primary_node="172.26.213.50",
+            runner=FakeRunner(),
+        )
+
+        command = _upgrade_command(tracker)
+
+        self.assertNotIn("--db-file", command)
+
     def test_zsv_status_only_requires_primary_node(self):
         options = {
             arg: kwargs
@@ -415,7 +428,7 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertEqual("iso", _upgrade_type_from_state(state))
 
     def test_zsv_upgrade_requires_full_execution_args(self):
-        required_args = ("--name", "--upgrade-type", "--upgrade-url", "--db-file", "--primary-node")
+        required_args = ("--name", "--upgrade-type", "--upgrade-url", "--primary-node")
         options = {
             arg: kwargs
             for args, kwargs in getattr(ZSphereCommands.upgrade, "_args", [])
@@ -424,6 +437,10 @@ class SchemaRepairTest(unittest.TestCase):
         for arg in required_args:
             self.assertIn(arg, options)
             self.assertTrue(options[arg]["required"])
+        self.assertIn("--db-file", options)
+        self.assertFalse(options["--db-file"].get("required", False))
+        self.assertIn("normally leave unset", options["--db-file"]["help"])
+        self.assertIn("dynamically from configured base_ref", options["--db-file"]["help"])
 
     def test_zsv_upgrade_commands_do_not_define_manual_schema_args(self):
         for method in (ZSphereCommands.check, ZSphereCommands.status, ZSphereCommands.upgrade):
@@ -437,8 +454,14 @@ class SchemaRepairTest(unittest.TestCase):
             self.assertNotIn("--no-apply-schema-repair", option_names)
             self.assertNotIn("--zstack-root", option_names)
 
-    def test_zsv_upgrade_settings_are_not_configured_in_cbok_conf_schema(self):
-        self.assertNotIn("zsv", [group.name for group in cbok_config.ALL_GROUPS])
+    def test_zsv_shared_settings_configure_base_ref_only(self):
+        self.assertIn("zsv", [group.name for group in cbok_config.ALL_GROUPS])
+        option_names = [opt.name for opt in cbok_config.ZSV.options]
+
+        self.assertIn("base_ref", option_names)
+        self.assertNotIn("zstack_root", option_names)
+        self.assertNotIn("schema_branch", option_names)
+        self.assertNotIn("db_file", option_names)
 
     def test_zsv_static_environment_knobs_are_not_cli_args(self):
         stable_cli_args = {
@@ -658,6 +681,99 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertEqual("/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql", repairs[0]["db_file"])
         script = runner.commands[0][0][-1]
         self.assertIn("zsv_upgrade_latest", script)
+
+    def test_upgrade_resolves_db_file_from_base_ref_when_not_provided(self):
+        runner = FakeRunner()
+        repairs = []
+        materialized = []
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_type="iso",
+            upgrade_url="http://example.invalid/latest/",
+            primary_node="172.26.213.50",
+            runner=runner,
+        )
+        original_repair = schema_repair.run_schema_repair_for_file
+        original_discover = zsv_service.discover_management_nodes
+        original_materialize = schema_repair.materialize_zsv_schema_db_file
+
+        def fake_materialize(target_dir, **_kwargs):
+            path = Path(target_dir, "V5.1.0__schema.sql")
+            path.write_text("CREATE TABLE T(id int);\n", encoding="utf-8")
+            materialized.append(str(path))
+            return str(path)
+
+        def fake_repair(**kwargs):
+            repairs.append((kwargs, Path(kwargs["db_file"]).read_text(encoding="utf-8")))
+            return 0
+
+        schema_repair.run_schema_repair_for_file = fake_repair
+        zsv_service.discover_management_nodes = lambda address, runner: [address]
+        schema_repair.materialize_zsv_schema_db_file = fake_materialize
+        iso = IsoInfo(
+            name="ZStack-ZSphere-installer.bin",
+            download_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+            size="123",
+        )
+        state = SimpleNamespace(
+            latest_iso_name="",
+            latest_iso_modified_at=None,
+            last_upgraded_iso_name="",
+            last_upgraded_iso_modified_at=None,
+            last_upgraded_at=None,
+            save=lambda update_fields=None: None,
+        )
+        tracker.check = lambda: (iso, state, True, True)
+
+        try:
+            rc, _iso, _state = tracker.upgrade(FakeCommand())
+        finally:
+            schema_repair.materialize_zsv_schema_db_file = original_materialize
+            schema_repair.run_schema_repair_for_file = original_repair
+            zsv_service.discover_management_nodes = original_discover
+
+        self.assertEqual(0, rc)
+        self.assertEqual(1, len(materialized))
+        self.assertEqual(1, len(repairs))
+        self.assertEqual("172.26.213.50", repairs[0][0]["address"])
+        self.assertTrue(repairs[0][0]["db_file"].endswith("V5.1.0__schema.sql"))
+        self.assertEqual("CREATE TABLE T(id int);\n", repairs[0][1])
+        self.assertIn("zsv_upgrade_latest", runner.commands[0][0][-1])
+
+    def test_materialize_zsv_schema_db_file_reuses_compile_base_ref_sync(self):
+        sync_calls = []
+        read_calls = []
+        original_base_ref = schema_repair.zsv_base_ref
+        original_sync = schema_repair.zsv_base_ref_helper.sync_base_ref
+        original_read = schema_repair.read_branch_file
+
+        def fake_read(root, branch, path):
+            read_calls.append((root, branch, path))
+            return "CREATE TABLE T(id int);\n"
+
+        schema_repair.zsv_base_ref = lambda: "origin/zsv_5.1.0"
+        schema_repair.zsv_base_ref_helper.sync_base_ref = (
+            lambda root: sync_calls.append(root) or True
+        )
+        schema_repair.read_branch_file = fake_read
+
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                path = schema_repair.materialize_zsv_schema_db_file(
+                    target_dir=td,
+                    zstack_root="/repo/zstack",
+                )
+
+                self.assertEqual("CREATE TABLE T(id int);\n", Path(path).read_text(encoding="utf-8"))
+        finally:
+            schema_repair.zsv_base_ref = original_base_ref
+            schema_repair.zsv_base_ref_helper.sync_base_ref = original_sync
+            schema_repair.read_branch_file = original_read
+
+        self.assertEqual(["/repo/zstack"], sync_calls)
+        self.assertEqual([
+            ("/repo/zstack", "origin/zsv_5.1.0", "conf/db/zsv/V5.1.0__schema.sql"),
+        ], read_calls)
 
     def test_file_schema_repair_uses_single_configured_db_file(self):
         staged_files = []
