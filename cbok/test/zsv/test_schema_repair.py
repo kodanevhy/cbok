@@ -185,10 +185,10 @@ class SchemaRepairTest(unittest.TestCase):
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
-        original_repair = schema_repair.run_schema_repair_for_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
         original_materialize = schema_repair.materialize_zsv_schema_db_file
         zsv_service.discover_management_nodes = lambda address, runner: [address]
-        schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        schema_repair.run_schema_mismatch_precheck_for_file = lambda **kwargs: 0
         schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
@@ -209,7 +209,7 @@ class SchemaRepairTest(unittest.TestCase):
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
             schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_repair_for_file = original_repair
+            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(0, rc)
@@ -229,10 +229,10 @@ class SchemaRepairTest(unittest.TestCase):
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
-        original_repair = schema_repair.run_schema_repair_for_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
         original_materialize = schema_repair.materialize_zsv_schema_db_file
         zsv_service.discover_management_nodes = lambda address, runner: [address]
-        schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        schema_repair.run_schema_mismatch_precheck_for_file = lambda **kwargs: 0
         schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
@@ -253,7 +253,7 @@ class SchemaRepairTest(unittest.TestCase):
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
             schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_repair_for_file = original_repair
+            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(0, rc)
@@ -281,10 +281,10 @@ class SchemaRepairTest(unittest.TestCase):
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
-        original_repair = schema_repair.run_schema_repair_for_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
         original_materialize = schema_repair.materialize_zsv_schema_db_file
         zsv_service.discover_management_nodes = lambda address, runner: [address]
-        schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        schema_repair.run_schema_mismatch_precheck_for_file = lambda **kwargs: 0
         schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
@@ -305,7 +305,7 @@ class SchemaRepairTest(unittest.TestCase):
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
             schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_repair_for_file = original_repair
+            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(1, rc)
@@ -331,10 +331,10 @@ class SchemaRepairTest(unittest.TestCase):
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
-        original_repair = schema_repair.run_schema_repair_for_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
         original_materialize = schema_repair.materialize_zsv_schema_db_file
         zsv_service.discover_management_nodes = lambda address, runner: [address]
-        schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        schema_repair.run_schema_mismatch_precheck_for_file = lambda **kwargs: 0
         schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
@@ -355,7 +355,7 @@ class SchemaRepairTest(unittest.TestCase):
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
             schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_repair_for_file = original_repair
+            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(1, rc)
@@ -588,12 +588,12 @@ class SchemaRepairTest(unittest.TestCase):
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
-        original_repair = schema_repair.run_schema_repair_for_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
         original_materialize = schema_repair.materialize_zsv_schema_db_file
         zsv_service.discover_management_nodes = (
             lambda address, runner: ["172.26.213.50", "172.26.213.51"]
         )
-        schema_repair.run_schema_repair_for_file = lambda **kwargs: 0
+        schema_repair.run_schema_mismatch_precheck_for_file = lambda **kwargs: 0
         schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
         iso = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
@@ -623,7 +623,7 @@ class SchemaRepairTest(unittest.TestCase):
             rc, _iso, _state = tracker.upgrade(FakeCommand())
         finally:
             schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_repair_for_file = original_repair
+            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(0, rc)
@@ -659,7 +659,7 @@ class SchemaRepairTest(unittest.TestCase):
 
     def test_upgrade_resolves_db_file_from_base_ref(self):
         runner = FakeRunner()
-        repairs = []
+        prechecks = []
         materialized = []
         tracker = ZSphereTracker(
             name="test-env",
@@ -668,7 +668,7 @@ class SchemaRepairTest(unittest.TestCase):
             primary_node="172.26.213.50",
             runner=runner,
         )
-        original_repair = schema_repair.run_schema_repair_for_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
         original_discover = zsv_service.discover_management_nodes
         original_materialize = schema_repair.materialize_zsv_schema_db_file
 
@@ -678,11 +678,11 @@ class SchemaRepairTest(unittest.TestCase):
             materialized.append(str(path))
             return str(path)
 
-        def fake_repair(**kwargs):
-            repairs.append((kwargs, Path(kwargs["db_file"]).read_text(encoding="utf-8")))
+        def fake_precheck(**kwargs):
+            prechecks.append((kwargs, Path(kwargs["db_file"]).read_text(encoding="utf-8")))
             return 0
 
-        schema_repair.run_schema_repair_for_file = fake_repair
+        schema_repair.run_schema_mismatch_precheck_for_file = fake_precheck
         zsv_service.discover_management_nodes = lambda address, runner: [address]
         schema_repair.materialize_zsv_schema_db_file = fake_materialize
         iso = IsoInfo(
@@ -704,15 +704,15 @@ class SchemaRepairTest(unittest.TestCase):
             rc, _iso, _state = tracker.upgrade(FakeCommand())
         finally:
             schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_repair_for_file = original_repair
+            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(0, rc)
         self.assertEqual(1, len(materialized))
-        self.assertEqual(1, len(repairs))
-        self.assertEqual("172.26.213.50", repairs[0][0]["address"])
-        self.assertTrue(repairs[0][0]["db_file"].endswith("V5.1.0__schema.sql"))
-        self.assertEqual("CREATE TABLE T(id int);\n", repairs[0][1])
+        self.assertEqual(1, len(prechecks))
+        self.assertEqual("172.26.213.50", prechecks[0][0]["address"])
+        self.assertTrue(prechecks[0][0]["db_file"].endswith("V5.1.0__schema.sql"))
+        self.assertEqual("CREATE TABLE T(id int);\n", prechecks[0][1])
         self.assertIn("zsv_upgrade_latest", runner.commands[0][0][-1])
 
     def test_materialize_zsv_schema_db_file_reuses_compile_base_ref_sync(self):
@@ -750,7 +750,7 @@ class SchemaRepairTest(unittest.TestCase):
             ("/repo/zstack", "origin/zsv_5.1.0", "conf/db/zsv/V5.1.0__schema.sql"),
         ], read_calls)
 
-    def test_file_schema_repair_uses_single_configured_db_file(self):
+    def test_file_schema_precheck_uses_single_configured_db_file(self):
         staged_files = []
         applied_scripts = []
         flyway_dirs = []
@@ -791,7 +791,7 @@ class SchemaRepairTest(unittest.TestCase):
                 db_file = Path(td, "V5.1.0__schema.sql")
                 db_file.write_text("CREATE TABLE IF NOT EXISTS `zstack`.`T` (`uuid` varchar(32));\n")
 
-                rc = schema_repair.run_schema_repair_for_file(
+                rc = schema_repair.run_schema_mismatch_precheck_for_file(
                     address="172.26.213.50",
                     db_file=str(db_file),
                     runner=FakeRunner(),
@@ -806,271 +806,73 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertEqual(["V5.1.0__schema.sql"], staged_files)
         self.assertEqual([schema_repair.DEFAULT_REMOTE_SQL_DIR], flyway_dirs)
 
-    def test_file_schema_repair_applies_full_db_file_then_runs_flyway_repair(self):
-        staged_files = []
-        applied_sql_files = []
-        repair_dirs = []
-        flyway_calls = []
-        original_stage = schema_repair._stage_sql_dir
-        original_applied = schema_repair._remote_applied_migrations
-        original_flyway = schema_repair._run_remote_flyway
-        original_apply = schema_repair._apply_schema_sql_file
-        original_repair = schema_repair._run_remote_flyway_repair
+    def test_file_schema_precheck_stops_on_checksum_mismatch_with_skill_hint(self):
+        class MismatchRunner(FakeRunner):
+            def run_command(self, cmd, **kwargs):
+                self.commands.append((cmd, kwargs))
+                script = cmd[-1]
+                if "zsv_mysql_query" in script:
+                    return subprocess.CompletedProcess(
+                        args=cmd,
+                        returncode=0,
+                        stdout="5.1.0\t168\t-152505803\tV5.1.0__schema.sql\n",
+                        stderr="",
+                    )
+                if "zsv_schema_flyway_migrate" in script:
+                    return subprocess.CompletedProcess(
+                        args=cmd,
+                        returncode=1,
+                        stdout=(
+                            "Migration Checksum mismatch for migration 5.1.0\n"
+                            "-> Applied to database : -152505803\n"
+                            "-> Resolved locally    : -373519170\n"
+                        ),
+                        stderr="",
+                    )
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
-        def fake_stage(address, local_dir, remote_dir, runner):
-            staged_files.extend(path.name for path in Path(local_dir).iterdir())
-            return 0
+        runner = MismatchRunner()
+        with tempfile.TemporaryDirectory() as td:
+            db_file = Path(td, "V5.1.0__schema.sql")
+            db_file.write_text("CREATE TABLE IF NOT EXISTS `zstack`.`T` (`uuid` varchar(32));\n")
 
-        def fake_applied(address, scripts, runner):
-            return {
-                "5.1.0": schema_repair.AppliedMigration(
-                    version="5.1.0",
-                    version_rank=168,
-                    checksum=-152505803,
-                    script="V5.1.0__schema.sql",
-                )
-            }
-
-        def fake_flyway(address, remote_dir, runner):
-            flyway_calls.append(remote_dir)
-            if len(flyway_calls) == 1:
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=1,
-                    stdout=(
-                        "Migration Checksum mismatch for migration 5.1.0\n"
-                        "-> Applied to database : -152505803\n"
-                        "-> Resolved locally    : -373519170\n"
-                    ),
-                    stderr="",
-                )
-            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-        schema_repair._stage_sql_dir = fake_stage
-        schema_repair._remote_applied_migrations = fake_applied
-        schema_repair._run_remote_flyway = fake_flyway
-        schema_repair._apply_schema_sql_file = (
-            lambda address, local_sql_path, runner:
-                applied_sql_files.append(Path(local_sql_path).read_text(encoding="utf-8"))
-                or subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-        )
-        schema_repair._run_remote_flyway_repair = (
-            lambda address, remote_dir, runner: repair_dirs.append(remote_dir) or 0
-        )
-
-        try:
-            with tempfile.TemporaryDirectory() as td:
-                db_file = Path(td, "V5.1.0__schema.sql")
-                db_file.write_text("CREATE TABLE IF NOT EXISTS `zstack`.`T` (`uuid` varchar(32));\n")
-
-                rc = schema_repair.run_schema_repair_for_file(
+            with self.assertLogs(schema_repair.LOG, level="ERROR") as logs:
+                rc = schema_repair.run_schema_mismatch_precheck_for_file(
                     address="172.26.213.50",
                     db_file=str(db_file),
-                    runner=FakeRunner(),
-                )
-        finally:
-            schema_repair._stage_sql_dir = original_stage
-            schema_repair._remote_applied_migrations = original_applied
-            schema_repair._run_remote_flyway = original_flyway
-            schema_repair._apply_schema_sql_file = original_apply
-            schema_repair._run_remote_flyway_repair = original_repair
-
-        self.assertEqual(0, rc)
-        self.assertEqual(["V5.1.0__schema.sql"], staged_files)
-        self.assertEqual(["CREATE TABLE IF NOT EXISTS `zstack`.`T` (`uuid` varchar(32));\n"], applied_sql_files)
-        self.assertEqual([schema_repair.DEFAULT_REMOTE_SQL_DIR], repair_dirs)
-        self.assertEqual(
-            [schema_repair.DEFAULT_REMOTE_SQL_DIR, schema_repair.DEFAULT_REMOTE_SQL_DIR],
-            flyway_calls,
-        )
-
-    def test_schema_replay_executes_each_statement_and_skips_duplicate_errors(self):
-        original_apply = schema_repair._apply_schema_sql_file
-
-        applied_statements = []
-
-        def fake_apply(address, local_sql_path, runner):
-            statement = Path(local_sql_path).read_text(encoding="utf-8")
-            applied_statements.append(statement)
-            if "ExistingPlainCreateVO" in statement:
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=1,
-                    stdout="ERROR 1050 (42S01) at line 1: Table 'ExistingPlainCreateVO' already exists",
-                    stderr="",
-                )
-            if "ADD CONSTRAINT `fkEncryptedResourceKeyRefResourceVO`" in statement:
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=1,
-                    stdout=(
-                        'ERROR 1005 (HY000) at line 1: Can\'t create table `zstack`.`EncryptedResourceKeyRefVO` '
-                        '(errno: 121 "Duplicate key on write or update")'
-                    ),
-                    stderr="",
-                )
-            if "ADD UNIQUE KEY `ukVpcVpnConnectionVO`" in statement:
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=1,
-                    stdout="ERROR 1061 (42000) at line 1: Duplicate key name 'ukVpcVpnConnectionVO'",
-                    stderr="",
-                )
-            if "ALTER TABLE `zstack`.`VolumeEO` ADD COLUMN" in statement:
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=1,
-                    stdout="ERROR 1060 (42S21) at line 1: Duplicate column name 'encrypted'",
-                    stderr="",
-                )
-            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-        schema_repair._apply_schema_sql_file = fake_apply
-
-        try:
-            with tempfile.TemporaryDirectory() as td:
-                source = Path(td, "V5.1.0__schema.sql")
-                source.write_text(
-                    "DELETE FROM `EncryptedResourceKeyRefVO`;\n"
-                    "CREATE TABLE `zstack`.`ExistingPlainCreateVO` (`uuid` char(32));\n"
-                    "CREATE TABLE `zstack`.`NewPlainCreateVO` (`uuid` char(32));\n"
-                    "ALTER TABLE `EncryptedResourceKeyRefVO`\n"
-                    "  ADD CONSTRAINT `fkEncryptedResourceKeyRefResourceVO` FOREIGN KEY (`resourceUuid`) "
-                    "REFERENCES `ResourceVO`(`uuid`);\n"
-                    "ALTER TABLE `zstack`.`VpcVpnConnectionVO`\n"
-                    "  ADD UNIQUE KEY `ukVpcVpnConnectionVO` (`connectionId`) USING BTREE;\n"
-                    "ALTER TABLE `zstack`.`VolumeEO` ADD COLUMN `encrypted` tinyint(1) NOT NULL DEFAULT 0;\n"
-                    "ALTER TABLE `zstack`.`VolumeBackupVO` ADD COLUMN `encrypted` tinyint(1) NOT NULL DEFAULT 0;\n"
-                    "UPDATE `zstack`.`VolumeBackupVO` SET `encrypted` = 1;\n",
-                    encoding="utf-8",
+                    runner=runner,
                 )
 
-                rc = schema_repair._apply_schema_sql_statements(
-                    address="172.26.213.50",
-                    source_sql_path=str(source),
-                    runner=FakeRunner(),
-                )
-        finally:
-            schema_repair._apply_schema_sql_file = original_apply
+            output = "\n".join(logs.output)
 
-        self.assertEqual(0, rc)
-        applied = "\n".join(applied_statements)
-        self.assertIn("DELETE FROM `EncryptedResourceKeyRefVO`", applied)
-        self.assertIn("CREATE TABLE `zstack`.`ExistingPlainCreateVO`", applied)
-        self.assertIn("CREATE TABLE `zstack`.`NewPlainCreateVO`", applied)
-        self.assertIn("UPDATE `zstack`.`VolumeBackupVO`", applied)
-        self.assertIn("ADD CONSTRAINT `fkEncryptedResourceKeyRefResourceVO`", applied)
-        self.assertIn("ADD UNIQUE KEY `ukVpcVpnConnectionVO`", applied)
-        self.assertIn("ALTER TABLE `zstack`.`VolumeEO` ADD COLUMN", applied)
-        self.assertIn("ALTER TABLE `zstack`.`VolumeBackupVO` ADD COLUMN", applied)
-
-    def test_schema_replay_stops_at_failed_statement(self):
-        original_apply = schema_repair._apply_schema_sql_file
-        applied_statements = []
-
-        def fake_apply(address, local_sql_path, runner):
-            applied_statements.append(Path(local_sql_path).read_text(encoding="utf-8"))
-            if len(applied_statements) == 2:
-                return subprocess.CompletedProcess(
-                    args=[],
-                    returncode=1,
-                    stdout="ERROR 1062 (23000) at line 1: Duplicate entry 'x' for key 'PRIMARY'",
-                    stderr="",
-                )
-            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-        schema_repair._apply_schema_sql_file = fake_apply
-
-        try:
-            with tempfile.TemporaryDirectory() as td:
-                source = Path(td, "V5.1.0__schema.sql")
-                source.write_text("SELECT 1;\nSELECT 2;\nSELECT 3;\n", encoding="utf-8")
-
-                rc = schema_repair._apply_schema_sql_statements(
-                    address="172.26.213.50",
-                    source_sql_path=str(source),
-                    runner=FakeRunner(),
-                )
-        finally:
-            schema_repair._apply_schema_sql_file = original_apply
-
+        scripts = [cmd[-1] for cmd, _kwargs in runner.commands]
         self.assertEqual(1, rc)
-        self.assertEqual(2, len(applied_statements))
-        self.assertIn("SELECT 1", applied_statements[0])
-        self.assertIn("SELECT 2", applied_statements[1])
+        self.assertTrue(any("zsv_schema_stage_sql_dir" in script for script in scripts))
+        self.assertTrue(any("zsv_schema_flyway_migrate" in script for script in scripts))
+        self.assertFalse(any("zsv_schema_apply_sql_file" in script for script in scripts))
+        self.assertFalse(any("zsv_schema_flyway_repair" in script for script in scripts))
+        self.assertIn(schema_repair.MANUAL_REPAIR_SKILL, output)
+        self.assertIn("primary node: 172.26.213.50", output)
+        self.assertIn("migration: 5.1.0 (V5.1.0__schema.sql)", output)
+        self.assertIn("applied checksum: -152505803", output)
+        self.assertIn("resolved checksum: -373519170", output)
 
-    def test_file_schema_repair_stops_before_flyway_repair_when_full_sql_apply_fails(self):
-        repair_dirs = []
-        original_stage = schema_repair._stage_sql_dir
-        original_applied = schema_repair._remote_applied_migrations
-        original_flyway = schema_repair._run_remote_flyway
-        original_apply = schema_repair._apply_schema_sql_file
-        original_repair = schema_repair._run_remote_flyway_repair
-
-        schema_repair._stage_sql_dir = lambda address, local_dir, remote_dir, runner: 0
-        schema_repair._remote_applied_migrations = lambda address, scripts, runner: {
-            "5.1.0": schema_repair.AppliedMigration(
-                version="5.1.0",
-                version_rank=168,
-                checksum=-152505803,
-                script="V5.1.0__schema.sql",
-            )
-        }
-        schema_repair._run_remote_flyway = lambda address, remote_dir, runner: subprocess.CompletedProcess(
-            args=[],
-            returncode=1,
-            stdout=(
-                "Migration Checksum mismatch for migration 5.1.0\n"
-                "-> Applied to database : -152505803\n"
-                "-> Resolved locally    : -373519170\n"
-            ),
-            stderr="",
-        )
-        schema_repair._apply_schema_sql_file = lambda address, local_sql_path, runner: subprocess.CompletedProcess(
-            args=[],
-            returncode=1,
-            stdout="ERROR 1146 (42S02) at line 1: Table 'zstack.T' doesn't exist",
-            stderr="",
-        )
-        schema_repair._run_remote_flyway_repair = (
-            lambda address, remote_dir, runner: repair_dirs.append(remote_dir) or 0
-        )
-
-        try:
-            with tempfile.TemporaryDirectory() as td:
-                db_file = Path(td, "V5.1.0__schema.sql")
-                db_file.write_text("CREATE TABLE IF NOT EXISTS `zstack`.`T` (`uuid` varchar(32));\n")
-
-                rc = schema_repair.run_schema_repair_for_file(
-                    address="172.26.213.50",
-                    db_file=str(db_file),
-                    runner=FakeRunner(),
-                )
-        finally:
-            schema_repair._stage_sql_dir = original_stage
-            schema_repair._remote_applied_migrations = original_applied
-            schema_repair._run_remote_flyway = original_flyway
-            schema_repair._apply_schema_sql_file = original_apply
-            schema_repair._run_remote_flyway_repair = original_repair
-
-        self.assertEqual(1, rc)
-        self.assertEqual([], repair_dirs)
-
-    def test_scriptlet_supports_flyway_repair_for_checksum_alignment(self):
+    def test_scriptlet_keeps_only_schema_precheck_helpers(self):
         scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
 
-        self.assertIn("zsv_schema_flyway_repair()", scriptlet)
-        self.assertIn('bash \\"\\$flyway\\" repair', scriptlet)
+        self.assertIn("zsv_schema_stage_sql_dir()", scriptlet)
+        self.assertIn("zsv_schema_flyway_migrate()", scriptlet)
+        self.assertIn('bash \\"\\$flyway\\" migrate', scriptlet)
+        self.assertNotIn("zsv_schema_flyway_repair()", scriptlet)
+        self.assertNotIn("zsv_schema_apply_sql_file()", scriptlet)
 
-    def test_bootstrap_exports_flyway_repair_scriptlet(self):
+    def test_bootstrap_exports_only_schema_precheck_scriptlets(self):
         bootstrap = Path("scriptlet/bootstrap.sh").read_text(encoding="utf-8")
 
-        self.assertIn("_cbok_export_func zsv_schema_flyway_repair", bootstrap)
-
-    def test_scriptlet_applies_schema_sql_with_default_zstack_database(self):
-        scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
-
-        self.assertIn("mysql -uzstack -pzstack.password zstack < ${remote_sql_q}", scriptlet)
+        self.assertIn("_cbok_export_func zsv_schema_stage_sql_dir", bootstrap)
+        self.assertIn("_cbok_export_func zsv_schema_flyway_migrate", bootstrap)
+        self.assertNotIn("_cbok_export_func zsv_schema_flyway_repair", bootstrap)
+        self.assertNotIn("_cbok_export_func zsv_schema_apply_sql_file", bootstrap)
 
 
 if __name__ == "__main__":

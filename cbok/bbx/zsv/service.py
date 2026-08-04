@@ -395,13 +395,13 @@ class ZSphereTracker:
                 LOG.error("Failed to resolve ZSV schema db file from base ref: %s", exc)
                 return 1, iso, state
 
-            repair_rc = schema_repair.run_schema_repair_for_file(
+            schema_precheck_rc = schema_repair.run_schema_mismatch_precheck_for_file(
                 address=self.primary_node,
                 db_file=db_file,
                 runner=self.runner,
             )
-        if repair_rc != 0:
-            return repair_rc, iso, state
+        if schema_precheck_rc != 0:
+            return schema_precheck_rc, iso, state
 
         result = self.runner.run_command([
             "bash", "-lc",
