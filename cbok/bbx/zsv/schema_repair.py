@@ -201,14 +201,74 @@ def _run_remote_flyway_repair(address: str, remote_dir: str, runner) -> int:
     return getattr(result, "returncode", 1) or 0
 
 
-def _apply_schema_sql_file(address: str, local_sql_path: str, runner) -> int:
-    result = _run_scriptlet(
+def _apply_schema_sql_file(address: str, local_sql_path: str, runner) -> subprocess.CompletedProcess[str]:
+    return _run_scriptlet(
         runner,
         "zsv_schema_apply_sql_file "
         f"{shlex.quote(address)} {shlex.quote(local_sql_path)} "
         f"{shlex.quote(DEFAULT_REMOTE_APPLY_SQL)}",
     )
-    return getattr(result, "returncode", 1) or 0
+
+
+def _split_sql_statements(content: str) -> list[str]:
+    statements: list[str] = []
+    current: list[str] = []
+    for line in content.splitlines(keepends=True):
+        current.append(line)
+        if line.rstrip().endswith(";"):
+            statements.append("".join(current))
+            current = []
+    if current:
+        statements.append("".join(current))
+    return statements
+
+
+def _statement_body(statement: str) -> str:
+    return "\n".join(
+        line
+        for line in statement.splitlines()
+        if line.strip() and not line.lstrip().startswith("--")
+    )
+
+
+def _is_duplicate_schema_replay_error(output: str) -> bool:
+    patterns = (
+        r"\bERROR\s+1050\b",  # table already exists
+        r"\bERROR\s+1060\b",  # duplicate column
+        r"\bERROR\s+1061\b",  # duplicate key name
+        r"\bERROR\s+1022\b.*\bduplicate key\b",
+        r"\bERROR\s+1005\b.*\berrno:\s*121\b",
+    )
+    return any(re.search(pattern, output or "", re.I | re.S) for pattern in patterns)
+
+
+def _apply_schema_sql_statements(address: str, source_sql_path: str, runner) -> int:
+    source = Path(source_sql_path)
+    skipped = 0
+    with tempfile.TemporaryDirectory() as td:
+        for index, statement in enumerate(_split_sql_statements(source.read_text(encoding="utf-8")), 1):
+            if not _statement_body(statement).strip():
+                continue
+
+            statement_path = Path(td, f"statement-{index:04d}.sql")
+            statement_path.write_text(
+                statement if statement.endswith("\n") else f"{statement}\n",
+                encoding="utf-8",
+            )
+            result = _apply_schema_sql_file(address, str(statement_path), runner)
+            rc = getattr(result, "returncode", 1) or 0
+            if rc != 0 and _is_duplicate_schema_replay_error(
+                "\n".join((getattr(result, "stdout", "") or "", getattr(result, "stderr", "") or ""))
+            ):
+                skipped += 1
+                LOG.warning("Skipped duplicate ZSV schema replay error at statement %s.", index)
+                continue
+            if rc != 0:
+                return rc
+
+    if skipped:
+        LOG.warning("Skipped %d duplicate ZSV schema replay error(s).", skipped)
+    return 0
 
 
 def _apply_mismatch_sql_and_repair(
@@ -231,7 +291,7 @@ def _apply_mismatch_sql_and_repair(
         print(f"Would apply {local_sql_path} and run flyway repair on {address}.")
         return 1
 
-    rc = _apply_schema_sql_file(address, local_sql_path, runner)
+    rc = _apply_schema_sql_statements(address, local_sql_path, runner)
     if rc != 0:
         return rc
     return _run_remote_flyway_repair(address, remote_sql_dir, runner)
