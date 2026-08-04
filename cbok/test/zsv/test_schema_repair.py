@@ -945,6 +945,11 @@ class SchemaRepairTest(unittest.TestCase):
 
         self.assertIn("_cbok_export_func zsv_schema_flyway_repair", bootstrap)
 
+    def test_scriptlet_applies_schema_sql_with_default_zstack_database(self):
+        scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
+
+        self.assertIn("mysql -uzstack -pzstack.password zstack < ${remote_sql_q}", scriptlet)
+
 
 if __name__ == "__main__":
     unittest.main()

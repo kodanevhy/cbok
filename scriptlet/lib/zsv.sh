@@ -495,7 +495,7 @@ zsv_schema_apply_sql_file() {
   remote_bash "$address" "set -euo pipefail
 require_cmd mysql
 log_info \"applying schema SQL: ${remote_sql_q}\"
-mysql -uzstack -pzstack.password < ${remote_sql_q}
+mysql -uzstack -pzstack.password zstack < ${remote_sql_q}
 "
 }
 
