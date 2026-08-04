@@ -72,13 +72,11 @@ def _artifact_type_from_url(url):
     return ""
 
 
-def _require_artifact_url(url, upgrade_type):
-    expected = _artifact_extension(upgrade_type)
+def _require_artifact_url(url):
     artifact_type = _artifact_type_from_url(url)
     if not artifact_type:
-        raise ValueError(f"upgrade_url must be an exact {expected} file URL")
-    if artifact_type != upgrade_type:
-        raise ValueError(f"upgrade_url must be an exact {expected} file URL for {upgrade_type} upgrade")
+        raise ValueError("upgrade_url must be an exact .iso or .bin file URL")
+    return artifact_type
 
 
 def _artifact_name_from_url(url):
@@ -194,9 +192,14 @@ class ZSphereTracker:
             runner=None,
         ):
         self.name = _required(name, "name")
-        self.upgrade_type = _normalize_upgrade_type(_required(upgrade_type, "upgrade_type"))
         self.upgrade_url = _required(upgrade_url, "upgrade_url")
-        _require_artifact_url(self.upgrade_url, self.upgrade_type)
+        self.upgrade_type = _require_artifact_url(self.upgrade_url)
+        if upgrade_type:
+            requested_type = _normalize_upgrade_type(str(upgrade_type))
+            if requested_type != self.upgrade_type:
+                raise ValueError(
+                    f"upgrade_url file type {self.upgrade_type} "
+                    f"does not match upgrade_type {requested_type}")
         self.iso_url = self.upgrade_url
         self.primary_node = _required(primary_node, "primary_node")
         self.nodes = self._normalize_nodes([self.primary_node])

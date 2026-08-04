@@ -4,8 +4,6 @@ import os
 from pathlib import Path
 import shlex
 import tempfile
-from urllib.parse import unquote
-from urllib.parse import urlparse
 
 from django.db.models import Q
 from django.utils import timezone
@@ -20,7 +18,6 @@ from cbok.bbx.zsv.agent_replace import DEFAULT_SITE_PACKAGES
 from cbok.bbx.zsv.agent_replace import DEFAULT_ZBS_PRIMARY_SITE_PACKAGES
 from cbok.bbx.zsv.agent_replace import DEFAULT_ZBS_PRIMARY_VIRTUALENV
 from cbok.bbx.zsv.agent_replace import run_agent_replace_flow
-from cbok.bbx.zsv import UPGRADE_TYPES
 from cbok.bbx.zsv import ZSphereTracker
 from cbok.bbx.zsv.service import discover_ceph_primary_storage_nodes
 from cbok.bbx.zsv.service import discover_healthy_kvm_host_nodes
@@ -51,20 +48,6 @@ def _conf_get(section: str, option: str, default: str) -> str:
 
 def _zsv_deploy_conf(option: str, default: str) -> str:
     return _conf_get("zsv_deploy", option, default)
-
-
-def _upgrade_type_from_state(state):
-    for value in (
-            getattr(state, "iso_url", ""),
-            getattr(state, "latest_iso_name", ""),
-            getattr(state, "last_upgraded_iso_name", ""),
-    ):
-        path = unquote(urlparse(value or "").path).lower()
-        if path.endswith(".iso"):
-            return "iso"
-        if path.endswith(".bin"):
-            return "bin"
-    return "bin"
 
 
 def _latest_upgrade_state(name=None, primary_node=None):
@@ -102,8 +85,6 @@ def _upgrade_command(tracker):
         "upgrade",
         "--name",
         shlex.quote(tracker.name),
-        "--upgrade-type",
-        shlex.quote(tracker.upgrade_type),
         "--upgrade-url",
         shlex.quote(tracker.upgrade_url),
         "--primary-node",
@@ -137,14 +118,12 @@ class ZSphereCommands(base.BaseCommand):
     def _tracker(
             self,
             name=None,
-            upgrade_type=None,
             upgrade_url=None,
             primary_node=None,
             db_file=None,
     ):
         return ZSphereTracker(
             name=name,
-            upgrade_type=upgrade_type,
             upgrade_url=upgrade_url,
             db_file=db_file,
             primary_node=primary_node,
@@ -168,10 +147,9 @@ class ZSphereCommands(base.BaseCommand):
             return 1
 
         tracker = self._tracker(
-            state.name,
-            _upgrade_type_from_state(state),
-            state.iso_url,
-            primary_node,
+            name=state.name,
+            upgrade_url=state.iso_url,
+            primary_node=primary_node,
             db_file=None,
         )
         iso, state, needs_upgrade, _new_iso_detected = tracker.check()
@@ -302,10 +280,6 @@ class ZSphereCommands(base.BaseCommand):
         "--primary-node", metavar="<primary_node>", required=True,
         help="Node where upgrade runs and discovers other MNs")
     @args.args(
-        "--upgrade-type", metavar="<type>", required=True,
-        choices=UPGRADE_TYPES,
-        help="Upgrade package type: bin or iso")
-    @args.args(
         "--upgrade-url", metavar="<url>", required=True,
         help="Exact BIN/ISO package file URL; directory or index URLs are not supported")
     @args.args(
@@ -317,17 +291,15 @@ class ZSphereCommands(base.BaseCommand):
     def upgrade(
             self,
             name=None,
-            upgrade_type=None,
             upgrade_url=None,
             db_file=None,
             primary_node=None,
     ):
         """Upgrade ZSphere primary node with latest BIN/ISO package"""
         tracker = self._tracker(
-            name,
-            upgrade_type,
-            upgrade_url,
-            primary_node,
+            name=name,
+            upgrade_url=upgrade_url,
+            primary_node=primary_node,
             db_file=db_file,
         )
         returncode, iso, state = tracker.upgrade(self)
