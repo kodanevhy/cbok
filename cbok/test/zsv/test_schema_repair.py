@@ -108,6 +108,36 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertEqual(bin_url, artifact.download_url)
         self.assertEqual("123", artifact.size)
 
+    def test_fetch_latest_artifact_does_not_download_exact_iso_when_type_is_stale(self):
+        iso_url = "http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso"
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_type="bin",
+            upgrade_url=iso_url,
+            db_file="/workspace/zstack/conf/db/zsv/V5.1.0__schema.sql",
+            primary_node="172.26.213.50",
+            runner=FakeRunner(),
+        )
+        original_head = zsv_service.requests.head
+        original_get = zsv_service.requests.get
+        zsv_service.requests.head = lambda *args, **kwargs: SimpleNamespace(
+            url=iso_url,
+            headers={"Content-Length": "123"},
+            raise_for_status=lambda: None,
+        )
+        zsv_service.requests.get = lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("exact artifact URL must not be downloaded as an index")
+        )
+
+        try:
+            artifact = tracker.fetch_latest_iso()
+        finally:
+            zsv_service.requests.head = original_head
+            zsv_service.requests.get = original_get
+
+        self.assertEqual("ZStack-ZSphere-x86_64-DVD.iso", artifact.name)
+        self.assertEqual(iso_url, artifact.download_url)
+
     def test_fetch_exact_artifact_tolerates_local_metadata_probe_failure(self):
         bin_url = "http://example.invalid/ZStack-ZSphere-installer.bin"
         tracker = ZSphereTracker(
@@ -167,7 +197,7 @@ class SchemaRepairTest(unittest.TestCase):
             last_upgraded_at=None,
             save=lambda update_fields=None: None,
         )
-        tracker.check = lambda: (artifact, state, True, True)
+        tracker.check = lambda persist_state=True: (artifact, state, True, True)
 
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
@@ -209,7 +239,7 @@ class SchemaRepairTest(unittest.TestCase):
             last_upgraded_at=None,
             save=lambda update_fields=None: None,
         )
-        tracker.check = lambda: (artifact, state, True, True)
+        tracker.check = lambda persist_state=True: (artifact, state, True, True)
 
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
@@ -259,7 +289,7 @@ class SchemaRepairTest(unittest.TestCase):
             last_upgraded_at=None,
             save=lambda update_fields=None: saved.append(update_fields),
         )
-        tracker.check = lambda: (artifact, state, True, True)
+        tracker.check = lambda persist_state=True: (artifact, state, True, True)
 
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
@@ -269,16 +299,7 @@ class SchemaRepairTest(unittest.TestCase):
 
         self.assertEqual(1, rc)
         self.assertIn("zsv_ensure_ui_started 172.26.213.50", runner.commands[-1][0][-1])
-        self.assertIn(
-            [
-                "latest_iso_name",
-                "latest_iso_modified_at",
-                "last_upgraded_iso_name",
-                "last_upgraded_iso_modified_at",
-                "last_upgraded_at",
-            ],
-            saved,
-        )
+        self.assertEqual([], saved)
 
     def test_upgrade_fails_when_resources_do_not_become_ready(self):
         class HealthFailRunner(FakeRunner):
@@ -289,6 +310,7 @@ class SchemaRepairTest(unittest.TestCase):
                     args=cmd, returncode=rc, stdout="", stderr="")
 
         runner = HealthFailRunner()
+        saved = []
         bin_url = "http://example.invalid/ZStack-ZSphere-installer.bin"
         tracker = ZSphereTracker(
             name="test-env",
@@ -313,9 +335,9 @@ class SchemaRepairTest(unittest.TestCase):
             last_upgraded_iso_name="",
             last_upgraded_iso_modified_at=None,
             last_upgraded_at=None,
-            save=lambda update_fields=None: None,
+            save=lambda update_fields=None: saved.append(update_fields),
         )
-        tracker.check = lambda: (artifact, state, True, True)
+        tracker.check = lambda persist_state=True: (artifact, state, True, True)
 
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
@@ -327,6 +349,7 @@ class SchemaRepairTest(unittest.TestCase):
         scripts = [cmd[-1] for cmd, _kwargs in runner.commands]
         self.assertIn("zsv_ensure_ui_started 172.26.213.50", scripts[-2])
         self.assertIn("zsv_wait_resources_ready 172.26.213.50 1800 10", scripts[-1])
+        self.assertEqual([], saved)
 
     def test_scriptlet_bin_upgrade_runs_installer_with_u(self):
         scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
@@ -417,6 +440,15 @@ class SchemaRepairTest(unittest.TestCase):
         )
 
         self.assertEqual("bin", _upgrade_type_from_state(state))
+
+    def test_check_prefers_current_iso_url_over_previous_bin_upgrade(self):
+        state = SimpleNamespace(
+            last_upgraded_iso_name="ZStack-ZSphere-installer-fv-2606181047-36.bin",
+            latest_iso_name="ZStack-ZSphere-x86_64-DVD.iso",
+            iso_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
+        )
+
+        self.assertEqual("iso", _upgrade_type_from_state(state))
 
     def test_check_infers_iso_type_from_latest_state(self):
         state = SimpleNamespace(
@@ -597,10 +629,11 @@ class SchemaRepairTest(unittest.TestCase):
             save=lambda update_fields=None: saved.append(update_fields),
         )
         tracker.fetch_latest_iso = lambda: iso
-        def fake_get_state():
-            state.iso_url = tracker.iso_url
-            state.nodes = ",".join(tracker.nodes)
-            state.save(update_fields=["iso_url", "nodes"])
+        def fake_get_state(persist_source=True):
+            if persist_source:
+                state.iso_url = tracker.iso_url
+                state.nodes = ",".join(tracker.nodes)
+                state.save(update_fields=["iso_url", "nodes"])
             return state
         tracker.get_state = fake_get_state
 
@@ -612,7 +645,10 @@ class SchemaRepairTest(unittest.TestCase):
 
         self.assertEqual(0, rc)
         self.assertEqual(["172.26.213.50", "172.26.213.51"], tracker.nodes)
-        self.assertIn(["iso_url", "nodes"], saved)
+        self.assertEqual(1, len(saved))
+        self.assertIn("iso_url", saved[0])
+        self.assertIn("nodes", saved[0])
+        self.assertIn("last_upgraded_at", saved[0])
         self.assertEqual("172.26.213.50,172.26.213.51", state.nodes)
 
     def test_upgrade_falls_back_to_primary_when_discovery_returns_no_nodes(self):
@@ -667,7 +703,7 @@ class SchemaRepairTest(unittest.TestCase):
             last_upgraded_at=None,
             save=lambda update_fields=None: None,
         )
-        tracker.check = lambda: (iso, state, True, True)
+        tracker.check = lambda persist_state=True: (iso, state, True, True)
 
         try:
             rc, _iso, _state = tracker.upgrade(FakeCommand())
@@ -723,7 +759,7 @@ class SchemaRepairTest(unittest.TestCase):
             last_upgraded_at=None,
             save=lambda update_fields=None: None,
         )
-        tracker.check = lambda: (iso, state, True, True)
+        tracker.check = lambda persist_state=True: (iso, state, True, True)
 
         try:
             rc, _iso, _state = tracker.upgrade(FakeCommand())

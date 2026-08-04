@@ -77,6 +77,14 @@ def _artifact_extension(upgrade_type):
     return ".bin" if upgrade_type == "bin" else ".iso"
 
 
+def _artifact_type_from_url(url):
+    path = unquote(urlparse(url).path).lower()
+    for upgrade_type in UPGRADE_TYPES:
+        if path.endswith(_artifact_extension(upgrade_type)):
+            return upgrade_type
+    return ""
+
+
 def _is_artifact_url(url, upgrade_type):
     return unquote(urlparse(url).path).lower().endswith(_artifact_extension(upgrade_type))
 
@@ -212,7 +220,17 @@ class ZSphereTracker:
             raise ValueError("at least one ZSphere node is required")
         return normalized
 
-    def get_state(self):
+    def get_state(self, persist_source=True):
+        if not persist_source:
+            state = ZSphereUpgradeState.objects.filter(name=self.name).first()
+            if state:
+                return state
+            return ZSphereUpgradeState(
+                name=self.name,
+                iso_url=self.iso_url,
+                nodes=",".join(self.nodes),
+            )
+
         state, _ = ZSphereUpgradeState.objects.get_or_create(
             name=self.name,
             defaults={
@@ -226,7 +244,7 @@ class ZSphereTracker:
         return state
 
     def fetch_latest_iso(self):
-        if _is_artifact_url(self.upgrade_url, self.upgrade_type):
+        if _artifact_type_from_url(self.upgrade_url):
             return self._fetch_exact_artifact(self.upgrade_url)
         return self._fetch_latest_from_index(self.upgrade_url)
 
@@ -298,8 +316,8 @@ class ZSphereTracker:
 
         return candidates
 
-    def refresh_state(self, iso):
-        state = self.get_state()
+    def refresh_state(self, iso, persist_state=True):
+        state = self.get_state(persist_source=persist_state)
         state.last_checked_at = timezone.now()
 
         update_fields = ["last_checked_at"]
@@ -311,7 +329,8 @@ class ZSphereTracker:
             state.latest_iso_modified_at = iso.modified_at
             update_fields.extend(["latest_iso_name", "latest_iso_modified_at"])
 
-        state.save(update_fields=update_fields)
+        if persist_state:
+            state.save(update_fields=update_fields)
         return state, new_iso_detected
 
     @staticmethod
@@ -328,12 +347,14 @@ class ZSphereTracker:
 
     @classmethod
     def needs_upgrade(cls, state, iso=None):
-        if not state.latest_iso_name:
+        latest_name = iso.name if iso else state.latest_iso_name
+        latest_modified_at = iso.modified_at if iso else state.latest_iso_modified_at
+        if not latest_name:
             return False
         if not state.last_upgraded_iso_name:
             return True
         if cls._is_newer_iso(
-                state.latest_iso_name, state.latest_iso_modified_at,
+                latest_name, latest_modified_at,
                 state.last_upgraded_iso_name,
                 state.last_upgraded_iso_modified_at):
             return True
@@ -345,10 +366,34 @@ class ZSphereTracker:
             return ""
         return timezone.localtime(iso.modified_at).isoformat()
 
-    def check(self):
+    def check(self, persist_state=True):
         iso = self.fetch_latest_iso()
-        state, new_iso_detected = self.refresh_state(iso)
+        state, new_iso_detected = self.refresh_state(iso, persist_state=persist_state)
         return iso, state, self.needs_upgrade(state, iso), new_iso_detected
+
+    def record_successful_upgrade(self, state, iso):
+        state.iso_url = self.iso_url
+        state.nodes = ",".join(self.nodes)
+        state.latest_iso_name = iso.name
+        state.latest_iso_modified_at = iso.modified_at
+        state.last_checked_at = timezone.now()
+        state.last_upgraded_iso_name = iso.name
+        state.last_upgraded_iso_modified_at = iso.modified_at
+        state.last_upgraded_at = timezone.now()
+        update_fields = [
+            "iso_url",
+            "nodes",
+            "latest_iso_name",
+            "latest_iso_modified_at",
+            "last_checked_at",
+            "last_upgraded_iso_name",
+            "last_upgraded_iso_modified_at",
+            "last_upgraded_at",
+        ]
+        if getattr(state, "pk", True) is None:
+            state.save()
+        else:
+            state.save(update_fields=update_fields)
 
     def resolve_upgrade_nodes(self):
         nodes = discover_management_nodes(self.primary_node, self.runner)
@@ -384,7 +429,7 @@ class ZSphereTracker:
 
     def upgrade(self, command):
         self.resolve_upgrade_nodes()
-        iso, state, needs_upgrade, _new_iso_detected = self.check()
+        iso, state, needs_upgrade, _new_iso_detected = self.check(persist_state=False)
         if not needs_upgrade:
             LOG.error("Already up to date, interrupted before running upgrade")
             return 1, iso, state
@@ -420,30 +465,24 @@ class ZSphereTracker:
             f"{shlex.quote(iso.size or '')} "
             f"{shlex.quote(self.upgrade_type)}",
         ], cmd_purge_output=True)
+        if result.returncode != 0:
+            return result.returncode, iso, state
+
+        result = self.runner.run_command([
+            "bash", "-lc",
+            "source scriptlet/bootstrap.sh; "
+            f"zsv_ensure_ui_started {shlex.quote(self.primary_node)}",
+        ], cmd_purge_output=True)
+        if result.returncode != 0:
+            return result.returncode, iso, state
+
+        result = self.runner.run_command([
+            "bash", "-lc",
+            "source scriptlet/bootstrap.sh; "
+            f"zsv_wait_resources_ready {shlex.quote(self.primary_node)} "
+            f"{UPGRADE_HEALTH_TIMEOUT_SECONDS} "
+            f"{UPGRADE_HEALTH_POLL_INTERVAL_SECONDS}",
+        ], cmd_purge_output=True)
         if result.returncode == 0:
-            state.latest_iso_name = iso.name
-            state.latest_iso_modified_at = iso.modified_at
-            state.last_upgraded_iso_name = iso.name
-            state.last_upgraded_iso_modified_at = iso.modified_at
-            state.last_upgraded_at = timezone.now()
-            state.save(update_fields=[
-                "latest_iso_name",
-                "latest_iso_modified_at",
-                "last_upgraded_iso_name",
-                "last_upgraded_iso_modified_at",
-                "last_upgraded_at",
-            ])
-            result = self.runner.run_command([
-                "bash", "-lc",
-                "source scriptlet/bootstrap.sh; "
-                f"zsv_ensure_ui_started {shlex.quote(self.primary_node)}",
-            ], cmd_purge_output=True)
-            if result.returncode == 0:
-                result = self.runner.run_command([
-                    "bash", "-lc",
-                    "source scriptlet/bootstrap.sh; "
-                    f"zsv_wait_resources_ready {shlex.quote(self.primary_node)} "
-                    f"{UPGRADE_HEALTH_TIMEOUT_SECONDS} "
-                    f"{UPGRADE_HEALTH_POLL_INTERVAL_SECONDS}",
-                ], cmd_purge_output=True)
+            self.record_successful_upgrade(state, iso)
         return result.returncode, iso, state

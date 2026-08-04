@@ -55,9 +55,9 @@ def _zsv_deploy_conf(option: str, default: str) -> str:
 
 def _upgrade_type_from_state(state):
     for value in (
-            getattr(state, "last_upgraded_iso_name", ""),
-            getattr(state, "latest_iso_name", ""),
             getattr(state, "iso_url", ""),
+            getattr(state, "latest_iso_name", ""),
+            getattr(state, "last_upgraded_iso_name", ""),
     ):
         path = unquote(urlparse(value or "").path).lower()
         if path.endswith(".iso"):
