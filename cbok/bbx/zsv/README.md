@@ -17,6 +17,9 @@ cbok zsv compile --address 172.26.213.50 \
 Configure the remote daemon and build image in `[zsv_compile]`:
 
 ```ini
+[zsv]
+base_ref = origin/feature-zsv-5.1.0-encryption
+
 [zsv_compile]
 remote_docker_host = tcp://172.26.50.70:2375
 remote_docker_image = registry.docker.zstack.io:80/buildbin:debug7
@@ -54,6 +57,17 @@ Behavior:
 - Copies successful module build outputs to this command's local JAR copy
   directory and deploys from there, without writing build outputs back into the
   source worktree.
+- Uses `[zsv] base_ref` as the shared upstream base for incremental compile
+  changed-path detection. Existing `[zsv_compile] base_ref` values are still
+  accepted for compatibility.
+
+## ZSphere upgrade schema file
+
+`cbok zsv upgrade` accepts `--db-file` for a manually selected ZSV schema SQL
+file, but in the usual path it can be omitted. When `--db-file` is absent, cbok
+fetches the configured `[zsv] base_ref` in the local ZStack checkout, reads
+`conf/db/zsv/V5.1.0__schema.sql` from that ref, and uses the temporary copy for
+the pre-upgrade Flyway checksum repair.
 
 ## Worktree container cleanup
 

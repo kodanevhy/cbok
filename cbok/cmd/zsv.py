@@ -106,11 +106,11 @@ def _upgrade_command(tracker):
         shlex.quote(tracker.upgrade_type),
         "--upgrade-url",
         shlex.quote(tracker.upgrade_url),
-        "--db-file",
-        shlex.quote(tracker.schema_db_file),
         "--primary-node",
         shlex.quote(tracker.primary_node),
     ]
+    if tracker.schema_db_file:
+        parts.extend(["--db-file", shlex.quote(tracker.schema_db_file)])
     return " ".join(parts)
 
 
@@ -309,8 +309,8 @@ class ZSphereCommands(base.BaseCommand):
         "--upgrade-url", metavar="<url>", required=True,
         help="BIN/ISO index URL or exact package URL")
     @args.args(
-        "--db-file", metavar="<path>", required=True,
-        help="Local ZSV schema SQL file used for pre-upgrade Flyway checksum repair")
+        "--db-file", metavar="<path>",
+        help="Optional local ZSV schema SQL file for pre-upgrade Flyway checksum repair; normally leave unset unless explicitly required, cbok resolves it dynamically from configured base_ref")
     @args.args(
         "--name", metavar="<name>", required=True,
         help="Tracked environment name")

@@ -10,7 +10,9 @@ import shutil
 import subprocess
 import tempfile
 
-from cbok.bbx.zsv.compile import zstack_root_from_workspace
+from cbok.bbx.zsv import base_ref as zsv_base_ref_helper
+from cbok.bbx.zsv.config import zsv_base_ref
+from cbok.bbx.zsv.config import zstack_root_from_workspace
 
 
 LOG = logging.getLogger(__name__)
@@ -18,6 +20,7 @@ LOG = logging.getLogger(__name__)
 DEFAULT_REMOTE_SQL_DIR = "/tmp/cbok-zsv-schema-sql"
 DEFAULT_REMOTE_REPAIR_SQL = "/tmp/cbok-zsv-schema-repair.sql"
 ZSV_DB_DIR = "conf/db/zsv"
+DEFAULT_ZSV_SCHEMA_DB_FILE = os.path.join(ZSV_DB_DIR, "V5.1.0__schema.sql")
 
 
 @dataclass(frozen=True)
@@ -97,6 +100,26 @@ def write_branch_sql_dir(
     for path in files_by_version.values():
         content = read_branch_file(zstack_root, branch, path)
         Path(target_dir, os.path.basename(path)).write_text(content, encoding="utf-8")
+
+
+def materialize_zsv_schema_db_file(
+    *,
+    target_dir: str,
+    zstack_root: str | None = None,
+) -> str:
+    base_ref = zsv_base_ref()
+    if not base_ref:
+        raise RuntimeError("zsv base_ref is not configured")
+
+    root = os.path.realpath(zstack_root) if zstack_root else zstack_root_from_workspace()
+    if not zsv_base_ref_helper.sync_base_ref(root):
+        raise RuntimeError(f"failed to sync zsv base_ref {base_ref}")
+
+    content = read_branch_file(root, base_ref, DEFAULT_ZSV_SCHEMA_DB_FILE)
+    Path(target_dir).mkdir(parents=True, exist_ok=True)
+    target = Path(target_dir, os.path.basename(DEFAULT_ZSV_SCHEMA_DB_FILE))
+    target.write_text(content, encoding="utf-8")
+    return str(target)
 
 
 def split_sql_statements(sql: str) -> list[str]:

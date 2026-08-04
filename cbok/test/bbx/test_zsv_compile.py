@@ -150,10 +150,12 @@ class ZsvCompileTest(unittest.TestCase):
 
     def test_zsv_compile_config_does_not_expose_profile_switch(self):
         option_names = [opt.name for opt in cbok_config.ZSV_COMPILE.options]
+        zsv_option_names = [opt.name for opt in cbok_config.ZSV.options]
 
         self.assertNotIn("run_maven_profile_premium", option_names)
         self.assertNotIn("remote_docker_premium_source", option_names)
-        self.assertIn("base_ref", option_names)
+        self.assertNotIn("base_ref", option_names)
+        self.assertIn("base_ref", zsv_option_names)
         self.assertIn("remote_docker_min_free_gb", option_names)
 
     def test_run_compile_flow_requires_zstack_root(self):
