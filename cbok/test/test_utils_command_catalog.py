@@ -79,7 +79,7 @@ class CommandCatalogTest(unittest.TestCase):
 
         self.assertIn("rebase", catalog)
         self.assertIn("Checkout master and rebase", catalog)
-        self.assertIn("    rebase", catalog)
+        self.assertIn("    rebase  Checkout master and rebase", catalog)
         self.assertNotIn("\n  rebase", catalog)
         self.assertNotIn("default:", catalog)
         self.assertNotIn("default rebase", catalog)

@@ -60,9 +60,14 @@ def format_command_catalog(command_groups):
     if not entries:
         return ""
 
-    command_width = max(len(command) for command, _method in entries)
     lines = ["commands:"]
     for cat_name, _obj, commands in command_groups:
+        if not commands:
+            continue
+        command_width = max(
+            len(_command_label(cat_name, cmd_name))
+            for cmd_name, _method in commands
+        )
         if cat_name == "default":
             for cmd_name, method in commands:
                 command = _command_label(cat_name, cmd_name)
