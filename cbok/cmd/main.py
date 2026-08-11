@@ -81,49 +81,14 @@ def _ensure_source_branch_is_master(project_root=None, runner=subprocess.run, st
             "  git checkout master\n"
             "  git fetch origin\n"
             "  git rebase origin/master\n"
+            "\n"
+            "Remember to rebase before running cbok again.\n"
             % (project_root, current, project_root)
         )
         detail = (result.stderr or "").strip()
         if result.returncode != 0 and detail:
             stderr.write("\ngit error: %s\n" % detail)
         sys.exit(1)
-
-    local_result = _git("rev-parse", "HEAD")
-    local_head = (local_result.stdout or "").strip() if local_result.returncode == 0 else ""
-    remote_result = _git("ls-remote", "--exit-code", "origin", "refs/heads/master")
-    remote_head = (
-        (remote_result.stdout or "").split()[0]
-        if remote_result.returncode == 0 and remote_result.stdout
-        else ""
-    )
-    if local_head and remote_head and local_head == remote_head:
-        return
-
-    stderr.write(
-        "cbok: refusing to run because the editable source checkout is not synced with origin/master.\n"
-        "source: %s\n"
-        "local master: %s\n"
-        "remote master: %s\n"
-        "\n"
-        "Check and update it manually:\n"
-        "  cd %s\n"
-        "  git status --short --branch\n"
-        "  git fetch origin\n"
-        "  git rebase origin/master\n"
-        % (
-            project_root,
-            local_head or "unknown",
-            remote_head or "unknown",
-            project_root,
-        )
-    )
-    local_detail = (local_result.stderr or "").strip()
-    remote_detail = (remote_result.stderr or "").strip()
-    if local_result.returncode != 0 and local_detail:
-        stderr.write("\ngit error: %s\n" % local_detail)
-    if remote_result.returncode != 0 and remote_detail:
-        stderr.write("\ngit error: %s\n" % remote_detail)
-    sys.exit(1)
 
 
 def main():

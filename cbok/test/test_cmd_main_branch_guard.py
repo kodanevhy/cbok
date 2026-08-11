@@ -48,14 +48,12 @@ class SourceBranchGuardTest(unittest.TestCase):
             stderr=stderr,
         )
 
-    def test_master_source_branch_is_allowed(self):
+    def test_master_source_branch_is_allowed_without_remote_check(self):
         def runner(cmd, **_kwargs):
             if cmd[-2:] == ["branch", "--show-current"]:
                 return self.completed(stdout="master\n")
-            if cmd[-2:] == ["rev-parse", "HEAD"]:
-                return self.completed(stdout="abc123\n")
             if cmd[-4:] == ["ls-remote", "--exit-code", "origin", "refs/heads/master"]:
-                return self.completed(stdout="abc123\trefs/heads/master\n")
+                self.fail("source guard must not query remote on command startup")
             self.fail("unexpected command: %s" % cmd)
 
         err = io.StringIO()
@@ -67,34 +65,6 @@ class SourceBranchGuardTest(unittest.TestCase):
         )
 
         self.assertEqual("", err.getvalue())
-
-    def test_master_source_branch_behind_remote_exits_with_manual_rebase_command(self):
-        def runner(cmd, **_kwargs):
-            if cmd[-2:] == ["branch", "--show-current"]:
-                return self.completed(stdout="master\n")
-            if cmd[-2:] == ["rev-parse", "HEAD"]:
-                return self.completed(stdout="abc123\n")
-            if cmd[-4:] == ["ls-remote", "--exit-code", "origin", "refs/heads/master"]:
-                return self.completed(stdout="def456\trefs/heads/master\n")
-            self.fail("unexpected command: %s" % cmd)
-
-        err = io.StringIO()
-
-        with self.assertRaises(SystemExit) as ctx:
-            cmd_main._ensure_source_branch_is_master(
-                project_root="/repo/cbok",
-                runner=runner,
-                stderr=err,
-            )
-
-        self.assertEqual(1, ctx.exception.code)
-        message = err.getvalue()
-        self.assertIn("not synced with origin/master", message)
-        self.assertIn("local master: abc123", message)
-        self.assertIn("remote master: def456", message)
-        self.assertIn("git status --short --branch", message)
-        self.assertIn("git fetch origin", message)
-        self.assertIn("git rebase origin/master", message)
 
     def test_non_master_source_branch_exits_with_manual_checkout_and_rebase_commands(self):
         def runner(*_args, **_kwargs):
@@ -118,6 +88,7 @@ class SourceBranchGuardTest(unittest.TestCase):
         self.assertIn("git checkout master", message)
         self.assertIn("git fetch origin", message)
         self.assertIn("git rebase origin/master", message)
+        self.assertIn("Remember to rebase", message)
 
 
 if __name__ == "__main__":
