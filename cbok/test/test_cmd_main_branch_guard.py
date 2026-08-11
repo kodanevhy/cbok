@@ -96,6 +96,32 @@ class SourceBranchGuardTest(unittest.TestCase):
         self.assertIn("git fetch origin", message)
         self.assertIn("git rebase origin/master", message)
 
+    def test_master_source_branch_remote_check_failure_exits_with_git_error(self):
+        def runner(cmd, **_kwargs):
+            if cmd[-2:] == ["branch", "--show-current"]:
+                return self.completed(stdout="master\n")
+            if cmd[-2:] == ["rev-parse", "HEAD"]:
+                return self.completed(stdout="abc123\n")
+            if cmd[-4:] == ["ls-remote", "--exit-code", "origin", "refs/heads/master"]:
+                return self.completed(stderr="network unavailable\n", returncode=128)
+            self.fail("unexpected command: %s" % cmd)
+
+        err = io.StringIO()
+
+        with self.assertRaises(SystemExit) as ctx:
+            cmd_main._ensure_source_branch_is_master(
+                project_root="/repo/cbok",
+                runner=runner,
+                stderr=err,
+            )
+
+        self.assertEqual(1, ctx.exception.code)
+        message = err.getvalue()
+        self.assertIn("not synced with origin/master", message)
+        self.assertIn("local master: abc123", message)
+        self.assertIn("remote master: unknown", message)
+        self.assertIn("git error: network unavailable", message)
+
     def test_non_master_source_branch_exits_with_manual_checkout_and_rebase_commands(self):
         def runner(*_args, **_kwargs):
             return self.completed(stdout="codex/feature-work\n")
