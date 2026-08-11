@@ -79,7 +79,12 @@ class CommandCatalogTest(unittest.TestCase):
 
         self.assertIn("rebase", catalog)
         self.assertIn("Checkout master and rebase", catalog)
-        self.assertIn("    rebase  Checkout master and rebase", catalog)
+        rebase_line = next(line for line in catalog.splitlines() if "Checkout master and rebase" in line)
+        patch_put_line = next(line for line in catalog.splitlines() if "Upload patch" in line)
+        self.assertEqual(
+            patch_put_line.index("Upload patch"),
+            rebase_line.index("Checkout master and rebase"),
+        )
         self.assertNotIn("\n  rebase", catalog)
         self.assertNotIn("default:", catalog)
         self.assertNotIn("default rebase", catalog)
