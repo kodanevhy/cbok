@@ -55,7 +55,17 @@ def _resolve_and_reexec_venv():
     sys.exit(1)
 
 
-def _ensure_source_branch_is_master(project_root=None, runner=subprocess.run, stderr=sys.stderr):
+def _is_source_branch_fix_command(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    while argv and argv[0] == "--debug":
+        argv.pop(0)
+    return bool(argv) and argv[0] == "rebase"
+
+
+def _ensure_source_branch_is_master(project_root=None, runner=subprocess.run, stderr=sys.stderr, argv=None):
+    if _is_source_branch_fix_command(argv):
+        return
+
     project_root = os.path.realpath(project_root or _project_root())
 
     def _git(*args):
@@ -75,15 +85,11 @@ def _ensure_source_branch_is_master(project_root=None, runner=subprocess.run, st
             "current branch: %s\n"
             "expected branch: master\n"
             "\n"
-            "Check and update it manually:\n"
-            "  cd %s\n"
-            "  git status --short --branch\n"
-            "  git checkout master\n"
-            "  git fetch origin\n"
-            "  git rebase origin/master\n"
+            "Run this command to checkout master and rebase it:\n"
+            "  cbok rebase\n"
             "\n"
             "Remember to rebase before running cbok again.\n"
-            % (project_root, current, project_root)
+            % (project_root, current)
         )
         detail = (result.stderr or "").strip()
         if result.returncode != 0 and detail:
@@ -102,6 +108,7 @@ def main():
     import logging
 
     from cbok import __version__
+    from cbok.cmd import base
     from cbok.cmd import bbx
     from cbok.cmd import foundation
     from cbok.cmd import zsv
@@ -111,6 +118,7 @@ def main():
     LOG = logging.getLogger(__name__)
 
     CATEGORIES = {
+        "default": base.DefaultCommands,
         "patch": bbx.PatchCommands,
         "bin": bbx.BinCommands,
         "openstack": bbx.OpenStackCommands,
@@ -143,15 +151,26 @@ def main():
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
+    def add_command_parser(parent_subparsers, attr_name, method):
+        cmd_parser = parent_subparsers.add_parser(
+            attr_name,
+            help=cbok_utils.command_description(method),
+        )
+        if hasattr(method, "_args"):
+            for arg_args, arg_kwargs in method._args:
+                cmd_parser.add_argument(*arg_args, **arg_kwargs)
+        cmd_parser.set_defaults(func=method, command=attr_name)
+
     for cat_name, obj, commands in command_groups:
+        if cat_name == "default":
+            for attr_name, method in commands:
+                add_command_parser(subparsers, attr_name, method)
+            continue
+
         cat_parser = subparsers.add_parser(cat_name, help=f"{cat_name} commands")
         cat_subparsers = cat_parser.add_subparsers(dest="command", required=True)
         for attr_name, method in commands:
-            cmd_parser = cat_subparsers.add_parser(attr_name, help=cbok_utils.command_description(method))
-            if hasattr(method, "_args"):
-                for arg_args, arg_kwargs in method._args:
-                    cmd_parser.add_argument(*arg_args, **arg_kwargs)
-            cmd_parser.set_defaults(func=method)
+            add_command_parser(cat_subparsers, attr_name, method)
 
     args = parser.parse_args()
 

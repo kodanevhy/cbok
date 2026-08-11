@@ -66,7 +66,37 @@ class SourceBranchGuardTest(unittest.TestCase):
 
         self.assertEqual("", err.getvalue())
 
-    def test_non_master_source_branch_exits_with_manual_checkout_and_rebase_commands(self):
+    def test_rebase_command_is_allowed_to_fix_non_master_source_branch(self):
+        def runner(*_args, **_kwargs):
+            self.fail("rebase must bypass source branch guard")
+
+        err = io.StringIO()
+
+        cmd_main._ensure_source_branch_is_master(
+            project_root="/repo/cbok",
+            runner=runner,
+            stderr=err,
+            argv=["rebase"],
+        )
+
+        self.assertEqual("", err.getvalue())
+
+    def test_debug_rebase_command_is_allowed_to_fix_non_master_source_branch(self):
+        def runner(*_args, **_kwargs):
+            self.fail("debug rebase must bypass source branch guard")
+
+        err = io.StringIO()
+
+        cmd_main._ensure_source_branch_is_master(
+            project_root="/repo/cbok",
+            runner=runner,
+            stderr=err,
+            argv=["--debug", "rebase"],
+        )
+
+        self.assertEqual("", err.getvalue())
+
+    def test_non_master_source_branch_exits_with_rebase_command(self):
         def runner(*_args, **_kwargs):
             return self.completed(stdout="codex/feature-work\n")
 
@@ -83,11 +113,12 @@ class SourceBranchGuardTest(unittest.TestCase):
         message = err.getvalue()
         self.assertIn("codex/feature-work", message)
         self.assertIn("expected branch: master", message)
-        self.assertIn("cd /repo/cbok", message)
-        self.assertIn("git status --short --branch", message)
-        self.assertIn("git checkout master", message)
-        self.assertIn("git fetch origin", message)
-        self.assertIn("git rebase origin/master", message)
+        self.assertIn("cbok rebase", message)
+        self.assertNotIn("cd /repo/cbok", message)
+        self.assertNotIn("git status --short --branch", message)
+        self.assertNotIn("git checkout master", message)
+        self.assertNotIn("git fetch origin", message)
+        self.assertNotIn("git rebase origin/master", message)
         self.assertIn("Remember to rebase", message)
 
 

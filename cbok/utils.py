@@ -47,8 +47,13 @@ def discover_command_groups(categories, base_command_cls):
 
 
 def format_command_catalog(command_groups):
+    def _command_label(cat_name, cmd_name):
+        if cat_name == "default":
+            return cmd_name
+        return f"{cat_name} {cmd_name}"
+
     entries = [
-        (f"{cat_name} {cmd_name}", method)
+        (_command_label(cat_name, cmd_name), method)
         for cat_name, _obj, commands in command_groups
         for cmd_name, method in commands
     ]
@@ -58,12 +63,24 @@ def format_command_catalog(command_groups):
     command_width = max(len(command) for command, _method in entries)
     lines = ["commands:"]
     for cat_name, _obj, commands in command_groups:
+        if cat_name == "default":
+            for cmd_name, method in commands:
+                command = _command_label(cat_name, cmd_name)
+                lines.append(f"  {command:<{command_width}}  {command_description(method)}")
+            continue
+
         lines.append(f"  {cat_name}:")
         for cmd_name, method in commands:
-            command = f"{cat_name} {cmd_name}"
+            command = _command_label(cat_name, cmd_name)
             lines.append(f"    {command:<{command_width}}  {command_description(method)}")
     lines.append("")
-    lines.append("Use 'cbok <category> <command> --help' for command options.")
+    if any(cat_name == "default" for cat_name, _obj, _commands in command_groups):
+        lines.append(
+            "Use 'cbok <command> --help' for default commands, "
+            "or 'cbok <category> <command> --help' for category commands."
+        )
+    else:
+        lines.append("Use 'cbok <category> <command> --help' for command options.")
     return "\n".join(lines)
 
 

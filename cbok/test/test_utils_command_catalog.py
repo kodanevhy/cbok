@@ -32,6 +32,12 @@ class FakePatchCommands(FakeBaseCommand):
         return 0
 
 
+class FakeDefaultCommands(FakeBaseCommand):
+    @args.action_description("Checkout master and rebase")
+    def rebase(self):
+        return 0
+
+
 @unittest.skipIf(utils is None, "cbok.conf unavailable: %s" % UTILS_IMPORT_ERROR)
 class CommandCatalogTest(unittest.TestCase):
     def test_discover_command_groups_filters_base_and_private_methods(self):
@@ -59,3 +65,19 @@ class CommandCatalogTest(unittest.TestCase):
         self.assertIn("Raw doc fallback", catalog)
         self.assertNotIn("base_action", catalog)
         self.assertNotIn("_internal", catalog)
+
+    def test_format_command_catalog_lists_default_commands_without_category_prefix(self):
+        groups = utils.discover_command_groups(
+            {
+                "default": FakeDefaultCommands,
+                "patch": FakePatchCommands,
+            },
+            FakeBaseCommand,
+        )
+
+        catalog = utils.format_command_catalog(groups)
+
+        self.assertIn("rebase", catalog)
+        self.assertIn("Checkout master and rebase", catalog)
+        self.assertNotIn("default:", catalog)
+        self.assertNotIn("default rebase", catalog)
