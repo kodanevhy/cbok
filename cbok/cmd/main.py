@@ -1,34 +1,36 @@
 import os
+import subprocess
 import sys
 
 import django
 
 
+def _project_root():
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 def _resolve_and_reexec_venv():
     """
-    If we're not already in the project venv, re-exec into it. Must run before
-    any cbok imports (e.g. utils->requests).
+    If we're not already in the project venv, re-exec into it before loading
+    the command modules.
     """
     def _venv_dir():
         if os.environ.get("CBOK_VENV"):
             return os.path.realpath(os.environ["CBOK_VENV"])
         if os.environ.get("CBOK_HOME"):
             return os.path.realpath(os.path.join(os.environ["CBOK_HOME"], "venv"))
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(os.path.dirname(base_dir))
-        venv_dir = os.path.join(project_root, "venv")
+        venv_dir = os.path.join(_project_root(), "venv")
         if os.path.isdir(venv_dir):
             return os.path.realpath(venv_dir)
         return None
 
     venv_dir = _venv_dir()
     if not venv_dir:
-        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        expected_venv = os.path.join(project_root, "venv")
+        expected_venv = os.path.join(_project_root(), "venv")
         sys.stderr.write(
             "cbok: no virtual env found (looked for %s or CBOK_VENV/CBOK_HOME).\n"
             "Create one: cd %s && python3 -m venv venv && venv/bin/pip install -r requirement/cli.txt && venv/bin/pip install -e .\n"
-            % (expected_venv, project_root)
+            % (expected_venv, _project_root())
         )
         sys.exit(1)
     if os.path.realpath(sys.prefix) == venv_dir:
@@ -53,7 +55,79 @@ def _resolve_and_reexec_venv():
     sys.exit(1)
 
 
+def _ensure_source_branch_is_master(project_root=None, runner=subprocess.run, stderr=sys.stderr):
+    project_root = os.path.realpath(project_root or _project_root())
+
+    def _git(*args):
+        return runner(
+            ["git", "-C", project_root] + list(args),
+            capture_output=True,
+            text=True,
+        )
+
+    result = _git("branch", "--show-current")
+    branch = (result.stdout or "").strip() if result.returncode == 0 else ""
+    if branch != "master":
+        current = branch or "detached HEAD or unknown"
+        stderr.write(
+            "cbok: refusing to run because the editable source checkout is not on master.\n"
+            "source: %s\n"
+            "current branch: %s\n"
+            "expected branch: master\n"
+            "\n"
+            "Check and update it manually:\n"
+            "  cd %s\n"
+            "  git status --short --branch\n"
+            "  git checkout master\n"
+            "  git fetch origin\n"
+            "  git rebase origin/master\n"
+            % (project_root, current, project_root)
+        )
+        detail = (result.stderr or "").strip()
+        if result.returncode != 0 and detail:
+            stderr.write("\ngit error: %s\n" % detail)
+        sys.exit(1)
+
+    local_result = _git("rev-parse", "HEAD")
+    local_head = (local_result.stdout or "").strip() if local_result.returncode == 0 else ""
+    remote_result = _git("ls-remote", "--exit-code", "origin", "refs/heads/master")
+    remote_head = (
+        (remote_result.stdout or "").split()[0]
+        if remote_result.returncode == 0 and remote_result.stdout
+        else ""
+    )
+    if local_head and remote_head and local_head == remote_head:
+        return
+
+    stderr.write(
+        "cbok: refusing to run because the editable source checkout is not synced with origin/master.\n"
+        "source: %s\n"
+        "local master: %s\n"
+        "remote master: %s\n"
+        "\n"
+        "Check and update it manually:\n"
+        "  cd %s\n"
+        "  git status --short --branch\n"
+        "  git fetch origin\n"
+        "  git rebase origin/master\n"
+        % (
+            project_root,
+            local_head or "unknown",
+            remote_head or "unknown",
+            project_root,
+        )
+    )
+    local_detail = (local_result.stderr or "").strip()
+    remote_detail = (remote_result.stderr or "").strip()
+    if local_result.returncode != 0 and local_detail:
+        stderr.write("\ngit error: %s\n" % local_detail)
+    if remote_result.returncode != 0 and remote_detail:
+        stderr.write("\ngit error: %s\n" % remote_detail)
+    sys.exit(1)
+
+
 def main():
+    _ensure_source_branch_is_master()
     _resolve_and_reexec_venv()
 
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "cbok.settings")
