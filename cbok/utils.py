@@ -66,7 +66,7 @@ def format_command_catalog(command_groups):
         if cat_name == "default":
             for cmd_name, method in commands:
                 command = _command_label(cat_name, cmd_name)
-                lines.append(f"  {command:<{command_width}}  {command_description(method)}")
+                lines.append(f"    {command:<{command_width}}  {command_description(method)}")
             continue
 
         lines.append(f"  {cat_name}:")
