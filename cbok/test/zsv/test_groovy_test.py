@@ -387,7 +387,13 @@ class GroovyContainerTest(unittest.TestCase):
         runner = FakeRunner()
         work_root = self.root / "run"
         original_auto_detect = groovy_test.auto_detect_modules
-        groovy_test.auto_detect_modules = lambda _zstack, _premium: (["storage"], ["crypto"])
+        seen_excludes = []
+
+        def fake_auto_detect(_zstack, _premium, *, excluded_modules=None):
+            seen_excludes.append(excluded_modules)
+            return ["storage"], ["crypto"]
+
+        groovy_test.auto_detect_modules = fake_auto_detect
         try:
             rc1 = groovy_test.run_groovy_test_flow(
                 zstack_branch="feature-zstack",
@@ -414,6 +420,7 @@ class GroovyContainerTest(unittest.TestCase):
         self.assertEqual(0, rc2)
         shell_scripts = self._shell_scripts(runner)
         self.assertEqual(1, sum("./runMavenProfile premium" in script for script in shell_scripts))
+        self.assertEqual([groovy_test.GROOVY_TEST_AUTO_EXCLUDED_MODULES], seen_excludes)
         self.assertTrue(any(
             "mvn -Ppremium -DskipTests clean install -pl storage,premium/crypto" in script
             for script in shell_scripts
@@ -422,7 +429,7 @@ class GroovyContainerTest(unittest.TestCase):
     def test_different_run_roots_reuse_source_worktree_container(self):
         runner = FakeRunner()
         original_auto_detect = groovy_test.auto_detect_modules
-        groovy_test.auto_detect_modules = lambda _zstack, _premium: (["storage"], ["crypto"])
+        groovy_test.auto_detect_modules = lambda _zstack, _premium, **_kwargs: (["storage"], ["crypto"])
         try:
             rc1 = groovy_test.run_groovy_test_flow(
                 zstack_branch="feature-zstack",

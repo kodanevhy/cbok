@@ -9,6 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from cbok.bbx.zsv import compile
+from cbok.bbx.zsv import groovy_test
 from cbok.bbx.zsv import worktree_container
 from cbok.conf import config as cbok_config
 
@@ -427,6 +428,45 @@ class ZsvCompileTest(unittest.TestCase):
 
         self.assertEqual(["utils", "identity"], main)
         self.assertEqual(["volumebackup", "mevoco"], prem)
+
+    def test_auto_detect_modules_uses_groovy_test_excludes_for_test_support_modules(self):
+        compile.settings.CONF = _conf(base_ref="")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "zstack"
+            premium = Path(td) / "premium"
+            for module in (root / "testlib", premium / "testlib-premium"):
+                module.mkdir(parents=True)
+                (module / "pom.xml").write_text("<project/>", encoding="utf-8")
+
+            def fake_git(repo, *args):
+                repo = os.path.realpath(repo)
+                if args == ("diff", "--name-only", "HEAD"):
+                    return subprocess.CompletedProcess(["git"], 0, "", "")
+                if args == ("ls-files", "--others", "--exclude-standard"):
+                    return subprocess.CompletedProcess(["git"], 0, "", "")
+                if args == ("rev-parse", "--verify", "HEAD^"):
+                    return subprocess.CompletedProcess(["git"], 0, "parent\n", "")
+                if args == ("diff", "--name-only", "HEAD^", "HEAD"):
+                    out = {
+                        os.path.realpath(root): "testlib/src/main/java/org/zstack/testlib/EnvSpec.groovy\n",
+                        os.path.realpath(premium): "testlib-premium/src/main/java/org/zstack/testlib/premium/TestPremium.groovy\n",
+                    }.get(repo, "")
+                    return subprocess.CompletedProcess(["git"], 0, out, "")
+                return subprocess.CompletedProcess(["git"], 0, "", "")
+
+            compile._git = fake_git
+
+            default_main, default_prem = compile.auto_detect_modules(str(root), str(premium))
+            groovy_main, groovy_prem = compile.auto_detect_modules(
+                str(root),
+                str(premium),
+                excluded_modules=groovy_test.GROOVY_TEST_AUTO_EXCLUDED_MODULES,
+            )
+
+        self.assertEqual([], default_main)
+        self.assertEqual([], default_prem)
+        self.assertEqual(["testlib"], groovy_main)
+        self.assertEqual(["testlib-premium"], groovy_prem)
 
     def test_auto_detect_modules_falls_back_to_head_when_no_worktree_module_changed(self):
         compile.settings.CONF = _conf(base_ref="")
