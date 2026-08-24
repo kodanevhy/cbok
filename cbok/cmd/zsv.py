@@ -28,6 +28,7 @@ from cbok.bbx.zsv.service import ZsvHostDiscoveryError
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
 from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
 from cbok.bbx.zsv.compile import run_compile_flow
+from cbok.bbx.zsv import config as zsv_config
 from cbok.bbx.zsv.groovy_test import run_groovy_test_flow
 from cbok.bbx.zsv.worktree_prune import list_worktree_container_prs
 from cbok.bbx.zsv.worktree_prune import prune_worktree_containers
@@ -110,6 +111,11 @@ def _print_iso(tracker, iso, state, needs_upgrade):
     print(f"Last sync at: {upgraded_at}")
     if needs_upgrade:
         print(f"---\n{_upgrade_command(tracker)}")
+
+
+def _log_zsv_base_ref():
+    base_ref = zsv_config.zsv_base_ref() or "<not configured>"
+    LOG.info("ZSV base ref: %s", base_ref)
 
 
 class ZSphereCommands(base.BaseCommand):
@@ -287,6 +293,7 @@ class ZSphereCommands(base.BaseCommand):
             primary_node=None,
     ):
         """Upgrade ZSphere primary node with latest BIN/ISO package"""
+        _log_zsv_base_ref()
         tracker = self._tracker(
             name=name,
             upgrade_url=upgrade_url,
@@ -335,6 +342,7 @@ class ZSphereCommands(base.BaseCommand):
         Build changed modules in a remote Docker worktree container.
         Deploy copies JARs to remote WEB-INF/lib (with backup).
         """
+        _log_zsv_base_ref()
         deploy = not no_deploy
         if deploy:
             if not address:
@@ -403,6 +411,7 @@ class ZSphereCommands(base.BaseCommand):
             refresh_deploy_db=False,
     ):
         """Run a ZStack Groovy integration test in a reusable Docker container"""
+        _log_zsv_base_ref()
         return run_groovy_test_flow(
             zstack_branch=zstack_branch,
             premium_branch=premium_branch,
@@ -473,6 +482,7 @@ class ZSphereCommands(base.BaseCommand):
         """
         Replace changed kvmagent/zstacklib/ceph/zbs primary agent files on ZSV nodes.
         """
+        _log_zsv_base_ref()
         if not primary_node:
             LOG.error("replace_agent requires --primary-node.")
             return 1
@@ -523,6 +533,7 @@ class ZSphereCommands(base.BaseCommand):
         help="zstack-store checkout root for the current worktree")
     def replace_zstore(self, primary_node=None, zstore_root=None):
         """Build and replace zstore and zstcli on healthy KVM hosts and ImageStore backup storage nodes"""
+        _log_zsv_base_ref()
         if not primary_node or not zstore_root:
             LOG.error("replace_zstore requires --primary-node and --zstore-root.")
             return 1

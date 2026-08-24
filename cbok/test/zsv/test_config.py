@@ -34,12 +34,12 @@ class ZsvConfigTest(unittest.TestCase):
 
         self.assertEqual("origin/shared", zsv_config.zsv_base_ref())
 
-    def test_base_ref_falls_back_to_legacy_compile_config(self):
+    def test_base_ref_does_not_fall_back_to_legacy_compile_config(self):
         zsv_config.settings.CONF = _conf(
             zsv_compile_values={"base_ref": "origin/legacy"},
         )
 
-        self.assertEqual("origin/legacy", zsv_config.zsv_base_ref())
+        self.assertEqual("", zsv_config.zsv_base_ref())
 
     def test_zstack_root_is_derived_from_workspace(self):
         zsv_config.settings.CONF = _conf(zsv_values={"zstack_root": "/ignored/zstack"})

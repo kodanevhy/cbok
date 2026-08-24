@@ -57,6 +57,10 @@ class FakeRunner:
 def _conf(**values):
     parser = configparser.ConfigParser()
     parser.add_section("zsv_compile")
+    base_ref = values.pop("base_ref", None)
+    if base_ref is not None:
+        parser.add_section("zsv")
+        parser.set("zsv", "base_ref", str(base_ref))
     for key, value in values.items():
         parser.set("zsv_compile", key, str(value))
     return parser
@@ -68,6 +72,7 @@ class ZsvCompileTest(unittest.TestCase):
         self._orig_auto_detect_modules = compile.auto_detect_modules
         self._orig_git_summary = compile.git_summary
         self._orig_git = compile._git
+        self._orig_validate_changed_paths_base_ref = compile.validate_changed_paths_base_ref
         self._orig_local_jar_copy_root_for_root = compile._local_jar_copy_root_for_root
         self._orig_collect_changed_web_classes_files = compile.collect_changed_web_classes_files
         self._orig_default_compile_state_store = compile.default_compile_deploy_state_store
@@ -82,10 +87,14 @@ class ZsvCompileTest(unittest.TestCase):
         compile.auto_detect_modules = self._orig_auto_detect_modules
         compile.git_summary = self._orig_git_summary
         compile._git = self._orig_git
+        compile.validate_changed_paths_base_ref = self._orig_validate_changed_paths_base_ref
         compile._local_jar_copy_root_for_root = self._orig_local_jar_copy_root_for_root
         compile.collect_changed_web_classes_files = self._orig_collect_changed_web_classes_files
         compile.default_compile_deploy_state_store = self._orig_default_compile_state_store
         worktree_container.default_state_store = self._orig_default_state_store
+
+    def _allow_changed_paths_base_ref_validation(self):
+        compile.validate_changed_paths_base_ref = lambda _root: True
 
     def test_remote_docker_conf_reads_optional_values(self):
         compile.settings.CONF = _conf(
@@ -149,6 +158,17 @@ class ZsvCompileTest(unittest.TestCase):
             ("merge-base", "--is-ancestor", "origin/feature/zsv", "HEAD"),
         ], calls)
 
+    def test_validate_changed_paths_base_ref_requires_configured_base_ref(self):
+        compile.settings.CONF = _conf()
+
+        with self.assertLogs(compile.LOG.name, level="ERROR") as logs:
+            self.assertFalse(compile.validate_changed_paths_base_ref("/repo"))
+
+        self.assertIn(
+            "ZSV base_ref is not configured",
+            "\n".join(logs.output),
+        )
+
     def test_zsv_compile_config_does_not_expose_profile_switch(self):
         option_names = [opt.name for opt in cbok_config.ZSV_COMPILE.options]
         zsv_option_names = [opt.name for opt in cbok_config.ZSV.options]
@@ -179,8 +199,9 @@ class ZsvCompileTest(unittest.TestCase):
         compile.settings.CONF = _conf(
             remote_docker_host="tcp://172.26.50.70:2375",
             remote_docker_image="zstack-buildbin:debug7-arm64",
-            base_ref="",
+            base_ref="origin/test-base",
         )
+        self._allow_changed_paths_base_ref_validation()
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["plugin/foo"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
@@ -222,8 +243,9 @@ class ZsvCompileTest(unittest.TestCase):
             remote_docker_host="http://172.26.50.70:2375",
             remote_docker_workdir="/work",
             remote_docker_m2_volume="zsv-m2",
-            base_ref="",
+            base_ref="origin/test-base",
         )
+        self._allow_changed_paths_base_ref_validation()
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["plugin/foo"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
@@ -686,7 +708,8 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual(str(premium_xml.resolve()), mapped["springConfigXml/crypto.xml"])
 
     def test_explicit_web_class_overrides_changed_file_with_same_target(self):
-        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
+        self._allow_changed_paths_base_ref_validation()
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
@@ -733,7 +756,8 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertNotIn(str(zstack_xml.resolve()), output)
 
     def test_deploy_uses_unique_remote_staging_per_compile(self):
-        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
+        self._allow_changed_paths_base_ref_validation()
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
@@ -785,7 +809,8 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertNotIn(str(worktree_target / "identity-5.0.0.jar"), scp_scripts[0])
 
     def test_deploy_syncs_changed_web_classes_archive(self):
-        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
+        self._allow_changed_paths_base_ref_validation()
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
@@ -828,7 +853,8 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertTrue(any("/usr/local/zstack/apache-tomcat/webapps/zstack/WEB-INF/classes" in script for script in shell_scripts))
 
     def test_deploy_replays_previous_modules_removed_from_current_diff(self):
-        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
+        self._allow_changed_paths_base_ref_validation()
         compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
         compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: []
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
@@ -880,7 +906,8 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual([], selection.premium_modules)
 
     def test_deploy_replays_previous_web_classes_when_current_diff_is_empty(self):
-        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
+        compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
+        self._allow_changed_paths_base_ref_validation()
         compile.auto_detect_modules = lambda _root, _premium_root=None: ([], [])
         compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: []
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
