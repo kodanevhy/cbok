@@ -484,8 +484,10 @@ class SchemaRepairTest(unittest.TestCase):
     def test_zsv_shared_settings_configure_base_ref_only(self):
         self.assertIn("zsv", [group.name for group in cbok_config.ALL_GROUPS])
         option_names = [opt.name for opt in cbok_config.ZSV.options]
+        base_ref = next(opt for opt in cbok_config.ZSV.options if opt.name == "base_ref")
 
         self.assertIn("base_ref", option_names)
+        self.assertIsNone(base_ref.default)
         self.assertNotIn("zstack_root", option_names)
         self.assertNotIn("schema_branch", option_names)
         self.assertNotIn("db_file", option_names)

@@ -76,8 +76,10 @@ ZSV = Group(
     name="zsv",
     title="zsv shared settings",
     options=[
-        Option("base_ref", default="origin/feature-zsv-5.1.0-encryption",
-        help="Remote branch used as the shared ZSV base ref"),
+        Option(
+            "base_ref",
+            help="Remote branch used as the shared ZSV base ref",
+        ),
     ]
 )
 
