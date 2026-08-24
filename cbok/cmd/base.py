@@ -129,6 +129,8 @@ class DefaultCommands(BaseCommand):
                 force_result = self._force_abort_source_checkout()
                 if force_result != 0:
                     return force_result
+            else:
+                LOG.info("No need abort.")
         else:
             dirty = self._source_checkout_is_dirty()
             if dirty is None:
