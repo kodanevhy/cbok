@@ -52,6 +52,36 @@ class DefaultCommands(BaseCommand):
             return None
         return bool((result.stdout or "").strip())
 
+    def _git_admin_dir(self):
+        dot_git = os.path.join(self.project_root, ".git")
+        if os.path.isdir(dot_git):
+            return dot_git
+        if not os.path.isfile(dot_git):
+            return None
+        with open(dot_git, encoding="utf-8") as f:
+            marker = f.readline().strip()
+        if not marker.startswith("gitdir:"):
+            return None
+        git_dir = marker.split(":", 1)[1].strip()
+        if not os.path.isabs(git_dir):
+            git_dir = os.path.join(self.project_root, git_dir)
+        return os.path.realpath(git_dir)
+
+    def _rebase_in_progress(self):
+        git_dir = self._git_admin_dir()
+        if not git_dir:
+            return False
+        return any(
+            os.path.exists(os.path.join(git_dir, name))
+            for name in ("rebase-merge", "rebase-apply")
+        )
+
+    def _force_abort_needed(self) -> bool | None:
+        dirty = self._source_checkout_is_dirty()
+        if dirty is None:
+            return None
+        return dirty or self._rebase_in_progress()
+
     def _confirm_force_abort(self) -> bool:
         try:
             answer = input(FORCE_ABORT_PROMPT)
@@ -90,11 +120,15 @@ class DefaultCommands(BaseCommand):
     def rebase(self, force_abort=False):
         """Checkout CBoK source master and rebase it from origin/master."""
         if force_abort:
-            if not self._confirm_force_abort():
+            force_needed = self._force_abort_needed()
+            if force_needed is None:
                 return 1
-            force_result = self._force_abort_source_checkout()
-            if force_result != 0:
-                return force_result
+            if force_needed:
+                if not self._confirm_force_abort():
+                    return 1
+                force_result = self._force_abort_source_checkout()
+                if force_result != 0:
+                    return force_result
         else:
             dirty = self._source_checkout_is_dirty()
             if dirty is None:

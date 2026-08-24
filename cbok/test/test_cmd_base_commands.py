@@ -1,5 +1,7 @@
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from cbok.cmd import base
@@ -92,6 +94,7 @@ class DefaultCommandsTest(unittest.TestCase):
     def test_rebase_force_abort_discards_changes_before_rebase(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner(responses=[
+            {"stdout": " M cbok/cmd/base.py\n"},
             {"returncode": 1, "stderr": "fatal: No rebase in progress?\n"},
             {},
             {},
@@ -108,6 +111,7 @@ class DefaultCommandsTest(unittest.TestCase):
         self.assertEqual(base.FORCE_ABORT_PROMPT, prompt.call_args[0][0])
         self.assertEqual(
             [
+                ["git", "-C", "/repo/cbok", "status", "--porcelain"],
                 ["git", "-C", "/repo/cbok", "rebase", "--abort"],
                 ["git", "-C", "/repo/cbok", "reset", "--hard"],
                 ["git", "-C", "/repo/cbok", "clean", "-fd"],
@@ -118,13 +122,78 @@ class DefaultCommandsTest(unittest.TestCase):
             runner.commands,
         )
         self.assertEqual(
+            False,
+            runner.kwargs[0]["log_output"],
+        )
+        self.assertEqual(
             {"cmd_purge_output": False, "log_output": False, "log_failed_status": False},
-            runner.kwargs[0],
+            runner.kwargs[1],
+        )
+
+    def test_rebase_force_abort_skips_prompt_when_clean_and_not_rebasing(self):
+        command = DefaultCommands(project_root="/repo/cbok")
+        runner = FakeRunner(responses=[
+            {"stdout": ""},
+            {},
+            {},
+            {},
+        ])
+        command.p_runner = runner
+
+        with mock.patch("builtins.input") as prompt:
+            result = command.rebase(force_abort=True)
+
+        self.assertEqual(0, result)
+        prompt.assert_not_called()
+        self.assertEqual(
+            [
+                ["git", "-C", "/repo/cbok", "status", "--porcelain"],
+                ["git", "-C", "/repo/cbok", "checkout", "master"],
+                ["git", "-C", "/repo/cbok", "fetch", "origin"],
+                ["git", "-C", "/repo/cbok", "rebase", "origin/master"],
+            ],
+            runner.commands,
+        )
+
+    def test_rebase_force_abort_prompts_when_rebase_state_exists_even_if_clean(self):
+        with tempfile.TemporaryDirectory() as td:
+            git_dir = Path(td, ".git")
+            Path(git_dir, "rebase-merge").mkdir(parents=True)
+            command = DefaultCommands(project_root=td)
+            root = command.project_root
+            runner = FakeRunner(responses=[
+                {"stdout": ""},
+                {},
+                {},
+                {},
+                {},
+                {},
+            ])
+            command.p_runner = runner
+
+            with mock.patch("builtins.input", return_value="yes") as prompt:
+                result = command.rebase(force_abort=True)
+
+        self.assertEqual(0, result)
+        self.assertEqual(base.FORCE_ABORT_PROMPT, prompt.call_args[0][0])
+        self.assertEqual(
+            [
+                ["git", "-C", root, "status", "--porcelain"],
+                ["git", "-C", root, "rebase", "--abort"],
+                ["git", "-C", root, "reset", "--hard"],
+                ["git", "-C", root, "clean", "-fd"],
+                ["git", "-C", root, "checkout", "master"],
+                ["git", "-C", root, "fetch", "origin"],
+                ["git", "-C", root, "rebase", "origin/master"],
+            ],
+            runner.commands,
         )
 
     def test_rebase_force_abort_stops_when_user_declines(self):
         command = DefaultCommands(project_root="/repo/cbok")
-        runner = FakeRunner()
+        runner = FakeRunner(responses=[
+            {"stdout": " M cbok/cmd/base.py\n"},
+        ])
         command.p_runner = runner
 
         with mock.patch("builtins.input", return_value="no") as prompt:
@@ -132,13 +201,18 @@ class DefaultCommandsTest(unittest.TestCase):
                 result = command.rebase(force_abort=True)
 
         self.assertEqual(1, result)
-        self.assertEqual([], runner.commands)
+        self.assertEqual(
+            [["git", "-C", "/repo/cbok", "status", "--porcelain"]],
+            runner.commands,
+        )
         self.assertEqual(base.FORCE_ABORT_PROMPT, prompt.call_args[0][0])
         self.assertIn("Force abort cancelled", "\n".join(logs.output))
 
     def test_rebase_force_abort_stops_when_confirmation_is_unavailable(self):
         command = DefaultCommands(project_root="/repo/cbok")
-        runner = FakeRunner()
+        runner = FakeRunner(responses=[
+            {"stdout": " M cbok/cmd/base.py\n"},
+        ])
         command.p_runner = runner
 
         with mock.patch("builtins.input", side_effect=EOFError):
@@ -146,12 +220,16 @@ class DefaultCommandsTest(unittest.TestCase):
                 result = command.rebase(force_abort=True)
 
         self.assertEqual(1, result)
-        self.assertEqual([], runner.commands)
+        self.assertEqual(
+            [["git", "-C", "/repo/cbok", "status", "--porcelain"]],
+            runner.commands,
+        )
         self.assertIn("Force abort requires interactive confirmation", "\n".join(logs.output))
 
     def test_rebase_force_abort_stops_when_reset_fails(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner(responses=[
+            {"stdout": " M cbok/cmd/base.py\n"},
             {"returncode": 1},
             {"returncode": 2},
         ])
@@ -163,6 +241,7 @@ class DefaultCommandsTest(unittest.TestCase):
         self.assertEqual(2, result)
         self.assertEqual(
             [
+                ["git", "-C", "/repo/cbok", "status", "--porcelain"],
                 ["git", "-C", "/repo/cbok", "rebase", "--abort"],
                 ["git", "-C", "/repo/cbok", "reset", "--hard"],
             ],
