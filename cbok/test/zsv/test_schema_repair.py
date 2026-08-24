@@ -50,12 +50,6 @@ class FakeCommand:
         return SimpleNamespace(returncode=0)
 
 
-def fake_materialize_schema_db_file(target_dir, **_kwargs):
-    path = Path(target_dir, "V5.1.0__schema.sql")
-    path.write_text("CREATE TABLE T(id int);\n", encoding="utf-8")
-    return str(path)
-
-
 class SchemaRepairTest(unittest.TestCase):
     def test_discover_management_nodes_ignores_ssh_banner_lines(self):
         class Runner:
@@ -185,11 +179,9 @@ class SchemaRepairTest(unittest.TestCase):
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
-        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
-        original_materialize = schema_repair.materialize_zsv_schema_db_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_artifact
         zsv_service.discover_management_nodes = lambda address, runner: [address]
-        schema_repair.run_schema_mismatch_precheck_for_file = lambda **kwargs: 0
-        schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
+        schema_repair.run_schema_mismatch_precheck_for_artifact = lambda **kwargs: 0
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
             download_url=bin_url,
@@ -208,8 +200,7 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
-            schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
+            schema_repair.run_schema_mismatch_precheck_for_artifact = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(0, rc)
@@ -229,11 +220,9 @@ class SchemaRepairTest(unittest.TestCase):
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
-        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
-        original_materialize = schema_repair.materialize_zsv_schema_db_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_artifact
         zsv_service.discover_management_nodes = lambda address, runner: [address]
-        schema_repair.run_schema_mismatch_precheck_for_file = lambda **kwargs: 0
-        schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
+        schema_repair.run_schema_mismatch_precheck_for_artifact = lambda **kwargs: 0
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
             download_url=bin_url,
@@ -252,8 +241,7 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
-            schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
+            schema_repair.run_schema_mismatch_precheck_for_artifact = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(0, rc)
@@ -281,11 +269,9 @@ class SchemaRepairTest(unittest.TestCase):
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
-        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
-        original_materialize = schema_repair.materialize_zsv_schema_db_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_artifact
         zsv_service.discover_management_nodes = lambda address, runner: [address]
-        schema_repair.run_schema_mismatch_precheck_for_file = lambda **kwargs: 0
-        schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
+        schema_repair.run_schema_mismatch_precheck_for_artifact = lambda **kwargs: 0
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
             download_url=bin_url,
@@ -304,8 +290,7 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
-            schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
+            schema_repair.run_schema_mismatch_precheck_for_artifact = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(1, rc)
@@ -331,11 +316,9 @@ class SchemaRepairTest(unittest.TestCase):
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
-        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
-        original_materialize = schema_repair.materialize_zsv_schema_db_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_artifact
         zsv_service.discover_management_nodes = lambda address, runner: [address]
-        schema_repair.run_schema_mismatch_precheck_for_file = lambda **kwargs: 0
-        schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
+        schema_repair.run_schema_mismatch_precheck_for_artifact = lambda **kwargs: 0
         artifact = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
             download_url=bin_url,
@@ -354,8 +337,7 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _artifact, _state = tracker.upgrade(FakeCommand())
         finally:
-            schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
+            schema_repair.run_schema_mismatch_precheck_for_artifact = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(1, rc)
@@ -590,13 +572,11 @@ class SchemaRepairTest(unittest.TestCase):
             runner=runner,
         )
         original_discover = zsv_service.discover_management_nodes
-        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
-        original_materialize = schema_repair.materialize_zsv_schema_db_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_artifact
         zsv_service.discover_management_nodes = (
             lambda address, runner: ["172.26.213.50", "172.26.213.51"]
         )
-        schema_repair.run_schema_mismatch_precheck_for_file = lambda **kwargs: 0
-        schema_repair.materialize_zsv_schema_db_file = fake_materialize_schema_db_file
+        schema_repair.run_schema_mismatch_precheck_for_artifact = lambda **kwargs: 0
         iso = IsoInfo(
             name="ZStack-ZSphere-installer.bin",
             download_url="http://example.invalid/ZStack-ZSphere-installer.bin",
@@ -624,8 +604,7 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _iso, _state = tracker.upgrade(FakeCommand())
         finally:
-            schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
+            schema_repair.run_schema_mismatch_precheck_for_artifact = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(0, rc)
@@ -659,10 +638,9 @@ class SchemaRepairTest(unittest.TestCase):
             "\n".join(logs.output),
         )
 
-    def test_upgrade_resolves_db_file_from_base_ref(self):
+    def test_upgrade_prechecks_schema_from_exact_artifact(self):
         runner = FakeRunner()
         prechecks = []
-        materialized = []
         tracker = ZSphereTracker(
             name="test-env",
             upgrade_type="iso",
@@ -670,26 +648,18 @@ class SchemaRepairTest(unittest.TestCase):
             primary_node="172.26.213.50",
             runner=runner,
         )
-        original_precheck = schema_repair.run_schema_mismatch_precheck_for_file
+        original_precheck = schema_repair.run_schema_mismatch_precheck_for_artifact
         original_discover = zsv_service.discover_management_nodes
-        original_materialize = schema_repair.materialize_zsv_schema_db_file
-
-        def fake_materialize(target_dir, **_kwargs):
-            path = Path(target_dir, "V5.1.0__schema.sql")
-            path.write_text("CREATE TABLE T(id int);\n", encoding="utf-8")
-            materialized.append(str(path))
-            return str(path)
 
         def fake_precheck(**kwargs):
-            prechecks.append((kwargs, Path(kwargs["db_file"]).read_text(encoding="utf-8")))
+            prechecks.append(kwargs)
             return 0
 
-        schema_repair.run_schema_mismatch_precheck_for_file = fake_precheck
+        schema_repair.run_schema_mismatch_precheck_for_artifact = fake_precheck
         zsv_service.discover_management_nodes = lambda address, runner: [address]
-        schema_repair.materialize_zsv_schema_db_file = fake_materialize
         iso = IsoInfo(
-            name="ZStack-ZSphere-installer.bin",
-            download_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+            name="ZStack-ZSphere-x86_64-DVD.iso",
+            download_url="http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso",
             size="123",
         )
         state = SimpleNamespace(
@@ -705,52 +675,38 @@ class SchemaRepairTest(unittest.TestCase):
         try:
             rc, _iso, _state = tracker.upgrade(FakeCommand())
         finally:
-            schema_repair.materialize_zsv_schema_db_file = original_materialize
-            schema_repair.run_schema_mismatch_precheck_for_file = original_precheck
+            schema_repair.run_schema_mismatch_precheck_for_artifact = original_precheck
             zsv_service.discover_management_nodes = original_discover
 
         self.assertEqual(0, rc)
-        self.assertEqual(1, len(materialized))
         self.assertEqual(1, len(prechecks))
-        self.assertEqual("172.26.213.50", prechecks[0][0]["address"])
-        self.assertTrue(prechecks[0][0]["db_file"].endswith("V5.1.0__schema.sql"))
-        self.assertEqual("CREATE TABLE T(id int);\n", prechecks[0][1])
+        self.assertEqual("172.26.213.50", prechecks[0]["address"])
+        self.assertEqual("http://example.invalid/ZStack-ZSphere-x86_64-DVD.iso", prechecks[0]["artifact_url"])
+        self.assertEqual("ZStack-ZSphere-x86_64-DVD.iso", prechecks[0]["artifact_name"])
+        self.assertEqual("123", prechecks[0]["artifact_size"])
+        self.assertEqual("iso", prechecks[0]["upgrade_type"])
         self.assertIn("zsv_upgrade_latest", runner.commands[0][0][-1])
 
-    def test_materialize_zsv_schema_db_file_reuses_compile_base_ref_sync(self):
-        sync_calls = []
-        read_calls = []
-        original_base_ref = schema_repair.zsv_base_ref
-        original_sync = schema_repair.zsv_base_ref_helper.sync_base_ref
-        original_read = schema_repair.read_branch_file
+    def test_artifact_schema_precheck_invokes_remote_artifact_helper(self):
+        runner = FakeRunner()
 
-        def fake_read(root, branch, path):
-            read_calls.append((root, branch, path))
-            return "CREATE TABLE T(id int);\n"
-
-        schema_repair.zsv_base_ref = lambda: "origin/zsv_5.1.0"
-        schema_repair.zsv_base_ref_helper.sync_base_ref = (
-            lambda root: sync_calls.append(root) or True
+        rc = schema_repair.run_schema_mismatch_precheck_for_artifact(
+            address="172.26.213.50",
+            artifact_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+            artifact_name="ZStack-ZSphere-installer.bin",
+            artifact_modified="2026-07-23T13:39:45+08:00",
+            artifact_size="123",
+            upgrade_type="bin",
+            runner=runner,
         )
-        schema_repair.read_branch_file = fake_read
 
-        try:
-            with tempfile.TemporaryDirectory() as td:
-                path = schema_repair.materialize_zsv_schema_db_file(
-                    target_dir=td,
-                    zstack_root="/repo/zstack",
-                )
-
-                self.assertEqual("CREATE TABLE T(id int);\n", Path(path).read_text(encoding="utf-8"))
-        finally:
-            schema_repair.zsv_base_ref = original_base_ref
-            schema_repair.zsv_base_ref_helper.sync_base_ref = original_sync
-            schema_repair.read_branch_file = original_read
-
-        self.assertEqual(["/repo/zstack"], sync_calls)
-        self.assertEqual([
-            ("/repo/zstack", "origin/zsv_5.1.0", "conf/db/zsv/V5.1.0__schema.sql"),
-        ], read_calls)
+        self.assertEqual(0, rc)
+        script = runner.commands[0][0][-1]
+        self.assertIn("zsv_schema_precheck_artifact", script)
+        self.assertIn("http://example.invalid/ZStack-ZSphere-installer.bin", script)
+        self.assertIn("ZStack-ZSphere-installer.bin", script)
+        self.assertIn("2026-07-23T13:39:45+08:00", script)
+        self.assertTrue(script.rstrip().endswith(" bin"))
 
     def test_file_schema_precheck_uses_single_configured_db_file(self):
         staged_files = []
@@ -859,11 +815,62 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertIn("applied checksum: -152505803", output)
         self.assertIn("resolved checksum: -373519170", output)
 
+    def test_artifact_schema_precheck_reports_mismatch_without_shell_errno_log(self):
+        class MismatchRunner(FakeRunner):
+            def run_command(self, cmd, **kwargs):
+                self.commands.append((cmd, kwargs))
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=1,
+                    stdout=(
+                        "__CBOK_ZSV_SCHEMA_PRECHECK__\n"
+                        "primary_node=172.26.213.50\n"
+                        "sql_source=/var/lib/cbok/zsv-upgrade/ZStack-ZSphere-installer.bin\n"
+                        "script=V5.1.0__schema.sql\n"
+                        "version=5.1.0\n"
+                        "version_rank=168\n"
+                        "applied_checksum=-152505803\n"
+                        "resolved_checksum=-373519170\n"
+                    ),
+                    stderr="",
+                )
+
+        runner = MismatchRunner()
+
+        with self.assertLogs(schema_repair.LOG, level="ERROR") as logs:
+            rc = schema_repair.run_schema_mismatch_precheck_for_artifact(
+                address="172.26.213.50",
+                artifact_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+                artifact_name="ZStack-ZSphere-installer.bin",
+                artifact_modified="",
+                artifact_size="",
+                upgrade_type="bin",
+                runner=runner,
+            )
+
+        output = "\n".join(logs.output)
+        self.assertEqual(1, rc)
+        self.assertIn(schema_repair.MANUAL_REPAIR_SKILL, output)
+        self.assertIn("SQL source: /var/lib/cbok/zsv-upgrade/ZStack-ZSphere-installer.bin", output)
+        self.assertNotIn("ERRNO: 1 ;<", output)
+        self.assertEqual(False, runner.commands[0][1]["cmd_purge_output"])
+        self.assertEqual(False, runner.commands[0][1]["log_failed_status"])
+
     def test_scriptlet_keeps_only_schema_precheck_helpers(self):
         scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
 
         self.assertIn("zsv_schema_stage_sql_dir()", scriptlet)
         self.assertIn("zsv_schema_flyway_migrate()", scriptlet)
+        self.assertIn("zsv_schema_precheck_artifact()", scriptlet)
+        self.assertIn("_zsv_extract_schema_from_bin()", scriptlet)
+        self.assertIn("_zsv_extract_schema_from_iso()", scriptlet)
+        self.assertIn("WEB-INF/classes/db/zsv/", scriptlet)
+        self.assertIn("expected exactly one", scriptlet)
+        self.assertIn("ZSV schema version from artifact", scriptlet)
+        self.assertIn("ZSV schema SQL for", scriptlet)
+        self.assertIn("applied ZSV schema row for", scriptlet)
+        self.assertIn("zstack-installer.bin", scriptlet)
+        self.assertIn("zstack.war", scriptlet)
         self.assertIn('bash \\"\\$flyway\\" migrate', scriptlet)
         self.assertNotIn("zsv_schema_flyway_repair()", scriptlet)
         self.assertNotIn("zsv_schema_apply_sql_file()", scriptlet)
@@ -873,6 +880,7 @@ class SchemaRepairTest(unittest.TestCase):
 
         self.assertIn("_cbok_export_func zsv_schema_stage_sql_dir", bootstrap)
         self.assertIn("_cbok_export_func zsv_schema_flyway_migrate", bootstrap)
+        self.assertIn("_cbok_export_func zsv_schema_precheck_artifact", bootstrap)
         self.assertNotIn("_cbok_export_func zsv_schema_flyway_repair", bootstrap)
         self.assertNotIn("_cbok_export_func zsv_schema_apply_sql_file", bootstrap)
 

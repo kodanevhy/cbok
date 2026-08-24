@@ -293,7 +293,6 @@ class ZSphereCommands(base.BaseCommand):
             primary_node=None,
     ):
         """Upgrade ZSphere primary node with latest BIN/ISO package"""
-        _log_zsv_base_ref()
         tracker = self._tracker(
             name=name,
             upgrade_url=upgrade_url,

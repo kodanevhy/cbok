@@ -10,17 +10,12 @@ import shutil
 import subprocess
 import tempfile
 
-from cbok.bbx.zsv import base_ref as zsv_base_ref_helper
-from cbok.bbx.zsv.config import zsv_base_ref
-from cbok.bbx.zsv.config import zstack_root_from_workspace
-
 
 LOG = logging.getLogger(__name__)
 
 DEFAULT_REMOTE_SQL_DIR = "/tmp/cbok-zsv-schema-sql"
-ZSV_DB_DIR = "conf/db/zsv"
-DEFAULT_ZSV_SCHEMA_DB_FILE = os.path.join(ZSV_DB_DIR, "V5.1.0__schema.sql")
 MANUAL_REPAIR_SKILL = "cbok-zsv-upgrade-db-repair"
+ARTIFACT_PRECHECK_MARKER = "__CBOK_ZSV_SCHEMA_PRECHECK__"
 
 
 @dataclass(frozen=True)
@@ -38,14 +33,6 @@ class ChecksumMismatch:
     resolved_checksum: int
 
 
-def _git(root: str, *args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "-C", root, *args],
-        capture_output=True,
-        text=True,
-    )
-
-
 def _sql_string(value: str) -> str:
     return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
 
@@ -55,33 +42,6 @@ def _version_from_script(script: str) -> str:
     if not m:
         raise ValueError(f"cannot parse migration version from {script}")
     return m.group("version")
-
-
-def read_branch_file(zstack_root: str, branch: str, path: str) -> str:
-    result = _git(zstack_root, "show", f"{branch}:{path}")
-    if result.returncode != 0:
-        raise RuntimeError((result.stderr or result.stdout or "").strip())
-    return result.stdout or ""
-
-
-def materialize_zsv_schema_db_file(
-    *,
-    target_dir: str,
-    zstack_root: str | None = None,
-) -> str:
-    base_ref = zsv_base_ref()
-    if not base_ref:
-        raise RuntimeError("zsv base_ref is not configured")
-
-    root = os.path.realpath(zstack_root) if zstack_root else zstack_root_from_workspace()
-    if not zsv_base_ref_helper.sync_base_ref(root):
-        raise RuntimeError(f"failed to sync zsv base_ref {base_ref}")
-
-    content = read_branch_file(root, base_ref, DEFAULT_ZSV_SCHEMA_DB_FILE)
-    Path(target_dir).mkdir(parents=True, exist_ok=True)
-    target = Path(target_dir, os.path.basename(DEFAULT_ZSV_SCHEMA_DB_FILE))
-    target.write_text(content, encoding="utf-8")
-    return str(target)
 
 
 def parse_checksum_mismatches(output: str) -> list[ChecksumMismatch]:
@@ -107,6 +67,15 @@ def _bash_scriptlet(expr: str) -> list[str]:
 
 def _run_scriptlet(runner, expr: str):
     return runner.run_command(_bash_scriptlet(expr), cmd_purge_output=False)
+
+
+def _run_scriptlet_quiet(runner, expr: str):
+    return runner.run_command(
+        _bash_scriptlet(expr),
+        cmd_purge_output=False,
+        log_output=False,
+        log_failed_status=False,
+    )
 
 
 def _remote_mysql_query(address: str, sql: str, runner) -> subprocess.CompletedProcess[str]:
@@ -183,6 +152,74 @@ def format_manual_repair_hint(
         f"resolved checksum: {mismatch.resolved_checksum}",
         f"SQL source: {db_file}",
     ])
+
+
+def _parse_artifact_precheck_report(output: str) -> dict[str, str]:
+    lines = (output or "").splitlines()
+    try:
+        start = lines.index(ARTIFACT_PRECHECK_MARKER) + 1
+    except ValueError:
+        return {}
+
+    fields: dict[str, str] = {}
+    for line in lines[start:]:
+        if not line.strip():
+            continue
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        fields[key.strip()] = value.strip()
+    return fields
+
+
+def run_schema_mismatch_precheck_for_artifact(
+    *,
+    address: str,
+    artifact_url: str,
+    artifact_name: str,
+    artifact_modified: str = "",
+    artifact_size: str = "",
+    upgrade_type: str,
+    runner,
+) -> int:
+    result = _run_scriptlet_quiet(
+        runner,
+        "zsv_schema_precheck_artifact "
+        f"{shlex.quote(address)} "
+        f"{shlex.quote(artifact_url)} "
+        f"{shlex.quote(artifact_name)} "
+        f"{shlex.quote(artifact_modified or '')} "
+        f"{shlex.quote(artifact_size or '')} "
+        f"{shlex.quote(upgrade_type)}",
+    )
+    returncode = getattr(result, "returncode", 1) or 0
+    if returncode == 0:
+        return 0
+
+    output = result.stdout or result.stderr or ""
+    fields = _parse_artifact_precheck_report(output)
+    if not fields:
+        LOG.error("ZSV schema artifact precheck failed.\n%s", output.strip())
+        return returncode
+
+    migration = AppliedMigration(
+        version=fields.get("version", ""),
+        version_rank=int(fields.get("version_rank") or 0),
+        checksum=int(fields.get("applied_checksum") or 0),
+        script=fields.get("script", ""),
+    )
+    mismatch = ChecksumMismatch(
+        version=fields.get("version", ""),
+        applied_checksum=int(fields.get("applied_checksum") or 0),
+        resolved_checksum=int(fields.get("resolved_checksum") or 0),
+    )
+    LOG.error(format_manual_repair_hint(
+        address=fields.get("primary_node") or address,
+        migration=migration,
+        mismatch=mismatch,
+        db_file=fields.get("sql_source") or fields.get("artifact_path") or artifact_name,
+    ))
+    return 1
 
 
 def run_schema_mismatch_precheck_for_file(

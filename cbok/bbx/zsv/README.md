@@ -63,12 +63,14 @@ Behavior:
 
 ## ZSphere upgrade schema file
 
-`cbok zsv upgrade` fetches the configured `[zsv] base_ref` in the local ZStack
-checkout, reads `conf/db/zsv/V5.1.0__schema.sql` from that ref, and uses the
-temporary copy for a pre-upgrade Flyway checksum check. If Flyway reports a
-checksum mismatch, cbok stops before upgrade and asks the AI to use the
-`cbok-zsv-upgrade-db-repair` skill. cbok does not apply schema SQL or run
-`flyway repair` automatically.
+`cbok zsv upgrade` downloads or reuses the exact BIN/ISO package on the primary
+node, parses the target version from the package name or URL, and extracts the
+matching `WEB-INF/classes/db/zsv/V<version>__*.sql` file. The matching SQL must
+exist exactly once; missing or multiple matches stop the command. If that
+script already has a successful `zstack.schema_version` row, cbok compares its
+Flyway checksum before upgrade. If the checksum differs, cbok stops before
+upgrade and asks the AI to use the `cbok-zsv-upgrade-db-repair` skill. cbok does
+not apply schema SQL or run `flyway repair` automatically.
 
 ## Worktree container cleanup
 

@@ -5,7 +5,6 @@ import logging
 import os
 import re
 import shlex
-import tempfile
 from urllib.parse import unquote
 from urllib.parse import urlparse
 
@@ -388,18 +387,15 @@ class ZSphereTracker:
             if getattr(result, "returncode", 0) != 0:
                 return result.returncode, iso, state
 
-        with tempfile.TemporaryDirectory() as td:
-            try:
-                db_file = schema_repair.materialize_zsv_schema_db_file(target_dir=td)
-            except RuntimeError as exc:
-                LOG.error("Failed to resolve ZSV schema db file from base ref: %s", exc)
-                return 1, iso, state
-
-            schema_precheck_rc = schema_repair.run_schema_mismatch_precheck_for_file(
-                address=self.primary_node,
-                db_file=db_file,
-                runner=self.runner,
-            )
+        schema_precheck_rc = schema_repair.run_schema_mismatch_precheck_for_artifact(
+            address=self.primary_node,
+            artifact_url=iso.download_url,
+            artifact_name=iso.name,
+            artifact_modified=self._iso_modified_arg(iso),
+            artifact_size=iso.size or "",
+            upgrade_type=self.upgrade_type,
+            runner=self.runner,
+        )
         if schema_precheck_rc != 0:
             return schema_precheck_rc, iso, state
 
