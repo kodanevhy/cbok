@@ -410,7 +410,7 @@ zsv_upgrade_latest() {
     /var/lib/cbok/zsv-upgrade "$expected_modified" "$expected_size" "$upgrade_type"
 }
 
-# --- ZStack dev: check local-base ZSV schema drift before upgrade ---
+# --- ZStack dev: check package ZSV schema drift before upgrade ---
 
 zsv_mysql_query() {
   local address="${1:?address required}"
@@ -422,6 +422,286 @@ zsv_mysql_query() {
 require_cmd mysql
 mysql -uzstack -pzstack.password -N -B -e ${sql_q}
 "
+}
+
+_zsv_sql_string() {
+  local value="${1:-}"
+  printf "'"
+  printf '%s' "$value" | sed "s/'/''/g"
+  printf "'"
+}
+
+_zsv_expect_one_line() {
+  local list_file="${1:?list file required}"
+  local label="${2:?label required}"
+  local content count
+  content=$(awk 'NF' "$list_file" || true)
+  if [[ -z "$content" ]]; then
+    count=0
+  else
+    count=$(printf '%s\n' "$content" | wc -l | tr -d ' ')
+  fi
+  if [[ "$count" != "1" ]]; then
+    echo "expected exactly one ${label}, found ${count}" >&2
+    if [[ -n "$content" ]]; then
+      printf '%s\n' "$content" | sed 's/^/  /' >&2 || true
+    fi
+    return 1
+  fi
+  printf '%s\n' "$content"
+}
+
+_zsv_unpack_installer_bin() {
+  local bin_path="${1:?installer bin required}"
+  local output_dir="${2:?output dir required}"
+  local lines payload_lines
+
+  [[ -f "$bin_path" ]] || die "installer bin missing: $bin_path"
+  mkdir -p "$output_dir"
+  lines=$(wc -l < "$bin_path" | tr -d ' ')
+  payload_lines=$((lines - 11))
+  (( payload_lines > 0 )) || die "invalid installer bin payload: $bin_path"
+  tail -n "$payload_lines" "$bin_path" | tar x -C "$output_dir"
+}
+
+_zsv_versions_from_text() {
+  local text="${1:-}"
+  printf '%s\n' "$text" \
+    | grep -Eo '(^|[^0-9])([0-9]+\.){2,3}[0-9]([^0-9]|$)' \
+    | sed -E 's/^[^0-9]*//; s/[^0-9]*$//' \
+    | sort -u || true
+}
+
+_zsv_artifact_schema_version() {
+  local artifact_url="${1:?artifact url required}"
+  local artifact_name="${2:?artifact name required}"
+  local versions count
+
+  versions=$(_zsv_versions_from_text "$artifact_name")
+  count=$(printf '%s\n' "$versions" | awk 'NF' | wc -l | tr -d ' ')
+  if [[ "$count" != "0" ]]; then
+    _zsv_expect_one_line <(printf '%s\n' "$versions" | awk 'NF') \
+      "ZSV schema version from artifact name"
+    return $?
+  fi
+
+  versions=$(_zsv_versions_from_text "$artifact_url")
+  _zsv_expect_one_line <(printf '%s\n' "$versions" | awk 'NF') \
+    "ZSV schema version from artifact URL"
+}
+
+_zsv_extract_schema_from_war() {
+  local war_path="${1:?zstack war required}"
+  local sql_dir="${2:?sql dir required}"
+  local source_label="${3:?source label required}"
+  local workdir="${4:?workdir required}"
+  local target_version="${5:?target version required}"
+  local entries entry target
+
+  require_cmd unzip
+  [[ -f "$war_path" ]] || die "zstack.war missing: $war_path"
+  mkdir -p "$sql_dir"
+  entries="${workdir}/zsv-schema-entries.txt"
+  unzip -Z -1 "$war_path" \
+    | awk -v prefix="WEB-INF/classes/db/zsv/V${target_version}__" \
+        'index($0, prefix) == 1 && $0 ~ /\.sql$/ && substr($0, length(prefix) + 1) !~ /\//' \
+        > "$entries"
+  if ! entry=$(_zsv_expect_one_line "$entries" "ZSV schema SQL for ${target_version}"); then
+    return 1
+  fi
+  target="${sql_dir}/$(basename "$entry")"
+  unzip -p "$war_path" "$entry" > "$target"
+  printf '%s!%s\n' "$source_label" "$entry" > "${target}.source"
+}
+
+_zsv_extract_schema_from_tgz() {
+  local tgz_path="${1:?zstack tgz required}"
+  local sql_dir="${2:?sql dir required}"
+  local workdir="${3:?workdir required}"
+  local source_label="${4:?source label required}"
+  local target_version="${5:?target version required}"
+  local entries war_entry war_path
+
+  [[ -f "$tgz_path" ]] || die "zstack tgz missing: $tgz_path"
+  entries="${workdir}/zstack-war-entries.txt"
+  tar -tzf "$tgz_path" | grep -E '(^|/)zstack\.war$' > "$entries" || true
+  if ! war_entry=$(_zsv_expect_one_line "$entries" "zstack.war"); then
+    return 1
+  fi
+  tar -xzf "$tgz_path" -C "$workdir" "$war_entry"
+  war_path="${workdir}/${war_entry}"
+  _zsv_extract_schema_from_war "$war_path" "$sql_dir" "$source_label" "$workdir" "$target_version"
+}
+
+_zsv_extract_schema_from_bin() {
+  local bin_path="${1:?installer bin required}"
+  local sql_dir="${2:?sql dir required}"
+  local workdir="${3:?workdir required}"
+  local target_version="${4:?target version required}"
+  local unpack_dir entries tgz_path
+
+  unpack_dir="${workdir}/bin-unpack"
+  mkdir -p "$unpack_dir"
+  _zsv_unpack_installer_bin "$bin_path" "$unpack_dir"
+  entries="${workdir}/zstack-tgz-entries.txt"
+  find "$unpack_dir" -maxdepth 1 -type f -name 'zstack*.tgz' -print > "$entries"
+  if ! tgz_path=$(_zsv_expect_one_line "$entries" "zstack tgz"); then
+    return 1
+  fi
+  _zsv_extract_schema_from_tgz "$tgz_path" "$sql_dir" "$workdir" "$bin_path" "$target_version"
+}
+
+_zsv_extract_schema_from_iso() {
+  local iso_path="${1:?iso required}"
+  local sql_dir="${2:?sql dir required}"
+  local workdir="${3:?workdir required}"
+  local target_version="${4:?target version required}"
+  local mnt installer
+
+  require_cmd mount
+  [[ -f "$iso_path" ]] || die "ISO missing: $iso_path"
+  mnt="${workdir}/iso-mnt"
+  mkdir -p "$mnt"
+  mount -o loop,ro "$iso_path" "$mnt"
+  printf '%s\n' "$mnt" >> "${workdir}/mounts"
+  installer="${mnt}/zstack-installer.bin"
+  [[ -f "$installer" ]] || die "zstack-installer.bin not found in ISO: $iso_path"
+  _zsv_extract_schema_from_bin "$installer" "$sql_dir" "$workdir" "$target_version"
+}
+
+_zsv_extract_schema_from_artifact() {
+  local artifact_path="${1:?artifact path required}"
+  local upgrade_type="${2:?upgrade type required}"
+  local sql_dir="${3:?sql dir required}"
+  local workdir="${4:?workdir required}"
+  local target_version="${5:?target version required}"
+
+  case "$upgrade_type" in
+    bin)
+      _zsv_extract_schema_from_bin "$artifact_path" "$sql_dir" "$workdir" "$target_version"
+      ;;
+    iso)
+      _zsv_extract_schema_from_iso "$artifact_path" "$sql_dir" "$workdir" "$target_version"
+      ;;
+    *)
+      die "unsupported upgrade type: $upgrade_type"
+      ;;
+  esac
+}
+
+_zsv_schema_mysql_local() {
+  local sql="${1:?sql required}"
+  _zsv_health_mysql "$sql"
+}
+
+_zsv_flyway_checksum() {
+  local sql_file="${1:?sql file required}"
+  python - "$sql_file" <<'PY'
+import sys
+import zlib
+
+checksum = 0
+first = True
+with open(sys.argv[1], "rb") as f:
+    for line in f:
+        if line.endswith(b"\n"):
+            line = line[:-1]
+        if line.endswith(b"\r"):
+            line = line[:-1]
+        if first and line.startswith(b"\xef\xbb\xbf"):
+            line = line[3:]
+        first = False
+        checksum = zlib.crc32(line, checksum) & 0xffffffff
+if checksum >= 0x80000000:
+    checksum -= 0x100000000
+print(checksum)
+PY
+}
+
+zsv_schema_precheck_local_artifact() {
+  local artifact_url="${1:?artifact_url required}"
+  local artifact_name="${2:?artifact_name required}"
+  local workdir="${3:-/var/lib/cbok/zsv-upgrade}"
+  local expected_modified="${4:-}"
+  local expected_size="${5:-}"
+  local upgrade_type="${6:-iso}"
+  local db_address="${7:?db address required}"
+  local artifact_path tmp sql_dir schema_file source_label script version script_sql row
+  local migration_version version_rank applied_checksum applied_script resolved_checksum
+
+  _zsv_download_artifact "$artifact_url" "$artifact_name" "$workdir" \
+    "$expected_modified" "$expected_size"
+  artifact_path="${workdir}/${artifact_name}"
+
+  tmp=$(mktemp -d /tmp/cbok-zsv-schema-artifact.XXXXXX)
+  _zsv_schema_precheck_cleanup() {
+    if [[ -f "${tmp}/mounts" ]]; then
+      tac "${tmp}/mounts" | while IFS= read -r mountpoint; do
+        [[ -n "$mountpoint" ]] || continue
+        umount "$mountpoint" >/dev/null 2>&1 || true
+      done
+    fi
+    rm -rf "$tmp"
+  }
+  trap _zsv_schema_precheck_cleanup RETURN
+
+  sql_dir="${tmp}/sql"
+  mkdir -p "$sql_dir"
+  if ! version=$(_zsv_artifact_schema_version "$artifact_url" "$artifact_name"); then
+    return 1
+  fi
+  if ! _zsv_extract_schema_from_artifact "$artifact_path" "$upgrade_type" "$sql_dir" "$tmp" "$version"; then
+    return 1
+  fi
+  if ! schema_file=$(_zsv_expect_one_line <(find "$sql_dir" -maxdepth 1 -type f -name '*.sql' -print | sort) \
+      "extracted ZSV schema SQL"); then
+    return 1
+  fi
+  script=$(basename "$schema_file")
+  script_sql=$(_zsv_sql_string "$script")
+
+  row=$(_zsv_schema_mysql_local "SELECT version, version_rank, IFNULL(checksum, ''), script FROM zstack.schema_version WHERE success = 1 AND script = ${script_sql}" || true)
+  if [[ -z "$row" ]]; then
+    log_info "Package ZSV schema migration ${script} has not been applied on ${db_address}; skip checksum precheck."
+    return 0
+  fi
+  if ! row=$(_zsv_expect_one_line <(printf '%s\n' "$row" | awk 'NF') \
+      "applied ZSV schema row for ${script}"); then
+    return 1
+  fi
+  IFS=$'\t' read -r migration_version version_rank applied_checksum applied_script <<< "$row"
+  source_label=$(cat "${schema_file}.source")
+  resolved_checksum=$(_zsv_flyway_checksum "$schema_file")
+
+  if [[ "$applied_checksum" == "$resolved_checksum" ]]; then
+    log_info "ZSV schema checksum already matches ${source_label}."
+    return 0
+  fi
+
+  printf '%s\n' "__CBOK_ZSV_SCHEMA_PRECHECK__"
+  printf 'primary_node=%s\n' "$db_address"
+  printf 'artifact_path=%s\n' "$artifact_path"
+  printf 'sql_source=%s\n' "$source_label"
+  printf 'script=%s\n' "$applied_script"
+  printf 'version=%s\n' "${migration_version:-$version}"
+  printf 'version_rank=%s\n' "$version_rank"
+  printf 'applied_checksum=%s\n' "$applied_checksum"
+  printf 'resolved_checksum=%s\n' "$resolved_checksum"
+  return 1
+}
+
+zsv_schema_precheck_artifact() {
+  local address="${1:?address required}"
+  local artifact_url="${2:?artifact_url required}"
+  local artifact_name="${3:?artifact_name required}"
+  local expected_modified="${4:-}"
+  local expected_size="${5:-}"
+  local upgrade_type="${6:-iso}"
+
+  ensure_remote_scriptlet "$address"
+  remote_exec "$address" zsv_schema_precheck_local_artifact \
+    "$artifact_url" "$artifact_name" /var/lib/cbok/zsv-upgrade \
+    "$expected_modified" "$expected_size" "$upgrade_type" "$address"
 }
 
 zsv_schema_stage_sql_dir() {

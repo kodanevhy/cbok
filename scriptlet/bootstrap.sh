@@ -74,6 +74,8 @@ _cbok_export_func zsv_authorize_public_keys
 _cbok_export_func zsv_perform_upgrade
 _cbok_export_func zsv_upgrade_latest
 _cbok_export_func zsv_mysql_query
+_cbok_export_func zsv_schema_precheck_artifact
+_cbok_export_func zsv_schema_precheck_local_artifact
 _cbok_export_func zsv_schema_stage_sql_dir
 _cbok_export_func zsv_schema_flyway_migrate
 

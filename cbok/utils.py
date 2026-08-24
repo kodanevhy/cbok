@@ -187,7 +187,8 @@ class UnifiedProcessRunner:
         LOG.error(f"[{self.log_prefix}] ERRNO: {returncode} ;<")
 
     def run_command(self, cmd, args=None, shell=False, cwd=None, env=None,
-                    timeout=None, check=False, cmd_purge_output=False):
+                    timeout=None, check=False, cmd_purge_output=False,
+                    log_output=True, log_failed_status=True):
         if isinstance(cmd, str):
             full_cmd = [cmd]
         else:
@@ -237,7 +238,8 @@ class UnifiedProcessRunner:
                         if cmd_purge_output:
                             print(line)
                             continue
-                        LOG.info(f"[{self.log_prefix}] {line}")
+                        if log_output:
+                            LOG.info(f"[{self.log_prefix}] {line}")
                 proc.stdout.close()
 
             # WARNING: DONOT use `sh/bash -c` to call remote in first shell
@@ -255,7 +257,7 @@ class UnifiedProcessRunner:
 
             output_thread.join(timeout=1)
 
-            if proc.returncode != 0:
+            if proc.returncode != 0 and log_failed_status:
                 self._print_failed_status(proc.returncode)
 
             result = subprocess.CompletedProcess(
