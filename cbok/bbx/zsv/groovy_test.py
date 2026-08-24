@@ -96,7 +96,7 @@ class ContainerPremiumGroovyTest extends TestPremium {
 
     @Override
     StartMode getCaseMode() {
-        return StartMode.SIMULATOR
+        return StartMode.DEFAULT
     }
 }
 """

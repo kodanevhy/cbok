@@ -626,7 +626,9 @@ class GroovyContainerTest(unittest.TestCase):
             / "premium/test-premium/src/test/groovy/org/zstack/test/ContainerPremiumGroovyTest.groovy"
         )
         self.assertTrue(harness.is_file())
-        self.assertIn("package org.zstack.test", harness.read_text(encoding="utf-8"))
+        harness_text = harness.read_text(encoding="utf-8")
+        self.assertIn("package org.zstack.test", harness_text)
+        self.assertIn("return StartMode.DEFAULT", harness_text)
         run_script = (work_root / "remote-run.sh").read_text(encoding="utf-8")
         self.assertIn("cd /work/zstack/premium/test-premium", run_script)
         self.assertIn("-Dtest=ContainerPremiumGroovyTest", run_script)
