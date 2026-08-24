@@ -1,17 +1,17 @@
-import configparser
 import os
 import sys
 
 from oslo_utils import strutils
 
 from cbok.conf import config
+from cbok.conf.files import read_cbok_conf, resolve_cbok_conf_path
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
-CONF = configparser.ConfigParser()
-CONF.read(os.path.join(BASE_DIR, "cbok.conf"))
+CBOK_CONF_PATH = resolve_cbok_conf_path(BASE_DIR)
+CONF = read_cbok_conf(CBOK_CONF_PATH)
 config.validate_section_strict(CONF)
 
 # SECURITY WARNING: keep the secret key used in production secret!
