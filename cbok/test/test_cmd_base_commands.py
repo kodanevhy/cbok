@@ -141,10 +141,12 @@ class DefaultCommandsTest(unittest.TestCase):
         command.p_runner = runner
 
         with mock.patch("builtins.input") as prompt:
-            result = command.rebase(force_abort=True)
+            with self.assertLogs("cbok.cmd.base", level="INFO") as logs:
+                result = command.rebase(force_abort=True)
 
         self.assertEqual(0, result)
         prompt.assert_not_called()
+        self.assertIn("No need abort.", "\n".join(logs.output))
         self.assertEqual(
             [
                 ["git", "-C", "/repo/cbok", "status", "--porcelain"],
