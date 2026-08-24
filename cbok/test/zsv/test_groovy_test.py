@@ -14,6 +14,8 @@ class FakeRunner:
     def __init__(self):
         self.commands = []
         self.containers = set()
+        self.remote_run_exit = "0\n"
+        self.remote_run_log = "ok\n"
 
     def run_command(self, cmd, **kwargs):
         self.commands.append((cmd, kwargs))
@@ -38,9 +40,9 @@ class FakeRunner:
                 self.containers.add(parts[parts.index("--name") + 1])
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
         if "cat /tmp/cbok-zsv-groovy-run.exit" in script:
-            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="0\n", stderr="")
-        if "cat /tmp/cbok-zsv-groovy-run.log" in script:
-            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="ok\n", stderr="")
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=self.remote_run_exit, stderr="")
+        if "tail -n " in script and "/tmp/cbok-zsv-groovy-run.log" in script:
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout=self.remote_run_log, stderr="")
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
 
@@ -301,6 +303,60 @@ class GroovyContainerTest(unittest.TestCase):
         run_script = (work_root / "remote-run.sh").read_text(encoding="utf-8")
         self.assertIn("-DcbokReuseDeployDb=true", run_script)
         self.assertIn('if (Boolean.getBoolean("cbokReuseDeployDb"))', run_script)
+
+    def test_refresh_deploy_db_ignores_prepared_deploy_db(self):
+        runner = FakeRunner()
+        work_root = self.root / "run"
+        original_db_ready = groovy_test._container_db_is_ready
+        groovy_test._container_db_is_ready = lambda _runner, _docker_host, _container_name: True
+        try:
+            rc = groovy_test.run_groovy_test_flow(
+                zstack_branch="feature-zstack",
+                premium_branch="feature-premium",
+                test_class="org.zstack.test.integration.core.MustPassCase",
+                zstack_repo=str(self.zstack_repo),
+                premium_repo=str(self.premium_repo),
+                work_root=str(work_root),
+                refresh_deploy_db=True,
+                runner=runner,
+            )
+        finally:
+            groovy_test._container_db_is_ready = original_db_ready
+
+        self.assertEqual(0, rc)
+        run_script = (work_root / "remote-run.sh").read_text(encoding="utf-8")
+        self.assertNotIn("-DcbokReuseDeployDb=true", run_script)
+        self.assertNotIn('if (Boolean.getBoolean("cbokReuseDeployDb"))', run_script)
+
+    def test_reused_prepared_deploy_db_schema_failure_suggests_refresh(self):
+        runner = FakeRunner()
+        runner.remote_run_exit = "1\n"
+        runner.remote_run_log = (
+            "org.hibernate.exception.SQLGrammarException: could not execute statement\n"
+            "java.sql.SQLSyntaxErrorException: Table 'zstack.ManagementNodeVO' doesn't exist\n"
+        )
+        work_root = self.root / "run"
+        original_db_ready = groovy_test._container_db_is_ready
+        groovy_test._container_db_is_ready = lambda _runner, _docker_host, _container_name: True
+        try:
+            with self.assertLogs(groovy_test.LOG, level="ERROR") as logs:
+                rc = groovy_test.run_groovy_test_flow(
+                    zstack_branch="feature-zstack",
+                    premium_branch="feature-premium",
+                    test_class="org.zstack.test.integration.core.MustPassCase",
+                    zstack_repo=str(self.zstack_repo),
+                    premium_repo=str(self.premium_repo),
+                    work_root=str(work_root),
+                    runner=runner,
+                )
+        finally:
+            groovy_test._container_db_is_ready = original_db_ready
+
+        self.assertEqual(1, rc)
+        self.assertIn(
+            "Retry with --refresh-deploy-db",
+            "\n".join(logs.output),
+        )
 
     def test_default_run_root_can_already_exist_for_run_id_reuse(self):
         runner = FakeRunner()

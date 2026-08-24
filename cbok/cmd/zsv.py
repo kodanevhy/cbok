@@ -386,6 +386,9 @@ class ZSphereCommands(base.BaseCommand):
     @args.args(
         "--refresh-worktree", action="store_true",
         help="Replace the generated zstack/premium worktree before the run")
+    @args.args(
+        "--refresh-deploy-db", action="store_true",
+        help="Redeploy the Groovy test database instead of reusing a prepared database")
     def groovy_test(
             self,
             zstack_branch=None,
@@ -397,6 +400,7 @@ class ZSphereCommands(base.BaseCommand):
             work_root=None,
             run_id=None,
             refresh_worktree=False,
+            refresh_deploy_db=False,
     ):
         """Run a ZStack Groovy integration test in a reusable Docker container"""
         return run_groovy_test_flow(
@@ -409,6 +413,7 @@ class ZSphereCommands(base.BaseCommand):
             work_root=work_root,
             run_id=run_id,
             keep_worktree=not refresh_worktree,
+            refresh_deploy_db=refresh_deploy_db,
             runner=self.p_runner,
         )
 

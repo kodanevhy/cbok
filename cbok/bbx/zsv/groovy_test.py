@@ -35,6 +35,13 @@ REMOTE_RUN_LOG = "/tmp/cbok-zsv-groovy-run.log"
 REMOTE_RUN_EXIT = "/tmp/cbok-zsv-groovy-run.exit"
 REMOTE_POLL_INTERVAL_SECONDS = 15
 GROOVY_TEST_AUTO_EXCLUDED_MODULES = frozenset(("test", "test-premium"))
+PREPARED_DB_SCHEMA_FAILURE_PATTERNS = (
+    re.compile(r"Table 'zstack(?:_rest)?\.[^']+' doesn't exist", re.IGNORECASE),
+    re.compile(r"Unknown database 'zstack(?:_rest)?'", re.IGNORECASE),
+    re.compile(r"Unknown column '[^']+'", re.IGNORECASE),
+    re.compile(r"org\.hibernate\.exception\.SQLGrammarException", re.IGNORECASE),
+    re.compile(r"java\.sql\.SQLSyntaxErrorException", re.IGNORECASE),
+)
 
 
 CORE_HARNESS_BODY = """\
@@ -740,6 +747,12 @@ SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='zstack_rest' 
     return len(values) == 3 and values[0] > 100 and values[1] == 1 and values[2] == 1
 
 
+def _looks_like_prepared_db_schema_failure(log_text: str) -> bool:
+    if not log_text:
+        return False
+    return any(pattern.search(log_text) for pattern in PREPARED_DB_SCHEMA_FAILURE_PATTERNS)
+
+
 def _cleanup_worktrees(
         runner,
         zstack_repo: str,
@@ -924,6 +937,7 @@ def _run_remote_container_script(
         container_name: str,
         local_script_file: Path,
         script: str,
+        reuse_deploy_db: bool = False,
 ) -> int:
     _write_file(local_script_file, script)
     rc = _docker_cp_file_to_container(
@@ -989,8 +1003,14 @@ def _run_remote_container_script(
     if _returncode(log_result) != 0:
         return _returncode(log_result)
 
+    log_text = log_result.stdout or ""
     if rc != 0:
         LOG.error("Remote container test script failed: %s", rc)
+        if reuse_deploy_db and _looks_like_prepared_db_schema_failure(log_text):
+            LOG.error(
+                "AI hint: prepared Groovy test database may be stale or corrupted. "
+                "Retry with --refresh-deploy-db to rebuild it."
+            )
     return rc
 
 
@@ -1112,6 +1132,7 @@ def run_groovy_test_flow(
         m2_dir: str | None = None,
         run_id: str | None = None,
         keep_worktree: bool = True,
+        refresh_deploy_db: bool = False,
         runner=None,
 ) -> int:
     if not _validate_inputs(test_class, test_mode):
@@ -1228,9 +1249,11 @@ def run_groovy_test_flow(
         if rc != 0:
             return rc
 
-    reuse_deploy_db = _container_db_is_ready(runner, docker_host, handle.container_name)
+    reuse_deploy_db = False if refresh_deploy_db else _container_db_is_ready(runner, docker_host, handle.container_name)
     if reuse_deploy_db:
         LOG.info("Reusing prepared Groovy test database in %s.", handle.container_name)
+    elif refresh_deploy_db:
+        LOG.info("Refreshing Groovy test database in %s.", handle.container_name)
 
     if target.needs_case_file:
         rc = _docker_cp_file_to_container(
@@ -1249,4 +1272,5 @@ def run_groovy_test_flow(
         handle.container_name,
         root / "remote-run.sh",
         build_container_test_script(target, handle.workdir, reuse_deploy_db),
+        reuse_deploy_db=reuse_deploy_db,
     )
