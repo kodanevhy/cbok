@@ -3,6 +3,7 @@ ZStack: build changed modules from explicit zstack/premium worktree roots.
 """
 from __future__ import annotations
 
+from collections.abc import Collection
 import hashlib
 import json
 import logging
@@ -51,7 +52,7 @@ _SKIP_JAR_SUFFIXES = (
     "-with-dependencies.jar",
     "-shaded.jar",
 )
-_AUTO_EXCLUDED_MODULES = frozenset(
+DEPLOY_AUTO_EXCLUDED_MODULES = frozenset(
     ("test", "testlib", "test-premium", "testlib-premium")
 )
 MAVEN_PROFILE_PREPARE_CMD = "./runMavenProfile premium"
@@ -451,12 +452,19 @@ def default_compile_deploy_state_store():
     return DjangoCompileDeployStateStore()
 
 
-def _is_auto_excluded(module: str) -> bool:
+def _is_auto_excluded(
+    module: str,
+    excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
+) -> bool:
     head = module.split("/", 1)[0]
-    return head in _AUTO_EXCLUDED_MODULES
+    return head in excluded_modules
 
 
-def module_for_changed_path(repo_root: str, rel_path: str) -> str | None:
+def module_for_changed_path(
+    repo_root: str,
+    rel_path: str,
+    excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
+) -> str | None:
     path = Path(str(rel_path).replace("\\", "/"))
     if path.is_absolute() or not path.parts:
         return None
@@ -467,7 +475,7 @@ def module_for_changed_path(repo_root: str, rel_path: str) -> str | None:
     while candidate != root and root in candidate.parents:
         if (candidate / "pom.xml").is_file():
             module = candidate.relative_to(root).as_posix()
-            if _is_auto_excluded(module):
+            if _is_auto_excluded(module, excluded_modules):
                 return None
             return module
         candidate = candidate.parent
@@ -479,17 +487,18 @@ def modules_from_changed_paths(
     main_paths: list[str],
     premium_paths: list[str],
     premium_root: str | None = None,
+    excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> tuple[list[str], list[str]]:
     main: list[str] = []
     for path in main_paths:
-        module = module_for_changed_path(zstack_root, path)
+        module = module_for_changed_path(zstack_root, path, excluded_modules)
         if module:
             main.append(module)
 
     premium: list[str] = []
     premium_root = premium_root or os.path.join(zstack_root, "premium")
     for path in premium_paths:
-        module = module_for_changed_path(premium_root, path)
+        module = module_for_changed_path(premium_root, path, excluded_modules)
         if module:
             premium.append(module)
 
@@ -756,6 +765,7 @@ def _modules_implementing_interfaces(
     repo_root: str,
     interfaces: list[JavaInterfaceChange],
     excluded_roots: list[str] | None = None,
+    excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> list[str]:
     if not interfaces or not os.path.isdir(repo_root):
         return []
@@ -768,7 +778,7 @@ def _modules_implementing_interfaces(
         if not any(_java_implements_interface(source, interface) for interface in interfaces):
             continue
         rel_path = path.relative_to(root).as_posix()
-        module = module_for_changed_path(repo_root, rel_path)
+        module = module_for_changed_path(repo_root, rel_path, excluded_modules)
         if module:
             modules.append(module)
     return _dedupe(modules)
@@ -779,6 +789,7 @@ def infer_interface_implementation_modules(
     premium_root: str | None,
     main_paths: list[str],
     premium_paths: list[str],
+    excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> tuple[list[str], list[str]]:
     interfaces = _java_interfaces_from_changed_paths(zstack_root, main_paths)
     if premium_root and os.path.isdir(premium_root):
@@ -794,16 +805,26 @@ def infer_interface_implementation_modules(
         if _is_under(premium_path, main_root):
             excluded_from_main.append(str(premium_path))
 
-    main = _modules_implementing_interfaces(zstack_root, interfaces, excluded_from_main)
+    main = _modules_implementing_interfaces(
+        zstack_root,
+        interfaces,
+        excluded_from_main,
+        excluded_modules,
+    )
     premium: list[str] = []
     if premium_root and os.path.isdir(premium_root):
-        premium = _modules_implementing_interfaces(premium_root, interfaces)
+        premium = _modules_implementing_interfaces(
+            premium_root,
+            interfaces,
+            excluded_modules=excluded_modules,
+        )
     return _dedupe(main), _dedupe(premium)
 
 
 def auto_detect_modules(
     zstack_root: str,
     premium_root: str | None = None,
+    excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> tuple[list[str], list[str]]:
     premium_root = premium_root or os.path.join(zstack_root, "premium")
     main_worktree_paths = changed_paths_from_worktree(zstack_root)
@@ -815,6 +836,7 @@ def auto_detect_modules(
         main_worktree_paths,
         premium_worktree_paths,
         premium_root,
+        excluded_modules,
     )
 
     main_paths = changed_paths_from_head_commit(zstack_root)
@@ -826,12 +848,14 @@ def auto_detect_modules(
         main_paths,
         premium_paths,
         premium_root,
+        excluded_modules,
     )
     inferred_main, inferred_premium = infer_interface_implementation_modules(
         zstack_root,
         premium_root,
         _dedupe(main_worktree_paths + main_paths),
         _dedupe(premium_worktree_paths + premium_paths),
+        excluded_modules,
     )
     return _dedupe(main + head_main + inferred_main), _dedupe(premium + head_premium + inferred_premium)
 

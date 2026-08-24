@@ -34,6 +34,7 @@ REMOTE_RUN_SCRIPT = "/tmp/cbok-zsv-groovy-run.sh"
 REMOTE_RUN_LOG = "/tmp/cbok-zsv-groovy-run.log"
 REMOTE_RUN_EXIT = "/tmp/cbok-zsv-groovy-run.exit"
 REMOTE_POLL_INTERVAL_SECONDS = 15
+GROOVY_TEST_AUTO_EXCLUDED_MODULES = frozenset(("test", "test-premium"))
 
 
 CORE_HARNESS_BODY = """\
@@ -810,7 +811,11 @@ def _incremental_compile_changed_modules(runner, docker_host: str, handle, work_
     if work_premium.is_dir() and not validate_changed_paths_base_ref(str(work_premium)):
         return 1
 
-    main_mods, prem_mods = auto_detect_modules(str(work_zstack), str(work_premium))
+    main_mods, prem_mods = auto_detect_modules(
+        str(work_zstack),
+        str(work_premium),
+        excluded_modules=GROOVY_TEST_AUTO_EXCLUDED_MODULES,
+    )
     plan = maven_build_plan(main_mods, prem_mods)
     if not plan.modules:
         return 0
