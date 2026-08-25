@@ -15,7 +15,6 @@ from pathlib import Path
 from django.apps import apps
 from django.utils import timezone
 
-from cbok import settings
 from cbok.bbx.models import ZsvAgentReplaceState
 
 
@@ -57,18 +56,6 @@ IGNORED_RUNTIME_ROOTS = (
 
 class AgentReplaceError(Exception):
     pass
-
-
-def default_utility_root() -> str:
-    return os.path.realpath(
-        os.path.join(
-            settings.Workspace,
-            "Cursor",
-            "zs",
-            "zstack-workspace",
-            "zstack-utility",
-        )
-    )
 
 
 def run_git(cmd: list[str], cwd: str | None = None) -> str:
@@ -514,7 +501,7 @@ def run_agent_replace_flow(
     command_runner=run_git,
     state_store=None,
 ) -> int:
-    root = os.path.realpath(utility_root or default_utility_root())
+    root = os.path.realpath(utility_root)
     node_list = parse_nodes(nodes)
     ceph_primary_node_list = parse_nodes(ceph_primary_nodes)
     zbs_primary_node_list = parse_nodes(zbs_primary_nodes)
