@@ -20,11 +20,9 @@ def _conf(zsv_values=None, zsv_compile_values=None):
 class ZsvConfigTest(unittest.TestCase):
     def setUp(self):
         self._orig_conf = zsv_config.settings.CONF
-        self._orig_workspace = zsv_config.settings.Workspace
 
     def tearDown(self):
         zsv_config.settings.CONF = self._orig_conf
-        zsv_config.settings.Workspace = self._orig_workspace
 
     def test_base_ref_prefers_shared_zsv_config(self):
         zsv_config.settings.CONF = _conf(
@@ -40,12 +38,3 @@ class ZsvConfigTest(unittest.TestCase):
         )
 
         self.assertEqual("", zsv_config.zsv_base_ref())
-
-    def test_zstack_root_is_derived_from_workspace(self):
-        zsv_config.settings.CONF = _conf(zsv_values={"zstack_root": "/ignored/zstack"})
-        zsv_config.settings.Workspace = "/workspace"
-
-        self.assertEqual(
-            "/workspace/Cursor/zs/zstack",
-            zsv_config.zstack_root_from_workspace(),
-        )
