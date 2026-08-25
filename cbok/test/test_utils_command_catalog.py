@@ -17,7 +17,7 @@ class FakeBaseCommand:
         return 0
 
 
-class FakePatchCommands(FakeBaseCommand):
+class FakeToolCommands(FakeBaseCommand):
     @args.action_description("Upload patch")
     def put(self):
         return 0
@@ -42,7 +42,7 @@ class FakeDefaultCommands(FakeBaseCommand):
 class CommandCatalogTest(unittest.TestCase):
     def test_discover_command_groups_filters_base_and_private_methods(self):
         groups = utils.discover_command_groups(
-            {"patch": FakePatchCommands},
+            {"tool": FakeToolCommands},
             FakeBaseCommand,
         )
 
@@ -52,16 +52,16 @@ class CommandCatalogTest(unittest.TestCase):
 
     def test_format_command_catalog_uses_action_description_and_doc_fallback(self):
         groups = utils.discover_command_groups(
-            {"patch": FakePatchCommands},
+            {"tool": FakeToolCommands},
             FakeBaseCommand,
         )
 
         catalog = utils.format_command_catalog(groups)
 
         self.assertIn("commands:", catalog)
-        self.assertIn("patch put", catalog)
+        self.assertIn("tool put", catalog)
         self.assertIn("Upload patch", catalog)
-        self.assertIn("patch raw_doc", catalog)
+        self.assertIn("tool raw_doc", catalog)
         self.assertIn("Raw doc fallback", catalog)
         self.assertNotIn("base_action", catalog)
         self.assertNotIn("_internal", catalog)
@@ -70,7 +70,7 @@ class CommandCatalogTest(unittest.TestCase):
         groups = utils.discover_command_groups(
             {
                 "default": FakeDefaultCommands,
-                "patch": FakePatchCommands,
+                "tool": FakeToolCommands,
             },
             FakeBaseCommand,
         )
