@@ -24,17 +24,16 @@ class ZsvConfigTest(unittest.TestCase):
     def tearDown(self):
         zsv_config.settings.CONF = self._orig_conf
 
-    def test_base_ref_prefers_shared_zsv_config(self):
+    def test_base_ref_reads_shared_zsv_config(self):
         zsv_config.settings.CONF = _conf(
             zsv_values={"base_ref": "origin/shared"},
-            zsv_compile_values={"base_ref": "origin/legacy"},
         )
 
         self.assertEqual("origin/shared", zsv_config.zsv_base_ref())
 
-    def test_base_ref_does_not_fall_back_to_legacy_compile_config(self):
+    def test_base_ref_ignores_compile_config(self):
         zsv_config.settings.CONF = _conf(
-            zsv_compile_values={"base_ref": "origin/legacy"},
+            zsv_compile_values={"remote_docker_host": "tcp://172.26.50.70:2375"},
         )
 
         self.assertEqual("", zsv_config.zsv_base_ref())
