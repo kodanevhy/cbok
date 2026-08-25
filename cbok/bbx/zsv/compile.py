@@ -26,8 +26,6 @@ from cbok import settings
 from cbok.bbx.models import ZsvCompileState
 from cbok.bbx.zsv import base_ref as zsv_base_ref
 from cbok.bbx.zsv import config as zsv_config
-from cbok.bbx.zsv.config import default_zstack_root
-from cbok.bbx.zsv.config import zstack_root_from_workspace
 from cbok.bbx.zsv.worktree_container import DEFAULT_MIN_FREE_GB
 from cbok.bbx.zsv.worktree_container import WorktreeContainerSpec
 from cbok.bbx.zsv.worktree_container import ensure_worktree_container
