@@ -6,8 +6,6 @@ import sys
 
 from oslo_utils import strutils
 
-from cbok.bbx.put_patch import main as put_patch
-from cbok.bbx.ut import main as ut
 from cbok.cmd import args
 from cbok.cmd import base
 from cbok import exception
@@ -16,93 +14,6 @@ from cbok import utils as cbok_utils
 
 
 LOG = logging.getLogger(__name__)
-
-
-class PatchCommands(base.BaseCommand):
-
-    @args.action_description("Upload the patch changes to a running env")
-    @args.args(
-        '--node', metavar='<node>', default=None,
-        help='The node locate replica (Optional)')
-    @args.args(
-        '--service', metavar='<service>', required=True,
-        help='(sub-)service like a deployment split from a project')
-    @args.args(
-        '--address', metavar='<address>', required=True,
-        help='Address of env, or an os-in-os, which you are already '
-             'authorized')
-    def put(self, address=None, service=None, node=None):
-        """Upload the patch changes to a running env"""
-        try:
-            project = put_patch.service_supported[service]["parent"]
-            path = f"Cursor/es/{project}"
-            if not cbok_utils.assert_tree(path):
-                LOG.error(f"If you are es member, please claim project "
-                          f"{os.path.join(settings.Workspace, path)}")
-                sys.exit(1)
-            put_patch.run(address, service, node)
-        except Exception:
-            raise
-
-    @args.action_description("Solution of unit test")
-    @args.args(
-        '--tox-command', metavar='<tox_command>', required=True,
-        help='Tox command bebind of tox -e, see tox --help for details')
-    @args.args(
-        '--project', metavar='<project>', required=True,
-        help='A project located in es')
-    def ut(self, project, tox_command):
-        """Solution of unit test """
-        try:
-            path = f"Cursor/es/{project}"
-            if not cbok_utils.assert_tree(path):
-                LOG.error(f"If you are es member, please claim project "
-                          f"{os.path.join(settings.Workspace, path)}")
-                sys.exit(1)
-            ut.run(project, tox_command, executor=self.p_runner)
-        except Exception:
-            raise
-
-    def permanent_example(self):
-        print(
-            """
-            1.code:
-                apiVersion: v1
-                kind: ConfigMap
-                metadata:
-                name:
-                namespace: openstack
-                data:
-                client: |+
-                    # 修改后的代码
-
-            2.configmap:
-                kubectl edit -n openstack cm nova-bin
-
-                nova-api.sh: |
-                    #!/bin/bash
-                    kubectl get cm xx -n openstack -o jsonpath={".data.client"} |sudo tee /usr/local/lib/python3.6/site-packages/
-
-            3.kubectl:
-                volumes:
-                - hostPath:
-                    path: /usr/local/bin/kubectl
-                    type: ""
-                name: kubectl
-                - configMap:
-                    defaultMode: 365
-                    name: nova-bin
-                name: nova-bin
-
-                volumeMounts:
-                - mountPath: /usr/local/bin/kubectl
-                name: kubectl
-                - mountPath: /tmp/nova-api.sh
-                name: nova-bin
-                readOnly: true
-                subPath: nova-api.sh
-            """
-        )
 
 
 class BinCommands(base.BaseCommand):

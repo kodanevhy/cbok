@@ -17,7 +17,7 @@
 
 一、 本地安装CBoK
 
-部分功能在本地使用，例如`bbx`中的`put_patch`，需要先在本地安装。这会在Python site中创建一个链接指向本地CBoK source。
+部分功能在本地使用时，需要先在本地安装。这会在Python site中创建一个链接指向本地CBoK source。
 ```shell
   python3 -m site
   pip3 install -e .

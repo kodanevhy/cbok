@@ -119,7 +119,6 @@ def main():
 
     CATEGORIES = {
         "default": base.DefaultCommands,
-        "patch": bbx.PatchCommands,
         "bin": bbx.BinCommands,
         "openstack": bbx.OpenStackCommands,
         "foundation": foundation.FoundationCommands,
