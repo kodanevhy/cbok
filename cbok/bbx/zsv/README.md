@@ -58,8 +58,7 @@ Behavior:
   directory and deploys from there, without writing build outputs back into the
   source worktree.
 - Uses `[zsv] base_ref` as the shared upstream base for incremental compile
-  changed-path detection. Existing `[zsv_compile] base_ref` values are still
-  accepted for compatibility.
+  changed-path detection.
 
 ## ZSphere upgrade schema file
 
