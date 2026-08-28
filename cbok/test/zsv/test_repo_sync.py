@@ -1,5 +1,5 @@
 import configparser
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import io
 import subprocess
 import tempfile
@@ -12,6 +12,7 @@ from cbok.bbx import exception
 from cbok.bbx.zsv import config as zsv_config
 from cbok.bbx.zsv import repo_sync
 from cbok.bbx.zsv.repo_sync import sync_repositories
+from cbok.cmd.workspace import WorkspaceCommands
 from cbok.cmd.zsv import ZSphereCommands
 
 
@@ -361,10 +362,13 @@ class ZsvRepoSyncTest(unittest.TestCase):
 
             self.assertEqual(before, git(child, "rev-parse", "origin/main").stdout.strip())
 
-    def test_sync_repos_command_uses_existing_layout_without_workspace_initialization(self):
+    def test_sync_repos_command_uses_active_editor_and_company(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "workspace"
-            company_root = root / "Cursor" / "zs"
+            cbok_home = root / "cbok"
+            (cbok_home / "cbok").mkdir(parents=True)
+            (cbok_home / "scriptlet").mkdir()
+            company_root = root / "VSCode" / "lab"
             checkout, seed = create_repository(company_root, "zsvirt")
             upstream_head = commit_file(seed, "upstream change")
             git(seed, "push", "upstream", "main")
@@ -383,7 +387,8 @@ class ZsvRepoSyncTest(unittest.TestCase):
 
             command = ZSphereCommands()
             output = io.StringIO()
-            with redirect_stdout(output):
+            with mock.patch.dict("os.environ", {"CBOK_HOME": str(cbok_home)}), redirect_stdout(output):
+                self.assertEqual(0, WorkspaceCommands().use(editor="VSCode", company="lab"))
                 self.assertEqual(0, command.sync_repos())
             self.assertEqual(upstream_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual(premium_head, git(premium, "rev-parse", "HEAD").stdout.strip())
@@ -398,6 +403,24 @@ class ZsvRepoSyncTest(unittest.TestCase):
                 ["zsvirt", "main", "upstream/main", upstream_head[:12], "SYNCED"],
                 ["premium", "5.5.48", "upstream/5.5.48", premium_head[:12], "SYNCED"],
             ], rows)
+
+    def test_sync_repos_requires_active_workspace_before_fetch(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cbok_home = root / "cbok"
+            (cbok_home / "cbok").mkdir(parents=True)
+            (cbok_home / "scriptlet").mkdir()
+            settings.Workspace = str(root)
+            stderr = io.StringIO()
+
+            with mock.patch.dict("os.environ", {"CBOK_HOME": str(cbok_home)}), \
+                    mock.patch("cbok.cmd.zsv.sync_repositories") as sync, \
+                    redirect_stderr(stderr), self.assertRaises(SystemExit) as caught:
+                ZSphereCommands().sync_repos()
+
+            self.assertEqual(1, caught.exception.code)
+            self.assertIn("run cbok workspace use first", stderr.getvalue())
+            sync.assert_not_called()
 
     def test_configured_branch_is_updated_without_rewriting_development_commits(self):
         with tempfile.TemporaryDirectory() as td:

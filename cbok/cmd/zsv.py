@@ -12,6 +12,7 @@ from django.utils import timezone
 from cbok import exception as cbok_exception
 from cbok import settings
 from cbok import utils as cbok_utils
+from cbok import workspace as workspace_service
 from cbok.bbx import exception
 from cbok.bbx.models import ZSphereUpgradeState
 from cbok.bbx.zsv.agent_replace import DEFAULT_BACKUP_ROOT
@@ -476,7 +477,11 @@ class ZSphereCommands(base.BaseCommand):
     @args.action_description("Check out and fast-forward configured ZSV repository branches from upstream")
     def sync_repos(self):
         """Check out and fast-forward configured ZSV repository branches from upstream"""
-        zstack_workspace = cbok_utils.locate_project_path("Cursor", "zs", "zstack-workspace")
+        try:
+            context = workspace_service.current_context(settings.Workspace)
+        except workspace_service.WorkspaceLayoutError as exc:
+            output.fail(str(exc))
+        zstack_workspace = Path(context.root, context.editor, context.company, "zstack-workspace")
         results = sync_repositories(zstack_workspace, zsv_config.zsv_sync_repos())
         for repository, branch, revision in results:
             LOG.info("Synchronized %s:%s to upstream at %s", repository, branch, revision)

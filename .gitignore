@@ -20,6 +20,7 @@ cbok/bbx/proxy/shadowsocks2-linux
 cbok/bbx/proxy/shadowsocks2-macos-arm64
 cbok/*/migrations/
 cbok.conf
+.cbok-workspace
 review/*
 !review/README.md
 personnel/*

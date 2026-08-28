@@ -7,7 +7,7 @@ DEFAULT = Group(
     title="Default settings",
     options=[
         Option("workspace", default="",
-        help="CBoK workspace, absolutely path of CBoK parent"),
+        help="Workspace root containing cbok/ and editor code directories"),
         Option("debug", default=True,
         help="Enable debug log level. SECURITY WARNING: don't "
              "run with debug turned on in production!"),
