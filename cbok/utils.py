@@ -13,6 +13,7 @@ import threading
 
 from cbok import exception
 from cbok import settings
+from cbok import workspace as cbok_workspace
 
 
 LOG = logging.getLogger(__name__)
@@ -286,13 +287,16 @@ class UnifiedProcessRunner:
 
 
 def assert_cbok_home():
-    workspace = settings.Workspace
-    cbok_home = os.path.join(workspace, "Cursor", "me", "cbok")
-    if not os.path.exists(cbok_home):
-        print(f"CBoK command required: please re-define workspace root in "
-              f"settings.Workspace, and build source tree first "
-              f"and put CBoK into {os.path.dirname(cbok_home)}:")
-        print(f"*mkdir -p {os.path.dirname(cbok_home)}*")
+    cbok_home = cbok_workspace.resolve_cbok_home(settings.Workspace)
+    if not cbok_workspace.is_cbok_home(cbok_home):
+        try:
+            expected = cbok_workspace.cbok_home_from_workspace(settings.Workspace)
+        except cbok_workspace.WorkspaceLayoutError:
+            expected = cbok_workspace.source_root()
+        print(
+            "CBoK command required: set CBOK_HOME or put CBoK at "
+            f"{expected}"
+        )
         sys.exit(1)
 
     return cbok_home
