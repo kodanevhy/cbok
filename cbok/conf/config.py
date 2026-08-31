@@ -52,6 +52,11 @@ PROXY = Group(
         Option("port", default=9646, help="VPS port"),
         Option("localhost", default="127.0.0.1", help="Proxy local host on"),
         Option("localport", default=1080, help="Proxy local port listen to"),
+        Option(
+            "bypass_domains",
+            help="Comma or newline separated macOS system proxy bypass domains",
+            required=False,
+        ),
     ],
 )
 
