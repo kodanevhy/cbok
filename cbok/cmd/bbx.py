@@ -8,6 +8,7 @@ from oslo_utils import strutils
 
 from cbok.cmd import args
 from cbok.cmd import base
+from cbok.bbx import proxy_bypass
 from cbok import exception
 from cbok import settings
 from cbok import utils as cbok_utils
@@ -258,6 +259,28 @@ class ProxyCommands(base.BaseCommand):
             env=env,
             cmd_purge_output = action == "status",
         )
+
+    @args.action_description("Apply macOS system proxy bypass domains from cbok.conf")
+    def bypass(self):
+        """Apply macOS system proxy bypass domains from cbok.conf [proxy]."""
+        if sys.platform != "darwin":
+            LOG.error("proxy bypass is only supported on macOS.")
+            return 1
+
+        try:
+            domains = proxy_bypass.read_bypass_domains(settings.CONF)
+            service = proxy_bypass.apply_bypass_domains(
+                domains,
+                runner=self.p_runner,
+            )
+        except proxy_bypass.ProxyBypassError as e:
+            LOG.error("%s", e)
+            return 1
+
+        print(f"Updated proxy bypass domains on {service}:")
+        for domain in domains:
+            print(domain)
+        return 0
 
     @args.action_description("Deploy shadowsocks5 server (and local client on macOS)")
     def deploy(self):
