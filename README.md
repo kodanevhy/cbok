@@ -2,13 +2,10 @@
 
 # 安装依赖
 
-宿主机推荐安装Python 3.12.10，配置虚拟环境，在项目根目录执行如下命令。
+宿主机推荐安装Python 3.12.10，克隆 CBoK 后在项目根目录执行如下命令。
 
 ```shell
-  python3 -m venv venv
-  source venv/bin/activate
-  pip3 install -r requirements.txt
-  deactivate
+  make install
 ```
 
 # 客户端安装

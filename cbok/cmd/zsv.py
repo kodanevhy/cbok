@@ -533,8 +533,11 @@ class ZSphereCommands(base.BaseCommand):
     def replace_zstore(self, primary_node=None, zstore_root=None):
         """Build and replace zstore and zstcli on healthy KVM hosts and ImageStore backup storage nodes"""
         _log_zsv_base_ref()
-        if not primary_node or not zstore_root:
-            LOG.error("replace_zstore requires --primary-node and --zstore-root.")
+        if not primary_node:
+            LOG.error("replace_zstore requires --primary-node.")
+            return 1
+        if not zstore_root:
+            LOG.error("replace_zstore requires --zstore-root.")
             return 1
         try:
             nodes = discover_healthy_kvm_host_nodes(primary_node, self.p_runner)

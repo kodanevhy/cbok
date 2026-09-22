@@ -29,7 +29,7 @@ def _resolve_and_reexec_venv():
         expected_venv = os.path.join(_project_root(), "venv")
         sys.stderr.write(
             "cbok: no virtual env found (looked for %s or CBOK_VENV/CBOK_HOME).\n"
-            "Create one: cd %s && python3 -m venv venv && venv/bin/pip install -r requirement/cli.txt && venv/bin/pip install -e .\n"
+            "Create one: cd %s && make install\n"
             % (expected_venv, _project_root())
         )
         sys.exit(1)
@@ -111,6 +111,7 @@ def main():
     from cbok.cmd import base
     from cbok.cmd import bbx
     from cbok.cmd import foundation
+    from cbok.cmd import workspace
     from cbok.cmd import zsv
     from cbok.cmd.base import BaseCommand
     from cbok import utils as cbok_utils
@@ -123,6 +124,7 @@ def main():
         "openstack": bbx.OpenStackCommands,
         "foundation": foundation.FoundationCommands,
         "proxy": bbx.ProxyCommands,
+        "workspace": workspace.WorkspaceCommands,
         "zsv": zsv.ZSphereCommands,
     }
 
