@@ -30,7 +30,6 @@ from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
 from cbok.bbx.zsv.compile import run_compile_flow
 from cbok.bbx.zsv import config as zsv_config
 from cbok.bbx.zsv.groovy_test import run_groovy_test_flow
-from cbok.bbx.zsv.groovy_test import TEST_MODULES
 from cbok.bbx.zsv.worktree_prune import list_worktree_container_prs
 from cbok.bbx.zsv.worktree_prune import prune_worktree_containers
 from cbok.bbx.zsv.zstore_replace import run_zstore_replace_flow
@@ -375,9 +374,6 @@ class ZSphereCommands(base.BaseCommand):
         "--test-class", metavar="<fqcn>", required=True,
         help="Groovy Test or Case class; Case mode requires fully qualified class name")
     @args.args(
-        "--test-module", choices=TEST_MODULES, default=None,
-        help="Test module path; required when the same class exists in multiple modules")
-    @args.args(
         "--test-mode", choices=("auto", "case", "suite"), default="auto",
         help="auto: *Test runs as a suite, other classes run as designated Case")
     @args.args(
@@ -406,7 +402,6 @@ class ZSphereCommands(base.BaseCommand):
             ee_branch=None,
             test_class=None,
             test_mode="auto",
-            test_module=None,
             zsvirt_repo=None,
             ee_repo=None,
             work_root=None,
@@ -421,7 +416,6 @@ class ZSphereCommands(base.BaseCommand):
             ee_branch=ee_branch,
             test_class=test_class,
             test_mode=test_mode,
-            test_module=test_module,
             zsvirt_repo=zsvirt_repo,
             ee_repo=ee_repo,
             work_root=work_root,

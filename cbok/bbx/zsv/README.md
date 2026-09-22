@@ -22,7 +22,7 @@ base_ref = origin/zsv_5.2.0
 
 [zsv_compile]
 remote_docker_host = tcp://172.26.50.70:2375
-remote_docker_image = registry.docker.zstack.io:80/buildbin:debug7
+remote_docker_image = registry.docker.zstack.io:80/buildbin:debug9-zsvirt
 remote_docker_platform = linux/amd64
 remote_docker_workdir = /work
 remote_docker_m2_volume = auto
@@ -42,6 +42,8 @@ backup_root = /var/lib/zstack/agent-replace-backup
 Behavior:
 
 - Reuses the worktree container on the configured remote Docker daemon.
+- Pins `maven.mirror.zstack.io` to `172.24.201.252` when creating build/test
+  containers so internal Maven dependencies do not rely on the daemon's DNS.
 - Creates the worktree container and runs the full `./runMavenProfile ee` preparation
   only when the container has not completed full compile before.
 - Streams local ZSvirt and `zsvirt-ee` worktrees into the container with
@@ -59,6 +61,17 @@ Behavior:
   source worktree.
 - Uses `[zsv] base_ref` as the shared upstream base for incremental compile
   changed-path detection.
+
+Before selecting or building sources, `compile` fetches and rebases both
+ZSvirt and EE onto `[zsv] base_ref`. `replace_agent` does the same for
+`zsvirt-utility` before collecting changed files, and `replace_zstore` does so
+for `zstack-store` before building. Agent `--dry-run` leaves Git state unchanged.
+The base must be a configured remote branch such as `origin/zsv_5.2.0`.
+The shared `check_if_committed` check rejects staged edits, unstaged edits, and
+untracked files before fetching or rebasing. No changes are stashed automatically.
+An existing unfinished Git operation, failed fetch, or conflict stops the
+command. A failed rebase is aborted, restoring the original branch position.
+These commands do not push rebased branches.
 
 The main checkout owns `premium/`; it is included in source synchronization.
 The external EE checkout is synchronized into `<main>/zsvirt-ee/`. Incremental
@@ -78,16 +91,24 @@ cbok zsv groovy_test --zsvirt-repo /path/to/zsvirt \
   --test-class org.zstack.test.integration.kvm.KvmTest
 ```
 
+Both source repositories must have no staged, unstaged, or untracked changes;
+the runner checks them before fetching or creating test worktrees.
+Only committed sources are tested. Reused test worktrees are reset to their
+recorded commits to remove generated harnesses from previous runs.
 The runner creates worktrees for both repositories, preserves the main
 repository's `premium/`, and links only `zsvirt-ee/`. It finds the requested
 source in `test`, `tests/test-simple`, `tests/test-authentication`, or
-`zsvirt-ee/tests-ee/test-ee`. For classes that exist in multiple modules, add
-`--test-module` with one of these module paths, for example
-`--test-module tests/test-simple`. The class must exist in the selected module;
-missing classes or ambiguity without `--test-module` fail before building.
+`zsvirt-ee/tests-ee/test-ee`. The class must identify a unique module;
+missing classes or duplicate fully qualified names fail before building,
+with matching module paths reported for ambiguity.
 The selected module determines its harness (`Test`, `Test` with `PremiumEnv`, or `TestEe`);
 a Java package containing `premium` does not identify an external repository.
 Both full and incremental compilation use the EE build profile.
+
+Groovy tests refresh both source repositories before resolving the requested
+refs, then rebase their detached test worktrees before generating test harnesses.
+The source branches stay unchanged. Reuse records the source, upstream, and
+rebased commits; a new source or upstream commit invalidates those worktrees.
 
 PR references accept `zsvirt`, `zsvirt-ee`, `zsvirt-utility`, and `zstack-store`.
 The old `zstack` and `premium` repository labels are no longer accepted.
@@ -138,12 +159,12 @@ PR/MR state.
 
 ## ARM64 Docker buildbin
 
-For Docker-based compile on Apple Silicon, use the ARM64 buildbin context under:
+The legacy ARM64 buildbin context is retained under:
 
 ```text
 cbok/bbx/zsv/docker/buildbin-arm64
 ```
 
-It keeps the legacy CentOS 7, Maven 3.5.2, JDK 8, and MariaDB 5.5 environment
-shape while avoiding amd64 emulation when you build an ARM64 image for a remote
-daemon that supports it.
+Its Maven 3.5.2 cannot compile current ZSvirt sources: maven-compiler-plugin
+3.13.0 requires Maven 3.6.3 or newer. Use the AMD64 build image configured above;
+a compatible ARM64 replacement has not been verified.

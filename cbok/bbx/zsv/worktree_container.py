@@ -22,6 +22,8 @@ DEFAULT_M2_VOLUME = "auto"
 DEFAULT_M2_VOLUME_PREFIX = "zsv-m2"
 DEFAULT_MIN_FREE_GB = 20
 MAVEN_REPO = "/var/maven/.m2/repository"
+MAVEN_MIRROR_HOST = "maven.mirror.zstack.io"
+MAVEN_MIRROR_IP = "172.24.201.252"
 FULL_COMPILE_CMD = "./runMavenProfile ee"
 SOURCE_EXCLUDES = (
     "--exclude .git "
@@ -359,7 +361,8 @@ def _ensure_enough_space_for_new_container(runner, spec: WorktreeContainerSpec, 
 
 
 def _create_container(runner, spec: WorktreeContainerSpec, container_name: str) -> int:
-    cmd = ["create", "--name", container_name]
+    cmd = ["create", "--name", container_name,
+           "--add-host", f"{MAVEN_MIRROR_HOST}:{MAVEN_MIRROR_IP}"]
     if spec.platform:
         cmd.extend(["--platform", spec.platform])
     if spec.m2_volume:

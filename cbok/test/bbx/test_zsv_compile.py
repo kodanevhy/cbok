@@ -8,7 +8,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 from cbok.bbx.zsv import compile
 from cbok.bbx.zsv import groovy_test
@@ -79,6 +79,12 @@ class ZsvCompileTest(unittest.TestCase):
         self._orig_collect_changed_web_classes_files = compile.collect_changed_web_classes_files
         self._orig_default_compile_state_store = compile.default_compile_deploy_state_store
         self._orig_default_state_store = worktree_container.default_state_store
+        rebase_patch = patch.object(compile.zsv_base_ref, "rebase_worktree", return_value=True)
+        self._rebase_worktree = rebase_patch.start()
+        self.addCleanup(rebase_patch.stop)
+        clean_patch = patch.object(compile.zsv_base_ref, "check_worktree_clean", return_value=True)
+        self._check_worktree_clean = clean_patch.start()
+        self.addCleanup(clean_patch.stop)
         self._worktree_store = FakeWorktreeContainerStore()
         self._compile_state_store = compile.InMemoryCompileDeployStateStore()
         compile.default_compile_deploy_state_store = lambda: self._compile_state_store
@@ -126,6 +132,11 @@ class ZsvCompileTest(unittest.TestCase):
 
         self.assertEqual("auto", conf.m2_volume)
         self.assertEqual(20, conf.min_free_gb)
+        image = "registry.docker.zstack.io:80/buildbin:debug9-zsvirt"
+        self.assertEqual(image, conf.image)
+        self.assertEqual(image, groovy_test.FALLBACK_IMAGE)
+        option = next(opt for opt in cbok_config.ZSV_COMPILE.options if opt.name == "remote_docker_image")
+        self.assertEqual(image, option.default)
 
     def test_compile_deploy_state_key_is_scoped_to_base_ref(self):
         compile.settings.CONF = _conf(base_ref="origin/feature")
@@ -391,47 +402,108 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertIn("zsvirt and ee branch names must be the same", "\n".join(logs.output))
         self.assertEqual([], runner.calls)
 
-    def test_run_compile_flow_rejects_base_ref_before_detecting_modules(self):
+    def test_compile_rebases_both_sources_before_module_detection_and_container_heads(self):
+        compile.settings.CONF = _conf(remote_docker_host="tcp://build:2375", base_ref="origin/main")
+        compile.collect_changed_web_classes_files = lambda *_args: []
+        with tempfile.TemporaryDirectory() as td:
+            root, ee = Path(td) / "zsvirt", Path(td) / "zsvirt-ee"
+            for module in (root / "premium/mevoco", ee / "zvf"):
+                module.mkdir(parents=True)
+                (module / "pom.xml").write_text("<project/>")
+            (root / "pom.xml").write_text("<project/>")
+            roots = [str(root.resolve()), str(ee.resolve())]
+            events = []
+            heads = dict.fromkeys(roots, "old-head")
+
+            def rebase(repo):
+                events.append(("rebase", repo))
+                heads[repo] = "rebased-" + Path(repo).name
+                return True
+
+            def detect(main_root, ee_root):
+                self.assertEqual([("rebase", roots[0]), ("rebase", roots[1])], events)
+                self.assertEqual(roots, [main_root, ee_root])
+                events.append(("detect", main_root))
+                return ["premium/mevoco"], ["zvf"]
+
+            self._rebase_worktree.side_effect = rebase
+            compile.auto_detect_modules = detect
+            compile.git_summary = lambda repo: (heads[repo], heads[repo])
+            with patch.object(worktree_container, "_git_head", side_effect=lambda repo: heads[repo]):
+                rc = compile.run_compile_flow(
+                    address=None, remote_lib=compile.DEFAULT_REMOTE_LIB, no_deploy=True,
+                    zsvirt_root=roots[0], ee_root=roots[1], runner=FakeRunner(),
+                )
+            self.assertEqual(0, rc)
+            record = next(iter(self._worktree_store.records.values()))
+            self.assertEqual("rebased-zsvirt", record.zsvirt_head)
+            self.assertEqual("rebased-zsvirt-ee", record.ee_head)
+            self.assertEqual([call(roots[0]), call(roots[1])], self._rebase_worktree.call_args_list)
+
+    def test_dirty_ee_stops_before_rebasing_either_repo_or_running_docker(self):
+        compile.settings.CONF = _conf(remote_docker_host="tcp://build:2375", base_ref="origin/main")
+        with tempfile.TemporaryDirectory() as td:
+            root, ee = Path(td) / "zsvirt", Path(td) / "zsvirt-ee"
+            root.mkdir()
+            ee.mkdir()
+            (root / "pom.xml").write_text("<project/>")
+            roots = [str(root.resolve()), str(ee.resolve())]
+            self._check_worktree_clean.side_effect = lambda repo: repo != roots[1]
+            runner = FakeRunner()
+            with patch.object(compile, "auto_detect_modules", return_value=([], [])) as detect:
+                rc = compile.run_compile_flow(
+                    address=None, remote_lib=compile.DEFAULT_REMOTE_LIB, no_deploy=True,
+                    zsvirt_root=roots[0], ee_root=roots[1], runner=runner,
+                )
+
+        self.assertEqual(1, rc)
+        self.assertEqual([call(repo) for repo in roots], self._check_worktree_clean.call_args_list)
+        self._rebase_worktree.assert_not_called()
+        detect.assert_not_called()
+        self.assertEqual([], runner.calls)
+
+    def test_compile_rebase_failure_stops_before_selection_docker_or_deployment(self):
+        compile.settings.CONF = _conf(remote_docker_host="tcp://build:2375", base_ref="origin/main")
+        with tempfile.TemporaryDirectory() as td:
+            root, ee = Path(td) / "zsvirt", Path(td) / "zsvirt-ee"
+            root.mkdir()
+            ee.mkdir()
+            (root / "pom.xml").write_text("<project/>")
+            roots = [str(root.resolve()), str(ee.resolve())]
+            for failed_repo in roots:
+                with self.subTest(failed_repo=failed_repo):
+                    self._rebase_worktree.reset_mock()
+                    self._rebase_worktree.side_effect = lambda repo: repo != failed_repo
+                    runner = FakeRunner()
+                    with patch.object(compile, "auto_detect_modules", return_value=([], [])) as detect, \
+                            patch.object(compile, "run_mvn_in_remote_docker") as build:
+                        rc = compile.run_compile_flow(
+                            address="192.0.2.1", remote_lib=compile.DEFAULT_REMOTE_LIB, no_deploy=False,
+                            zsvirt_root=roots[0], ee_root=roots[1], runner=runner,
+                        )
+                    self.assertEqual(1, rc)
+                    expected_roots = roots[:roots.index(failed_repo) + 1]
+                    self.assertEqual([call(repo) for repo in expected_roots], self._rebase_worktree.call_args_list)
+                    detect.assert_not_called()
+                    build.assert_not_called()
+                    self.assertEqual([], runner.calls)
+                    self.assertEqual({}, self._compile_state_store.selections_by_key)
+
+    def test_validate_changed_paths_base_ref_rejects_unrebased_head(self):
         compile.settings.CONF = _conf(
             remote_docker_host="tcp://172.26.50.70:2375",
             base_ref="origin/feature",
         )
 
-        def fail_auto_detect(_root, _ee_root=None):
-            raise AssertionError("auto_detect_modules should not run when base_ref is invalid")
+        def fake_git(repo, *args):
+            if args == ("merge-base", "--is-ancestor", "origin/feature", "HEAD"):
+                return subprocess.CompletedProcess(["git"], 1, "", "")
+            return subprocess.CompletedProcess(["git"], 0, "", "")
 
-        compile.auto_detect_modules = fail_auto_detect
-
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td) / "zstack"
-            ee = Path(td) / "ee"
-            root.mkdir()
-            ee.mkdir()
-            (root / "pom.xml").write_text("<project/>", encoding="utf-8")
-
-            def fake_git(repo, *args):
-                if args == ("rev-parse", "--abbrev-ref", "HEAD"):
-                    return subprocess.CompletedProcess(["git"], 0, "feature\n", "")
-                if args == ("merge-base", "--is-ancestor", "origin/feature", "HEAD"):
-                    return subprocess.CompletedProcess(["git"], 1, "", "")
-                return subprocess.CompletedProcess(["git"], 0, "", "")
-
-            compile._git = fake_git
-            runner = FakeRunner()
-
-            with self.assertLogs(compile.LOG.name, level="ERROR") as logs:
-                rc = compile.run_compile_flow(
-                    address=None,
-                    remote_lib=compile.DEFAULT_REMOTE_LIB,
-                    no_deploy=True,
-                    zsvirt_root=str(root),
-                    ee_root=str(ee),
-                    runner=runner,
-                )
-
-        self.assertEqual(1, rc)
+        compile._git = fake_git
+        with self.assertLogs(compile.LOG.name, level="ERROR") as logs:
+            self.assertFalse(compile.validate_changed_paths_base_ref("/repo"))
         self.assertIn("Configured base ref origin/feature is not an ancestor", "\n".join(logs.output))
-        self.assertEqual([], runner.calls)
 
     def test_auto_detect_modules_combines_worktree_changes_and_head_commit(self):
         compile.settings.CONF = _conf(base_ref="")

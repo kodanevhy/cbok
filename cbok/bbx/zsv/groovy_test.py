@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -10,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cbok import utils as cbok_utils
+from cbok.bbx.zsv.base_ref import check_worktree_clean, rebase_worktree, sync_base_ref
+from cbok.bbx.zsv.config import zsv_base_ref
 from cbok.bbx.zsv.compile import RemoteDockerCompileConfig
 from cbok.bbx.zsv.compile import _docker_env_prefix
 from cbok.bbx.zsv.compile import _docker_rm_container
@@ -25,7 +28,7 @@ from cbok.bbx.zsv.worktree_container import ensure_worktree_container
 
 LOG = logging.getLogger(__name__)
 
-FALLBACK_IMAGE = "registry.docker.zstack.io:80/buildbin:debug7"
+FALLBACK_IMAGE = "registry.docker.zstack.io:80/buildbin:debug9-zsvirt"
 MAVEN_REPO = "/var/maven/.m2/repository"
 CASE_FILE_IN_CONTAINER = "/tmp/cbok-zsv-cases"
 DOCKER_WORK_ROOT = "/work"
@@ -290,14 +293,12 @@ def _test_module_root(work_zsvirt: Path, work_ee: Path, module: str) -> Path:
     return work_zsvirt / module
 
 
-def _find_test_module(work_zsvirt: Path, work_ee: Path, test_class: str, test_module: str | None = None) -> str:
-    if test_module is not None and test_module not in TEST_MODULES:
-        raise ValueError(f"Unsupported --test-module: {test_module}; choose from {TEST_MODULES}")
-    modules = (test_module,) if test_module else TEST_MODULES
+def _find_test_module(work_zsvirt: Path, work_ee: Path, test_class: str) -> str:
+    modules = TEST_MODULES
     matches = [module for module in modules
                if _class_source_exists(_test_module_root(work_zsvirt, work_ee, module) / "src/test/groovy", test_class)]
     if len(matches) > 1:
-        raise ValueError(f"Test class {test_class} exists in {matches}; select one with --test-module")
+        raise ValueError(f"Test class {test_class} exists in {matches}; class must identify a unique test module")
     if len(matches) != 1:
         raise ValueError(f"Test class {test_class} not found in {modules}")
     return matches[0]
@@ -315,10 +316,9 @@ def _resolve_test_target(
         work_ee: Path,
         test_class: str,
         test_mode: str,
-        test_module: str | None = None,
 ) -> TestTarget:
     mode = test_mode
-    module = _find_test_module(work_zsvirt, work_ee, test_class, test_module)
+    module = _find_test_module(work_zsvirt, work_ee, test_class)
     source_root = _test_module_root(work_zsvirt, work_ee, module) / "src/test/groovy"
     source = _class_source_file(source_root, test_class)
     if mode == "auto":
@@ -780,47 +780,21 @@ def _git_ref(runner, repo: str | Path, ref: str) -> str:
     return stdout.splitlines()[-1].strip() if stdout else ""
 
 
-def _worktrees_match_requested_refs(
-        runner,
-        zsvirt_repo: str,
-        ee_repo: str,
-        work_zsvirt: Path,
-        work_ee: Path,
-        zsvirt_branch: str,
-        ee_branch: str,
-) -> bool:
-    expected_zsvirt = _git_ref(runner, zsvirt_repo, zsvirt_branch)
-    actual_zsvirt = _git_ref(runner, work_zsvirt, "HEAD")
-    expected_ee = _git_ref(runner, ee_repo, ee_branch)
-    actual_ee = _git_ref(runner, work_ee, "HEAD")
-    if expected_zsvirt and actual_zsvirt and expected_zsvirt != actual_zsvirt:
+def _worktrees_match_requested_refs(runner, metadata_path: Path, inputs: list[dict], worktrees: tuple[Path, Path]) -> bool:
+    try:
+        recorded = json.loads(metadata_path.read_text())
+    except (OSError, ValueError):
         return False
-    if expected_ee and actual_ee and expected_ee != actual_ee:
-        return False
-    return True
+    heads = [_git_ref(runner, worktree, "HEAD") for worktree in worktrees]
+    return bool(all(heads) and recorded == {"inputs": inputs, "heads": heads})
 
 
-def _overlay_source_worktree_changes(runner, source_repo: str, target_worktree: Path) -> int:
-    source_repo = os.path.realpath(source_repo)
-    target_worktree = Path(os.path.realpath(target_worktree))
+def _reset_test_worktree(runner, target_worktree: Path) -> int:
     script = f"""
 set -euo pipefail
-source_repo={shlex.quote(source_repo)}
 target_worktree={shlex.quote(str(target_worktree))}
-
 git -C "$target_worktree" reset --hard HEAD >/dev/null
 git -C "$target_worktree" clean -fd >/dev/null
-
-if ! git -C "$source_repo" diff --quiet --binary HEAD; then
-  git -C "$source_repo" diff --binary HEAD | git -C "$target_worktree" apply --binary
-fi
-
-while IFS= read -r -d '' rel; do
-  src="$source_repo/$rel"
-  dst="$target_worktree/$rel"
-  mkdir -p "$(dirname "$dst")"
-  cp -Pp "$src" "$dst"
-done < <(git -C "$source_repo" ls-files --others --exclude-standard -z)
 """
     return _run_shell(runner, script)
 
@@ -1114,10 +1088,7 @@ def _run_remote_docker_test(
         _remove_container(runner, runner_container, docker_host)
 
 
-def _validate_inputs(test_class: str, test_mode: str, test_module: str | None = None) -> bool:
-    if test_module is not None and test_module not in TEST_MODULES:
-        LOG.error("Unsupported --test-module: %s; choose from %s", test_module, TEST_MODULES)
-        return False
+def _validate_inputs(test_class: str, test_mode: str) -> bool:
     if test_mode not in ("auto", "case", "suite"):
         LOG.error("Unsupported test mode: %s", test_mode)
         return False
@@ -1133,7 +1104,6 @@ def run_groovy_test_flow(
         ee_branch: str,
         test_class: str,
         test_mode: str = "auto",
-        test_module: str | None = None,
         zsvirt_repo: str | None = None,
         ee_repo: str | None = None,
         work_root: str | None = None,
@@ -1146,7 +1116,7 @@ def run_groovy_test_flow(
         refresh_deploy_db: bool = False,
         runner=None,
 ) -> int:
-    if not _validate_inputs(test_class, test_mode, test_module):
+    if not _validate_inputs(test_class, test_mode):
         return 1
 
     if not zsvirt_repo:
@@ -1161,6 +1131,25 @@ def run_groovy_test_flow(
         return 1
 
     runner = runner or cbok_utils.UnifiedProcessRunner()
+    base_ref = zsv_base_ref()
+    if not base_ref:
+        LOG.error("Configure zsv.base_ref before running Groovy tests.")
+        return 1
+    for repo in (zsvirt_repo, ee_repo):
+        if not check_worktree_clean(repo):
+            return 1
+    # Refresh both repositories before resolving remote branch inputs.
+    for repo in (zsvirt_repo, ee_repo):
+        if not sync_base_ref(repo):
+            return 1
+    inputs = []
+    for repo, ref in ((zsvirt_repo, zsvirt_branch), (ee_repo, ee_branch)):
+        source = _git_ref(runner, repo, ref)
+        base = _git_ref(runner, repo, base_ref)
+        if not source or not base:
+            LOG.error("Cannot resolve requested ref %s or base %s in %s", ref, base_ref, repo)
+            return 1
+        inputs.append({"repo": repo, "ref": ref, "source": source, "base_ref": base_ref, "base": base})
     docker_conf = remote_docker_compile_from_conf()
     run_id = _safe_run_id(run_id or f"{zsvirt_branch}-{ee_branch}")
     if work_root:
@@ -1172,6 +1161,7 @@ def run_groovy_test_flow(
 
     work_zsvirt = root / "zsvirt"
     work_ee = root / "zsvirt-ee"
+    metadata_path = root / "rebased-refs.json"
     case_file = root / "cases.txt"
     runner_container = f"cbok-zsv-groovy-{run_id}-runner"
     image = image or docker_conf.image.strip() or FALLBACK_IMAGE
@@ -1190,13 +1180,7 @@ def run_groovy_test_flow(
         root.mkdir(parents=True, exist_ok=True)
     elif work_zsvirt.exists() and work_ee.exists() and keep_worktree:
         if not _worktrees_match_requested_refs(
-                runner,
-                zsvirt_repo,
-                ee_repo,
-                work_zsvirt,
-                work_ee,
-                zsvirt_branch,
-                ee_branch,
+                runner, metadata_path, inputs, (work_zsvirt, work_ee),
         ):
             _cleanup_worktrees(runner, zsvirt_repo, ee_repo, work_zsvirt, work_ee, root)
             root.mkdir(parents=True, exist_ok=True)
@@ -1207,27 +1191,39 @@ def run_groovy_test_flow(
     if not work_zsvirt.exists() and not work_ee.exists():
         rc = _run(
             runner,
-            ["git", "-C", zsvirt_repo, "worktree", "add", "--detach", str(work_zsvirt), zsvirt_branch],
+            ["git", "-C", zsvirt_repo, "worktree", "add", "--detach", str(work_zsvirt), inputs[0]["source"]],
         )
         if rc != 0:
             return rc
         rc = _run(
             runner,
-            ["git", "-C", ee_repo, "worktree", "add", "--detach", str(work_ee), ee_branch],
+            ["git", "-C", ee_repo, "worktree", "add", "--detach", str(work_ee), inputs[1]["source"]],
         )
         if rc != 0:
             return rc
 
-    rc = _overlay_source_worktree_changes(runner, zsvirt_repo, work_zsvirt)
+        for worktree in (work_zsvirt, work_ee):
+            if not rebase_worktree(str(worktree)):
+                return 1
+        # rebase fetches again; record the base actually used for the resulting HEAD.
+        for item, worktree in zip(inputs, (work_zsvirt, work_ee)):
+            item["base"] = _git_ref(runner, worktree, base_ref)
+        heads = [_git_ref(runner, worktree, "HEAD") for worktree in (work_zsvirt, work_ee)]
+        if not all(heads) or not all(item["base"] for item in inputs):
+            LOG.error("Cannot record rebased Groovy test worktrees.")
+            return 1
+        metadata_path.write_text(json.dumps({"inputs": inputs, "heads": heads}))
+
+    rc = _reset_test_worktree(runner, work_zsvirt)
     if rc != 0:
         return rc
-    rc = _overlay_source_worktree_changes(runner, ee_repo, work_ee)
+    rc = _reset_test_worktree(runner, work_ee)
     if rc != 0:
         return rc
 
     try:
         _create_ee_link(work_zsvirt)
-        target = _resolve_test_target(work_zsvirt, work_ee, test_class, test_mode, test_module)
+        target = _resolve_test_target(work_zsvirt, work_ee, test_class, test_mode)
     except ValueError as exc:
         LOG.error("%s", exc)
         return 1

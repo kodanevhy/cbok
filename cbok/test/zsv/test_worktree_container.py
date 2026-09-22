@@ -75,6 +75,18 @@ class WorktreeContainerTest(unittest.TestCase):
             if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]
         ]
 
+    def test_new_container_pins_maven_mirror_without_relying_on_dns(self):
+        spec = worktree_container.WorktreeContainerSpec(
+            zsvirt_root="/source/zsvirt", docker_host="", image="compile-image:unit",
+            min_free_gb=0,
+        )
+        runner = FakeRunner()
+        rc, created = worktree_container.ensure_container_exists(runner, spec, "compile-container")
+        self.assertEqual((0, True), (rc, created))
+        create = next(shlex.split(script) for script in self._shell_scripts(runner)
+                      if "docker create" in script)
+        self.assertEqual("maven.mirror.zstack.io:172.24.201.252", create[create.index("--add-host") + 1])
+
     def test_old_repository_labels_are_rejected(self):
         self.assertEqual(("zsvirt", "zsvirt-ee", "zsvirt-utility", "zstack-store"), worktree_container.PR_REPOS)
         for repo in ("zstack", "premium", "zstack-utility"):

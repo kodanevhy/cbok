@@ -46,6 +46,7 @@ _cbok_export_func cbok_timeout
 _cbok_export_func distro
 
 _cbok_export_func check_if_committed
+_cbok_export_func git_rebase_worktree
 
 _cbok_export_func ss5_proxy_parse_file
 _cbok_export_func ss5_client_start_local_screen_from_proxy

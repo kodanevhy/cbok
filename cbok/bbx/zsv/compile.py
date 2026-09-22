@@ -131,7 +131,7 @@ def _normalize_docker_host(raw: str | None) -> str:
 
 def remote_docker_compile_from_conf() -> RemoteDockerCompileConfig:
     return RemoteDockerCompileConfig(
-        image=_conf_get("zsv_compile", "remote_docker_image", "registry.docker.zstack.io:80/buildbin:debug7"),
+        image=_conf_get("zsv_compile", "remote_docker_image", "registry.docker.zstack.io:80/buildbin:debug9-zsvirt"),
         platform=_conf_get("zsv_compile", "remote_docker_platform", "linux/amd64"),
         docker_host=_normalize_docker_host(_conf_get("zsv_compile", "remote_docker_host", "")),
         workdir=_conf_get("zsv_compile", "remote_docker_workdir", "/work").rstrip("/"),
@@ -1319,9 +1319,13 @@ def run_compile_flow(
         return 1
     if not validate_same_branch(root, ee_real_root):
         return 1
-    if not validate_changed_paths_base_ref(root):
+    if not zsv_base_ref.check_worktree_clean(root):
         return 1
-    if not validate_changed_paths_base_ref(ee_real_root):
+    if not zsv_base_ref.check_worktree_clean(ee_real_root):
+        return 1
+    if not zsv_base_ref.rebase_worktree(root):
+        return 1
+    if not zsv_base_ref.rebase_worktree(ee_real_root):
         return 1
 
     user_main, user_ee = auto_detect_modules(root, ee_real_root)

@@ -26,6 +26,8 @@ class FakeRunner:
         self.commands.append((cmd, kwargs))
         if cmd[:6] == ["git", "-C", cmd[2], "worktree", "add", "--detach"]:
             shutil.copytree(Path(cmd[2]), Path(cmd[6]))
+        if isinstance(cmd, list) and len(cmd) > 3 and cmd[3] == "rev-parse":
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="source-sha\n", stderr="")
         if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]:
             return self._run_shell(cmd)
         return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
@@ -74,6 +76,10 @@ class FakeWorktreeContainerStore:
 
 class GroovyContainerTest(unittest.TestCase):
     def setUp(self):
+        for name, value in (("check_worktree_clean", True), ("sync_base_ref", True), ("rebase_worktree", True), ("zsv_base_ref", "origin/main")):
+            mocked = patch.object(groovy_test, name, return_value=value)
+            mocked.start()
+            self.addCleanup(mocked.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self._orig_default_state_store = worktree_container.default_state_store
@@ -384,7 +390,7 @@ class GroovyContainerTest(unittest.TestCase):
         self.assertTrue((default_root / "zsvirt").exists())
         self.assertTrue((default_root / "zsvirt-ee").exists())
 
-    def test_existing_worktrees_are_reused_by_default(self):
+    def test_old_worktrees_without_rebase_metadata_are_recreated(self):
         runner = FakeRunner()
         work_root = self.root / "run"
         shutil.copytree(self.zsvirt_repo, work_root / "zsvirt")
@@ -394,54 +400,187 @@ class GroovyContainerTest(unittest.TestCase):
             zsvirt_branch="feature-zsvirt",
             ee_branch="feature-ee",
             test_class="org.zstack.test.integration.core.MustPassCase",
-            zsvirt_repo=str(self.zsvirt_repo),
+            zsvirt_repo=str(self.zsvirt_repo.resolve()),
             ee_repo=str(self.ee_repo),
             work_root=str(work_root),
             runner=runner,
         )
 
         self.assertEqual(0, rc)
-        self.assertFalse(
+        self.assertTrue(
             any(
-                isinstance(cmd, list) and cmd[:5] == ["git", "-C", str(self.zsvirt_repo), "worktree", "remove"]
+                isinstance(cmd, list) and cmd[:5] == ["git", "-C", str(self.zsvirt_repo.resolve()), "worktree", "remove"]
                 for cmd, _kwargs in runner.commands
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             any(
-                isinstance(cmd, list) and cmd[:5] == ["git", "-C", str(self.zsvirt_repo), "worktree", "add"]
+                isinstance(cmd, list) and cmd[:5] == ["git", "-C", str(self.zsvirt_repo.resolve()), "worktree", "add"]
                 for cmd, _kwargs in runner.commands
             )
         )
 
-    def test_generated_worktrees_overlay_source_worktree_changes(self):
+    def _run_preparation_flow(self, runner, work_root):
+        return groovy_test.run_groovy_test_flow(
+            zsvirt_branch="feature-zsvirt", ee_branch="feature-ee",
+            test_class="org.zstack.test.integration.core.MustPassCase",
+            zsvirt_repo=str(self.zsvirt_repo), ee_repo=str(self.ee_repo),
+            work_root=str(work_root), runner=runner,
+        )
+
+    def test_clean_checks_and_rebase_precede_reset_and_container(self):
+        events = []
         runner = FakeRunner()
         work_root = self.root / "run"
+        with patch.object(groovy_test, "check_worktree_clean", side_effect=lambda root: events.append(("check", root)) or True), \
+                patch.object(groovy_test, "sync_base_ref", side_effect=lambda root: events.append(("fetch", root)) or True), \
+                patch.object(groovy_test, "rebase_worktree", side_effect=lambda root: events.append(("rebase", root)) or True), \
+                patch.object(groovy_test, "_reset_test_worktree", side_effect=lambda *args: events.append(("reset", str(args[1]))) or 0), \
+                patch.object(groovy_test, "ensure_worktree_container", side_effect=lambda *args, **kwargs: (events.append(("container", "")) or (1, None))):
+            self.assertEqual(1, self._run_preparation_flow(runner, work_root))
+        self.assertEqual(["check", "check", "fetch", "fetch", "rebase", "rebase", "reset", "reset", "container"], [e[0] for e in events])
+        self.assertEqual([str((work_root / "zsvirt").resolve()), str((work_root / "zsvirt-ee").resolve())], [e[1] for e in events if e[0] == "rebase"])
 
-        rc = groovy_test.run_groovy_test_flow(
-            zsvirt_branch="feature-zsvirt",
-            ee_branch="feature-ee",
-            test_class="org.zstack.test.integration.core.MustPassCase",
-            zsvirt_repo=str(self.zsvirt_repo),
-            ee_repo=str(self.ee_repo),
-            work_root=str(work_root),
-            runner=runner,
-        )
+    def test_rebase_failure_halts_before_reset_and_test_resolution(self):
+        with patch.object(groovy_test, "rebase_worktree", return_value=False), \
+                patch.object(groovy_test, "_reset_test_worktree") as reset, \
+                patch.object(groovy_test, "_resolve_test_target") as resolve, \
+                patch.object(groovy_test, "ensure_worktree_container", return_value=(1, None)) as container:
+            self.assertEqual(1, self._run_preparation_flow(FakeRunner(), self.root / "run"))
+        reset.assert_not_called()
+        resolve.assert_not_called()
+        container.assert_not_called()
 
-        self.assertEqual(0, rc)
-        shell_scripts = self._shell_scripts(runner)
-        self.assertTrue(any(
-            f"source_repo={shlex.quote(str(self.zsvirt_repo.resolve()))}" in script
-            and f"target_worktree={shlex.quote(str((work_root / 'zsvirt').resolve()))}" in script
-            and "git -C \"$source_repo\" diff --binary HEAD | git -C \"$target_worktree\" apply --binary" in script
-            and "git -C \"$source_repo\" ls-files --others --exclude-standard -z" in script
-            for script in shell_scripts
-        ))
-        self.assertTrue(any(
-            f"source_repo={shlex.quote(str(self.ee_repo.resolve()))}" in script
-            and f"target_worktree={shlex.quote(str((work_root / 'zsvirt-ee').resolve()))}" in script
-            for script in shell_scripts
-        ))
+    def test_dirty_source_stops_before_fetch_or_worktree_creation(self):
+        for clean_results in ([False], [True, False]):
+            with self.subTest(clean_results=clean_results):
+                runner = FakeRunner()
+                with patch.object(groovy_test, "check_worktree_clean", side_effect=clean_results), \
+                        patch.object(groovy_test, "sync_base_ref") as fetch, \
+                        patch.object(groovy_test, "ensure_worktree_container", return_value=(1, None)) as container:
+                    self.assertEqual(1, self._run_preparation_flow(runner, self.root / "run"))
+                fetch.assert_not_called()
+                container.assert_not_called()
+                self.assertEqual([], runner.commands)
+
+    def test_fetch_failure_stops_before_worktree_creation(self):
+        runner = FakeRunner()
+        with patch.object(groovy_test, "sync_base_ref", side_effect=[True, False]), \
+                patch.object(groovy_test, "rebase_worktree") as rebase:
+            self.assertEqual(1, self._run_preparation_flow(runner, self.root / "run"))
+        self.assertEqual([], runner.commands)
+        rebase.assert_not_called()
+
+    def test_missing_base_ref_rejects_even_existing_worktrees(self):
+        with patch.object(groovy_test, "zsv_base_ref", return_value=""), \
+                patch.object(groovy_test, "sync_base_ref") as fetch:
+            self.assertEqual(1, self._run_preparation_flow(FakeRunner(), self.root / "run"))
+        fetch.assert_not_called()
+
+    def test_successful_rebased_worktrees_are_reused(self):
+        runner = FakeRunner()
+        with patch.object(groovy_test, "rebase_worktree", return_value=True) as rebase:
+            self.assertEqual(0, self._run_preparation_flow(runner, self.root / "run"))
+            self.assertEqual(0, self._run_preparation_flow(runner, self.root / "run"))
+        self.assertEqual(2, rebase.call_count)
+        self.assertEqual(2, sum(cmd[3:5] == ["worktree", "add"] for cmd, _ in runner.commands))
+
+    def test_local_git_refresh_rebase_reuse_and_upstream_change(self):
+        from cbok.bbx.zsv import base_ref
+
+        class LocalGitRunner:
+            def __init__(self):
+                self.commands = []
+
+            def run_command(self, cmd, **kwargs):
+                self.commands.append(cmd)
+                return subprocess.run(cmd, capture_output=True, text=True)
+
+        def git(repo, *args):
+            return subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+        upstreams = []
+        original_heads = []
+        for name, repo in (("main", self.zsvirt_repo), ("ee", self.ee_repo)):
+            remote = self.root / (name + ".git")
+            subprocess.run(["git", "init", "--bare", str(remote)], check=True, capture_output=True)
+            git(repo, "init", "-b", "main")
+            git(repo, "config", "user.name", "Test")
+            git(repo, "config", "user.email", "test@example.invalid")
+            (repo / "initial.txt").write_text("initial\n")
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "initial")
+            git(repo, "remote", "add", "origin", str(remote))
+            git(repo, "push", "origin", "main")
+            git(repo, "checkout", "-b", "feature")
+            (repo / "feature.txt").write_text("feature\n")
+            git(repo, "add", "feature.txt")
+            git(repo, "commit", "-m", "feature")
+            original_heads.append(git(repo, "rev-parse", "HEAD"))
+            upstream = self.root / (name + "-upstream")
+            subprocess.run(["git", "clone", "-b", "main", str(remote), str(upstream)], check=True, capture_output=True)
+            git(upstream, "config", "user.name", "Test")
+            git(upstream, "config", "user.email", "test@example.invalid")
+            (upstream / "upstream.txt").write_text("fresh\n")
+            git(upstream, "add", "upstream.txt")
+            git(upstream, "commit", "-m", "advance upstream")
+            git(upstream, "push", "origin", "main")
+            upstreams.append(upstream)
+        runner = LocalGitRunner()
+        work_root = self.root / "real-run"
+        def run():
+            return groovy_test.run_groovy_test_flow(
+                zsvirt_branch="feature", ee_branch="origin/main",
+                test_class="org.zstack.test.integration.core.MustPassCase",
+                zsvirt_repo=str(self.zsvirt_repo), ee_repo=str(self.ee_repo),
+                work_root=str(work_root), runner=runner,
+            )
+        with patch.object(base_ref, "zsv_base_ref", return_value="origin/main"), \
+                patch.object(groovy_test, "check_worktree_clean", side_effect=base_ref.check_worktree_clean), \
+                patch.object(groovy_test, "sync_base_ref", side_effect=base_ref.sync_base_ref) as fetch, \
+                patch.object(groovy_test, "rebase_worktree", side_effect=base_ref.rebase_worktree) as rebase, \
+                patch.object(groovy_test, "_resolve_test_target", side_effect=ValueError("stop before container")):
+            for repo in (self.zsvirt_repo, self.ee_repo):
+                for kind in ("unstaged", "staged", "untracked"):
+                    with self.subTest(repo=repo.name, kind=kind):
+                        changed = repo / ("untracked.txt" if kind == "untracked" else "feature.txt")
+                        changed.write_text("uncommitted\n")
+                        if kind == "staged":
+                            git(repo, "add", "feature.txt")
+                        self.assertEqual(1, run())
+                        fetch.assert_not_called()
+                        rebase.assert_not_called()
+                        self.assertFalse(work_root.exists())
+                        self.assertEqual("uncommitted\n", changed.read_text())
+                        git(repo, "reset", "--hard", "HEAD")
+                        if kind == "untracked":
+                            changed.unlink()
+            (self.zsvirt_repo / "feature.txt").write_text("committed source\n")
+            git(self.zsvirt_repo, "commit", "-am", "commit source change")
+            original_heads[0] = git(self.zsvirt_repo, "rev-parse", "HEAD")
+            self.assertEqual(1, run())
+            for work in (work_root / "zsvirt", work_root / "zsvirt-ee"):
+                self.assertEqual("fresh\n", (work / "upstream.txt").read_text())
+                git(work, "merge-base", "--is-ancestor", "origin/main", "HEAD")
+            self.assertEqual("committed source\n", (work_root / "zsvirt/feature.txt").read_text())
+            self.assertEqual(original_heads, [git(repo, "rev-parse", "HEAD") for repo in (self.zsvirt_repo, self.ee_repo)])
+            (work_root / "zsvirt/generated-harness.groovy").write_text("old harness")
+            (work_root / "zsvirt/feature.txt").write_text("generated test change\n")
+            self.assertEqual(1, run())
+            self.assertEqual(2, rebase.call_count)
+            self.assertFalse((work_root / "zsvirt/generated-harness.groovy").exists())
+            self.assertEqual("committed source\n", (work_root / "zsvirt/feature.txt").read_text())
+            (upstreams[0] / "upstream.txt").write_text("new base\n")
+            git(upstreams[0], "commit", "-am", "advance again")
+            git(upstreams[0], "push", "origin", "main")
+            self.assertEqual(1, run())
+            self.assertEqual(4, rebase.call_count)
+            self.assertEqual("new base\n", (work_root / "zsvirt/upstream.txt").read_text())
+            (self.zsvirt_repo / "feature.txt").write_text("new committed source\n")
+            git(self.zsvirt_repo, "commit", "-am", "new source input")
+            self.assertEqual(1, run())
+            self.assertEqual(6, rebase.call_count)
+            self.assertEqual("new committed source\n", (work_root / "zsvirt/feature.txt").read_text())
 
     def test_reused_worktree_container_incrementally_compiles_changed_modules(self):
         runner = FakeRunner()
@@ -796,7 +935,7 @@ class GroovyContainerTest(unittest.TestCase):
         self.assertIn("test", groovy_test.GROOVY_TEST_AUTO_EXCLUDED_MODULES)
         subprocess.run(["bash", "-n"], input=script, text=True, check=True)
 
-    def test_duplicate_suite_fqcn_can_select_each_real_test_module(self):
+    def test_duplicate_suite_fqcn_reports_ambiguous_modules(self):
         test_class = "org.zstack.test.integration.stabilisation.StabilityTestCase"
         modules = ("tests/test-simple", "tests/test-authentication", "zsvirt-ee/tests-ee/test-ee")
         for module in modules:
@@ -805,30 +944,13 @@ class GroovyContainerTest(unittest.TestCase):
             self._write_file(module_root / "src/test/groovy/org/zstack/test/integration/stabilisation/StabilityTestCase.groovy",
                              "package org.zstack.test.integration.stabilisation\n"
                              "class StabilityTestCase extends StabilityTest {}\n")
-        with self.assertRaisesRegex(ValueError, "--test-module"):
+        with self.assertRaises(ValueError) as raised:
             groovy_test._resolve_test_target(self.zsvirt_repo, self.ee_repo, test_class, "auto")
         for module in modules:
-            with self.subTest(module=module):
-                runner = FakeRunner()
-                work_root = self.root / ("run-" + module.replace("/", "-"))
-                rc = groovy_test.run_groovy_test_flow(
-                    zsvirt_branch="feature-zsvirt", ee_branch="feature-ee",
-                    test_class=test_class, test_module=module,
-                    zsvirt_repo=str(self.zsvirt_repo), ee_repo=str(self.ee_repo),
-                    work_root=str(work_root), runner=runner)
-                self.assertEqual(0, rc)
-                script = (work_root / "remote-run.sh").read_text()
-                self.assertIn(f"cd /work/zsvirt/{module}\n", script)
-                self.assertIn("-Dtest=StabilityTestCase", script)
-                self.assertNotIn("-DcaseFilePath", script)
+            self.assertIn(module, str(raised.exception))
+        self.assertNotIn("--test-module", str(raised.exception))
 
-    def test_test_module_must_be_supported_and_contain_requested_class(self):
-        for module in ("../tests/test-simple", "premium/test-premium", "tests/test-authentication"):
-            with self.subTest(module=module), self.assertRaises(ValueError):
-                groovy_test._resolve_test_target(
-                    self.zsvirt_repo, self.ee_repo, "Test3", "auto", test_module=module)
-
-    def test_cli_validates_and_forwards_explicit_test_module(self):
+    def test_cli_resolves_module_from_test_class(self):
         from cbok.cmd import zsv
 
         parser = argparse.ArgumentParser()
@@ -836,14 +958,12 @@ class GroovyContainerTest(unittest.TestCase):
             parser.add_argument(*options, **kwargs)
         argv = ["--zsvirt-repo", str(self.zsvirt_repo), "--ee-repo", str(self.ee_repo),
                 "--zsvirt-branch", "zsv_5.2.0", "--ee-branch", "zsv_5.2.0",
-                "--test-class", "org.zstack.test.integration.stabilisation.StabilityTestCase"]
-        parsed = parser.parse_args(argv + ["--test-module", "tests/test-simple"])
+                "--test-class", "org.zstack.test.integration.core.MustPassCase"]
         with patch.object(zsv, "run_groovy_test_flow", return_value=0) as run_flow:
-            self.assertEqual(0, zsv.ZSphereCommands().groovy_test(**vars(parsed)))
-        self.assertEqual("tests/test-simple", run_flow.call_args.kwargs["test_module"])
-        self.assertIsNone(parser.parse_args(argv).test_module)
+            self.assertEqual(0, zsv.ZSphereCommands().groovy_test(**vars(parser.parse_args(argv))))
+        self.assertNotIn("test_module", run_flow.call_args.kwargs)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-            parser.parse_args(argv + ["--test-module", "premium/test-premium"])
+            parser.parse_args(argv + ["--test-module", "tests/test-simple"])
 
 
 if __name__ == "__main__":

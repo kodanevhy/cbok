@@ -1,5 +1,10 @@
 # ZSV buildbin arm64
 
+This legacy context uses Maven 3.5.2 and cannot compile current ZSvirt sources,
+whose maven-compiler-plugin 3.13.0 requires Maven 3.6.3 or newer. The image and
+configuration below are for older sources. A compatible ARM64 replacement has
+not been verified; use the AMD64 image documented in the parent ZSV README.
+
 ARM64 replacement build context for the old `registry.docker.zstack.io:80/buildbin:debug7`
 container used by `cbok zsv compile` on Apple Silicon hosts.
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+import shlex
 import subprocess
 
 from cbok.bbx.zsv.config import zsv_base_ref
@@ -59,3 +61,35 @@ def sync_base_ref(repo_root: str, git_runner=_git) -> bool:
         (result.stderr or "").strip(),
     )
     return False
+
+
+def rebase_worktree(repo_root: str) -> bool:
+    base_ref = zsv_base_ref()
+    if not base_ref:
+        LOG.error("ZSV base_ref is not configured; set [zsv] base_ref in cbok.conf.")
+        return False
+    if not check_worktree_clean(repo_root):
+        return False
+    if not sync_base_ref(repo_root):
+        return False
+    return _run_git_scriptlet("git_rebase_worktree", repo_root, base_ref)
+
+
+def check_worktree_clean(repo_root: str) -> bool:
+    return _run_git_scriptlet("check_if_committed", repo_root)
+
+
+def _run_git_scriptlet(function: str, repo_root: str, *args: str) -> bool:
+    bootstrap = Path(__file__).resolve().parents[3] / "scriptlet/bootstrap.sh"
+    command = (
+        f"source {shlex.quote(str(bootstrap))}; "
+        + shlex.join([function, repo_root, *args])
+    )
+    result = subprocess.run(["bash", "-lc", command], capture_output=True, text=True)
+    output = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
+    if result.returncode != 0:
+        LOG.error("Cannot prepare %s for build: %s", repo_root, output)
+        return False
+    if output:
+        LOG.info("Prepared %s: %s", repo_root, output)
+    return True

@@ -16,6 +16,7 @@ from django.apps import apps
 from django.utils import timezone
 
 from cbok.bbx.models import ZsvAgentReplaceState
+from cbok.bbx.zsv import base_ref
 
 
 LOG = logging.getLogger(__name__)
@@ -507,6 +508,11 @@ def run_agent_replace_flow(
     zbs_primary_node_list = parse_nodes(zbs_primary_nodes)
     if not os.path.isdir(root):
         LOG.error("utility root not found: %s", root)
+        return 1
+    if dry_run:
+        if not base_ref.check_worktree_clean(root):
+            return 1
+    elif not base_ref.rebase_worktree(root):
         return 1
 
     try:
