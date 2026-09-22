@@ -1,3 +1,6 @@
+import argparse
+import contextlib
+import io
 import os
 import shlex
 import shutil
@@ -5,7 +8,9 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
+from cbok.bbx.zsv import compile as compile_module
 from cbok.bbx.zsv import groovy_test
 from cbok.bbx.zsv import worktree_container
 
@@ -441,15 +446,19 @@ class GroovyContainerTest(unittest.TestCase):
     def test_reused_worktree_container_incrementally_compiles_changed_modules(self):
         runner = FakeRunner()
         work_root = self.root / "run"
-        original_auto_detect = groovy_test.auto_detect_modules
-        seen_excludes = []
+        for module in ("storage", "premium/crypto", "test"):
+            self._write_module_pom(self.zsvirt_repo / module / "pom.xml")
+        for module in ("zvf", "tests-ee/test-ee"):
+            self._write_module_pom(self.ee_repo / module / "pom.xml")
 
-        def fake_auto_detect(_zsvirt, _ee, *, excluded_modules=None):
-            seen_excludes.append(excluded_modules)
-            return ["storage"], ["crypto"]
+        def changed_paths(repo):
+            if Path(repo).name == "zsvirt-ee":
+                return ["zvf/src/main/java/Probe.java", "tests-ee/test-ee/src/test/groovy/ProbeCase.groovy"]
+            return ["storage/src/main/java/Probe.java", "premium/crypto/src/main/java/Probe.java",
+                    "test/src/test/groovy/ProbeCase.groovy", "tests/test-simple/src/test/groovy/ProbeCase.groovy"]
 
-        groovy_test.auto_detect_modules = fake_auto_detect
-        try:
+        with patch.object(compile_module, "changed_paths_from_worktree", side_effect=changed_paths), \
+                patch.object(compile_module, "changed_paths_from_head_commit", return_value=[]):
             rc1 = groovy_test.run_groovy_test_flow(
                 zsvirt_branch="feature-zsvirt",
                 ee_branch="feature-ee",
@@ -468,23 +477,19 @@ class GroovyContainerTest(unittest.TestCase):
                 work_root=str(work_root),
                 runner=runner,
             )
-        finally:
-            groovy_test.auto_detect_modules = original_auto_detect
-
         self.assertEqual(0, rc1)
         self.assertEqual(0, rc2)
         shell_scripts = self._shell_scripts(runner)
         self.assertEqual(1, sum("./runMavenProfile ee" in script for script in shell_scripts))
-        self.assertEqual([groovy_test.GROOVY_TEST_AUTO_EXCLUDED_MODULES], seen_excludes)
         self.assertTrue(any(
-            "mvn -Pee -DskipTests clean install -pl storage,zsvirt-ee/crypto" in script
+            "mvn -Pee -DskipTests clean install -pl storage,premium/crypto,zsvirt-ee/zvf\n" in script
             for script in shell_scripts
         ))
 
     def test_different_run_roots_reuse_source_worktree_container(self):
         runner = FakeRunner()
         original_auto_detect = groovy_test.auto_detect_modules
-        groovy_test.auto_detect_modules = lambda _zsvirt, _ee, **_kwargs: (["storage"], ["crypto"])
+        groovy_test.auto_detect_modules = lambda _zsvirt, _ee, **_kwargs: (["premium/volumebackup"], ["rewrite-for-ee/core-ee"])
         try:
             rc1 = groovy_test.run_groovy_test_flow(
                 zsvirt_branch="feature-zsvirt",
@@ -513,7 +518,7 @@ class GroovyContainerTest(unittest.TestCase):
         self.assertEqual(1, sum("./runMavenProfile ee" in script for script in shell_scripts))
         self.assertEqual(1, sum("docker create" in script and "--name cbok-zsv-worktree" in script for script in shell_scripts))
         self.assertTrue(any(
-            "mvn -Pee -DskipTests clean install -pl storage,zsvirt-ee/crypto" in script
+            "mvn -Pee -DskipTests clean install -pl premium/volumebackup,zsvirt-ee/rewrite-for-ee/core-ee\n" in script
             for script in shell_scripts
         ))
 
@@ -768,6 +773,77 @@ class GroovyContainerTest(unittest.TestCase):
         self._write_file(self.ee_repo / "tests-ee/test-ee/src/test/groovy/Test3.groovy", "class Test3 extends TestEe {}")
         with self.assertRaises(ValueError):
             groovy_test._resolve_test_target(self.zsvirt_repo, self.ee_repo, "Test3", "auto")
+
+    def test_root_test_module_remains_runnable_in_ee_reactor(self):
+        source_root = self.zsvirt_repo / "test/src/test/groovy/org/zstack/test/integration/allocator/domain"
+        self._write_module_pom(self.zsvirt_repo / "test/pom.xml")
+        self._write_file(source_root / "AllocatorDomainCreateCase.groovy",
+                         "package org.zstack.test.integration.allocator.domain\n"
+                         "class AllocatorDomainCreateCase extends SubCase {}\n")
+        self._write_file(source_root / "AllocatorDomainTest.groovy",
+                         "package org.zstack.test.integration.allocator.domain\n"
+                         "class AllocatorDomainTest extends Test {}\n")
+        target = groovy_test._resolve_test_target(
+            self.zsvirt_repo, self.ee_repo,
+            "org.zstack.test.integration.allocator.domain.AllocatorDomainCreateCase", "auto")
+        self.assertEqual("test", target.module)
+        self.assertEqual("AllocatorDomainTest", target.surefire_test)
+        self.assertTrue(target.needs_case_file)
+        script = groovy_test.build_container_test_script(target)
+        self.assertIn("cd /work/zsvirt/test\n", script)
+        self.assertIn("/work/zsvirt/test/target/test-classes/zstack.properties", script)
+        self.assertIn("/work/zsvirt/test/target/test-classes/tools/zskey-util", script)
+        self.assertIn("test", groovy_test.GROOVY_TEST_AUTO_EXCLUDED_MODULES)
+        subprocess.run(["bash", "-n"], input=script, text=True, check=True)
+
+    def test_duplicate_suite_fqcn_can_select_each_real_test_module(self):
+        test_class = "org.zstack.test.integration.stabilisation.StabilityTestCase"
+        modules = ("tests/test-simple", "tests/test-authentication", "zsvirt-ee/tests-ee/test-ee")
+        for module in modules:
+            module_root = groovy_test._test_module_root(self.zsvirt_repo, self.ee_repo, module)
+            self._write_module_pom(module_root / "pom.xml")
+            self._write_file(module_root / "src/test/groovy/org/zstack/test/integration/stabilisation/StabilityTestCase.groovy",
+                             "package org.zstack.test.integration.stabilisation\n"
+                             "class StabilityTestCase extends StabilityTest {}\n")
+        with self.assertRaisesRegex(ValueError, "--test-module"):
+            groovy_test._resolve_test_target(self.zsvirt_repo, self.ee_repo, test_class, "auto")
+        for module in modules:
+            with self.subTest(module=module):
+                runner = FakeRunner()
+                work_root = self.root / ("run-" + module.replace("/", "-"))
+                rc = groovy_test.run_groovy_test_flow(
+                    zsvirt_branch="feature-zsvirt", ee_branch="feature-ee",
+                    test_class=test_class, test_module=module,
+                    zsvirt_repo=str(self.zsvirt_repo), ee_repo=str(self.ee_repo),
+                    work_root=str(work_root), runner=runner)
+                self.assertEqual(0, rc)
+                script = (work_root / "remote-run.sh").read_text()
+                self.assertIn(f"cd /work/zsvirt/{module}\n", script)
+                self.assertIn("-Dtest=StabilityTestCase", script)
+                self.assertNotIn("-DcaseFilePath", script)
+
+    def test_test_module_must_be_supported_and_contain_requested_class(self):
+        for module in ("../tests/test-simple", "premium/test-premium", "tests/test-authentication"):
+            with self.subTest(module=module), self.assertRaises(ValueError):
+                groovy_test._resolve_test_target(
+                    self.zsvirt_repo, self.ee_repo, "Test3", "auto", test_module=module)
+
+    def test_cli_validates_and_forwards_explicit_test_module(self):
+        from cbok.cmd import zsv
+
+        parser = argparse.ArgumentParser()
+        for options, kwargs in zsv.ZSphereCommands.groovy_test._args:
+            parser.add_argument(*options, **kwargs)
+        argv = ["--zsvirt-repo", str(self.zsvirt_repo), "--ee-repo", str(self.ee_repo),
+                "--zsvirt-branch", "zsv_5.2.0", "--ee-branch", "zsv_5.2.0",
+                "--test-class", "org.zstack.test.integration.stabilisation.StabilityTestCase"]
+        parsed = parser.parse_args(argv + ["--test-module", "tests/test-simple"])
+        with patch.object(zsv, "run_groovy_test_flow", return_value=0) as run_flow:
+            self.assertEqual(0, zsv.ZSphereCommands().groovy_test(**vars(parsed)))
+        self.assertEqual("tests/test-simple", run_flow.call_args.kwargs["test_module"])
+        self.assertIsNone(parser.parse_args(argv).test_module)
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args(argv + ["--test-module", "premium/test-premium"])
 
 
 if __name__ == "__main__":

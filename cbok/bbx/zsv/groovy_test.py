@@ -34,7 +34,8 @@ REMOTE_RUN_SCRIPT = "/tmp/cbok-zsv-groovy-run.sh"
 REMOTE_RUN_LOG = "/tmp/cbok-zsv-groovy-run.log"
 REMOTE_RUN_EXIT = "/tmp/cbok-zsv-groovy-run.exit"
 REMOTE_POLL_INTERVAL_SECONDS = 15
-GROOVY_TEST_AUTO_EXCLUDED_MODULES = frozenset(("test-simple", "test-authentication", "test-ee"))
+TEST_MODULES = ("test", "tests/test-simple", "tests/test-authentication", "zsvirt-ee/tests-ee/test-ee")
+GROOVY_TEST_AUTO_EXCLUDED_MODULES = frozenset(module.rsplit("/", 1)[-1] for module in TEST_MODULES)
 PREPARED_DB_SCHEMA_FAILURE_PATTERNS = (
     re.compile(r"Table 'zstack(?:_rest)?\.[^']+' doesn't exist", re.IGNORECASE),
     re.compile(r"Unknown database 'zstack(?:_rest)?'", re.IGNORECASE),
@@ -283,20 +284,22 @@ def _nearest_suite_class(source_root: Path, test_class: str) -> str | None:
         current = current.parent
 
 
-TEST_MODULES = ("tests/test-simple", "tests/test-authentication", "zsvirt-ee/tests-ee/test-ee")
-
-
 def _test_module_root(work_zsvirt: Path, work_ee: Path, module: str) -> Path:
     if module.startswith("zsvirt-ee/"):
         return work_ee / module.removeprefix("zsvirt-ee/")
     return work_zsvirt / module
 
 
-def _find_test_module(work_zsvirt: Path, work_ee: Path, test_class: str) -> str:
-    matches = [module for module in TEST_MODULES
+def _find_test_module(work_zsvirt: Path, work_ee: Path, test_class: str, test_module: str | None = None) -> str:
+    if test_module is not None and test_module not in TEST_MODULES:
+        raise ValueError(f"Unsupported --test-module: {test_module}; choose from {TEST_MODULES}")
+    modules = (test_module,) if test_module else TEST_MODULES
+    matches = [module for module in modules
                if _class_source_exists(_test_module_root(work_zsvirt, work_ee, module) / "src/test/groovy", test_class)]
+    if len(matches) > 1:
+        raise ValueError(f"Test class {test_class} exists in {matches}; select one with --test-module")
     if len(matches) != 1:
-        raise ValueError(f"Expected one test module for {test_class}, found: {matches}")
+        raise ValueError(f"Test class {test_class} not found in {modules}")
     return matches[0]
 
 
@@ -312,9 +315,10 @@ def _resolve_test_target(
         work_ee: Path,
         test_class: str,
         test_mode: str,
+        test_module: str | None = None,
 ) -> TestTarget:
     mode = test_mode
-    module = _find_test_module(work_zsvirt, work_ee, test_class)
+    module = _find_test_module(work_zsvirt, work_ee, test_class, test_module)
     source_root = _test_module_root(work_zsvirt, work_ee, module) / "src/test/groovy"
     source = _class_source_file(source_root, test_class)
     if mode == "auto":
@@ -538,6 +542,7 @@ def _properties_patch_script(work_root: str = DOCKER_WORK_ROOT) -> str:
     return f"""\
 patch_zstack_properties() {{
   for props in \\
+    {work_root}/zsvirt/test/target/test-classes/zstack.properties \\
     {work_root}/zsvirt/tests/test-simple/target/test-classes/zstack.properties \\
     {work_root}/zsvirt/tests/test-authentication/target/test-classes/zstack.properties \\
     {work_root}/zsvirt/zsvirt-ee/tests-ee/test-ee/target/test-classes/zstack.properties
@@ -558,6 +563,8 @@ def _ukey_patch_script(work_root: str = DOCKER_WORK_ROOT) -> str:
     return f"""\
 disable_ukey_util() {{
   for util in \\
+    {work_root}/zsvirt/test/target/test-classes/tools/zskey-util \\
+    {work_root}/zsvirt/test/target/test-classes/tools/zskey-util-aarch64 \\
     {work_root}/zsvirt/tests/test-simple/target/test-classes/tools/zskey-util \\
     {work_root}/zsvirt/tests/test-simple/target/test-classes/tools/zskey-util-aarch64 \\
     {work_root}/zsvirt/tests/test-authentication/target/test-classes/tools/zskey-util \\
@@ -1107,7 +1114,10 @@ def _run_remote_docker_test(
         _remove_container(runner, runner_container, docker_host)
 
 
-def _validate_inputs(test_class: str, test_mode: str) -> bool:
+def _validate_inputs(test_class: str, test_mode: str, test_module: str | None = None) -> bool:
+    if test_module is not None and test_module not in TEST_MODULES:
+        LOG.error("Unsupported --test-module: %s; choose from %s", test_module, TEST_MODULES)
+        return False
     if test_mode not in ("auto", "case", "suite"):
         LOG.error("Unsupported test mode: %s", test_mode)
         return False
@@ -1123,6 +1133,7 @@ def run_groovy_test_flow(
         ee_branch: str,
         test_class: str,
         test_mode: str = "auto",
+        test_module: str | None = None,
         zsvirt_repo: str | None = None,
         ee_repo: str | None = None,
         work_root: str | None = None,
@@ -1135,7 +1146,7 @@ def run_groovy_test_flow(
         refresh_deploy_db: bool = False,
         runner=None,
 ) -> int:
-    if not _validate_inputs(test_class, test_mode):
+    if not _validate_inputs(test_class, test_mode, test_module):
         return 1
 
     if not zsvirt_repo:
@@ -1216,7 +1227,7 @@ def run_groovy_test_flow(
 
     try:
         _create_ee_link(work_zsvirt)
-        target = _resolve_test_target(work_zsvirt, work_ee, test_class, test_mode)
+        target = _resolve_test_target(work_zsvirt, work_ee, test_class, test_mode, test_module)
     except ValueError as exc:
         LOG.error("%s", exc)
         return 1

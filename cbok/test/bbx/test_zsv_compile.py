@@ -1,12 +1,14 @@
+import argparse
 import configparser
 import io
 import os
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from cbok.bbx.zsv import compile
 from cbok.bbx.zsv import groovy_test
@@ -195,6 +197,25 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertIn("--zsvirt-root is required", "\n".join(logs.output))
         self.assertEqual([], runner.calls)
 
+    def test_compile_cli_forwards_distinct_repository_roots(self):
+        from cbok.cmd import zsv
+
+        parser = argparse.ArgumentParser()
+        for options, kwargs in zsv.ZSphereCommands.compile._args:
+            parser.add_argument(*options, **kwargs)
+        argv = ["--zsvirt-root", "/repo/zsvirt", "--ee-root", "/repo/zsvirt-ee", "--no-deploy",
+                "--web-class", "zsvirt:premium/conf/springConfigXml/crypto.xml",
+                "--web-class", "ee:conf/springConfigXml/ee/coreEe.xml"]
+        with patch.object(zsv, "run_compile_flow", return_value=0) as flow:
+            self.assertEqual(0, zsv.ZSphereCommands().compile(**vars(parser.parse_args(argv))))
+        self.assertEqual("/repo/zsvirt", flow.call_args.kwargs["zsvirt_root"])
+        self.assertEqual("/repo/zsvirt-ee", flow.call_args.kwargs["ee_root"])
+        self.assertEqual([argv[-3], argv[-1]], flow.call_args.kwargs["extra_web_classes"])
+        self.assertTrue(flow.call_args.kwargs["no_deploy"])
+        self.assertIsNone(flow.call_args.kwargs["address"])
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            parser.parse_args(["--zstack-root", "/repo/main", "--premium-root", "/repo/premium"])
+
     def test_run_compile_flow_defaults_to_worktree_container_name(self):
         compile.settings.CONF = _conf(
             remote_docker_host="tcp://172.26.50.70:2375",
@@ -254,7 +275,7 @@ class ZsvCompileTest(unittest.TestCase):
             ee = Path(td) / "ee"
             (root / "plugin" / "foo").mkdir(parents=True)
             (root / "testlib").mkdir(parents=True)
-            (ee / "testlib-ee").mkdir(parents=True)
+            (ee / "tests-ee/testlib-ee").mkdir(parents=True)
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             (root / "plugin" / "foo" / "pom.xml").write_text("<project/>", encoding="utf-8")
             runner = FakeRunner()
@@ -417,10 +438,10 @@ class ZsvCompileTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
             ee = Path(td) / "ee"
-            for module in ("utils", "identity"):
+            for module in ("utils", "identity", "premium/mevoco"):
                 (root / module).mkdir(parents=True)
                 (root / module / "pom.xml").write_text("<project/>", encoding="utf-8")
-            for module in ("volumebackup", "mevoco"):
+            for module in ("zvf", "rewrite-for-ee/core-ee"):
                 (ee / module).mkdir(parents=True)
                 (ee / module / "pom.xml").write_text("<project/>", encoding="utf-8")
 
@@ -428,8 +449,8 @@ class ZsvCompileTest(unittest.TestCase):
                 repo = os.path.realpath(repo)
                 if args == ("diff", "--name-only", "HEAD"):
                     out = {
-                        os.path.realpath(root): "utils/src/main/java/org/zstack/utils/Digest.java\n",
-                        os.path.realpath(ee): "volumebackup/src/main/java/org/zstack/storage/backup/BackupQosStruct.java\n",
+                        os.path.realpath(root): "utils/src/main/java/org/zstack/utils/Digest.java\npremium/mevoco/src/main/java/org/zstack/mevoco/MevocoGlobalProperty.java\n",
+                        os.path.realpath(ee): "zvf/src/main/java/org/zstack/mevoco/EnterpriseMevocoManager.java\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 if args == ("ls-files", "--others", "--exclude-standard"):
@@ -439,24 +460,24 @@ class ZsvCompileTest(unittest.TestCase):
                 if args == ("diff", "--name-only", "HEAD^", "HEAD"):
                     out = {
                         os.path.realpath(root): "identity/src/main/java/org/zstack/identity/Account.java\n",
-                        os.path.realpath(ee): "mevoco/src/main/java/org/zstack/mevoco/MevocoGlobalProperty.java\n",
+                        os.path.realpath(ee): "rewrite-for-ee/core-ee/src/main/java/org/zstack/core/ee/CoreEeManager.java\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 return subprocess.CompletedProcess(["git"], 0, "", "")
 
             compile._git = fake_git
 
-            main, prem = compile.auto_detect_modules(str(root), str(ee))
+            main, ee_modules = compile.auto_detect_modules(str(root), str(ee))
 
-        self.assertEqual(["utils", "identity"], main)
-        self.assertEqual(["volumebackup", "mevoco"], prem)
+        self.assertEqual(["utils", "premium/mevoco", "identity"], main)
+        self.assertEqual(["zvf", "rewrite-for-ee/core-ee"], ee_modules)
 
     def test_auto_detect_modules_uses_groovy_test_excludes_for_test_support_modules(self):
         compile.settings.CONF = _conf(base_ref="")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
             ee = Path(td) / "ee"
-            for module in (root / "testlib", ee / "testlib-ee"):
+            for module in (root / "tests/testlib-simple", ee / "tests-ee/testlib-ee"):
                 module.mkdir(parents=True)
                 (module / "pom.xml").write_text("<project/>", encoding="utf-8")
 
@@ -470,25 +491,25 @@ class ZsvCompileTest(unittest.TestCase):
                     return subprocess.CompletedProcess(["git"], 0, "parent\n", "")
                 if args == ("diff", "--name-only", "HEAD^", "HEAD"):
                     out = {
-                        os.path.realpath(root): "testlib/src/main/java/org/zstack/testlib/EnvSpec.groovy\n",
-                        os.path.realpath(ee): "testlib-ee/src/main/java/org/zstack/testlib/ee/TestEE.groovy\n",
+                        os.path.realpath(root): "tests/testlib-simple/src/main/java/org/zstack/testlib/EnvSpec.groovy\n",
+                        os.path.realpath(ee): "tests-ee/testlib-ee/src/main/groovy/org/zstack/testlib/ee/TestEe.groovy\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 return subprocess.CompletedProcess(["git"], 0, "", "")
 
             compile._git = fake_git
 
-            default_main, default_prem = compile.auto_detect_modules(str(root), str(ee))
-            groovy_main, groovy_prem = compile.auto_detect_modules(
+            default_main, default_ee = compile.auto_detect_modules(str(root), str(ee))
+            groovy_main, groovy_ee = compile.auto_detect_modules(
                 str(root),
                 str(ee),
                 excluded_modules=groovy_test.GROOVY_TEST_AUTO_EXCLUDED_MODULES,
             )
 
         self.assertEqual([], default_main)
-        self.assertEqual([], default_prem)
-        self.assertEqual(["testlib"], groovy_main)
-        self.assertEqual(["testlib-ee"], groovy_prem)
+        self.assertEqual([], default_ee)
+        self.assertEqual(["tests/testlib-simple"], groovy_main)
+        self.assertEqual(["tests-ee/testlib-ee"], groovy_ee)
 
     def test_auto_detect_modules_falls_back_to_head_when_no_worktree_module_changed(self):
         compile.settings.CONF = _conf(base_ref="")
@@ -497,8 +518,8 @@ class ZsvCompileTest(unittest.TestCase):
             ee = Path(td) / "ee"
             (root / "identity").mkdir(parents=True)
             (root / "identity" / "pom.xml").write_text("<project/>", encoding="utf-8")
-            (ee / "mevoco").mkdir(parents=True)
-            (ee / "mevoco" / "pom.xml").write_text("<project/>", encoding="utf-8")
+            (ee / "zvf").mkdir(parents=True)
+            (ee / "zvf" / "pom.xml").write_text("<project/>", encoding="utf-8")
 
             def fake_git(repo, *args):
                 repo = os.path.realpath(repo)
@@ -511,17 +532,17 @@ class ZsvCompileTest(unittest.TestCase):
                 if args == ("diff", "--name-only", "HEAD^", "HEAD"):
                     out = {
                         os.path.realpath(root): "identity/src/main/java/org/zstack/identity/Account.java\n",
-                        os.path.realpath(ee): "mevoco/src/main/java/org/zstack/mevoco/MevocoGlobalProperty.java\n",
+                        os.path.realpath(ee): "zvf/src/main/java/org/zstack/mevoco/EnterpriseMevocoManager.java\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 return subprocess.CompletedProcess(["git"], 0, "", "")
 
             compile._git = fake_git
 
-            main, prem = compile.auto_detect_modules(str(root), str(ee))
+            main, ee_modules = compile.auto_detect_modules(str(root), str(ee))
 
         self.assertEqual(["identity"], main)
-        self.assertEqual(["mevoco"], prem)
+        self.assertEqual(["zvf"], ee_modules)
 
     def test_auto_detect_modules_uses_top_commit_even_when_upstream_exists(self):
         compile.settings.CONF = _conf(base_ref="")
@@ -530,8 +551,8 @@ class ZsvCompileTest(unittest.TestCase):
             ee = Path(td) / "ee"
             (root / "storage").mkdir(parents=True)
             (root / "storage" / "pom.xml").write_text("<project/>", encoding="utf-8")
-            (ee / "crypto").mkdir(parents=True)
-            (ee / "crypto" / "pom.xml").write_text("<project/>", encoding="utf-8")
+            (ee / "rewrite-for-ee/core-ee").mkdir(parents=True)
+            (ee / "rewrite-for-ee/core-ee" / "pom.xml").write_text("<project/>", encoding="utf-8")
 
             def fake_git(repo, *args):
                 repo = os.path.realpath(repo)
@@ -550,17 +571,17 @@ class ZsvCompileTest(unittest.TestCase):
                 if args == ("diff", "--name-only", "HEAD^", "HEAD"):
                     out = {
                         os.path.realpath(root): "storage/src/main/java/org/zstack/storage/encrypt/RemoteOnly.java\n",
-                        os.path.realpath(ee): "crypto/src/main/java/org/zstack/crypto/keyprovider/KeyProviderAvailabilityApiInterceptor.java\n",
+                        os.path.realpath(ee): "rewrite-for-ee/core-ee/src/main/java/org/zstack/core/ee/CoreEeManager.java\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 return subprocess.CompletedProcess(["git"], 0, "", "")
 
             compile._git = fake_git
 
-            main, prem = compile.auto_detect_modules(str(root), str(ee))
+            main, ee_modules = compile.auto_detect_modules(str(root), str(ee))
 
         self.assertEqual(["storage"], main)
-        self.assertEqual(["crypto"], prem)
+        self.assertEqual(["rewrite-for-ee/core-ee"], ee_modules)
 
     def test_changed_paths_uses_configured_base_ref(self):
         compile.settings.CONF = _conf(base_ref="origin/feature")
@@ -587,9 +608,9 @@ class ZsvCompileTest(unittest.TestCase):
             root = Path(td) / "zstack"
             ee = Path(td) / "ee"
             interface_file = root / "storage" / "src" / "main" / "java" / "org" / "zstack" / "storage" / "encrypt" / "VolumeEncryptedResourceKeyBackend.java"
-            implementer_file = ee / "crypto" / "src" / "main" / "java" / "org" / "zstack" / "crypto" / "keyprovider" / "KeyProviderResourceKeyBackendVolume.java"
-            caller_file = ee / "volumebackup" / "src" / "main" / "java" / "org" / "zstack" / "storage" / "backup" / "VolumeBackupManagerImpl.java"
-            for module in (root / "storage", ee / "crypto", ee / "volumebackup"):
+            implementer_file = root / "premium/crypto" / "src" / "main" / "java" / "org" / "zstack" / "crypto" / "keyprovider" / "KeyProviderResourceKeyBackendVolume.java"
+            caller_file = root / "premium/volumebackup" / "src" / "main" / "java" / "org" / "zstack" / "storage" / "backup" / "VolumeBackupManagerImpl.java"
+            for module in (root / "storage", root / "premium/crypto", root / "premium/volumebackup"):
                 module.mkdir(parents=True)
                 (module / "pom.xml").write_text("<project/>", encoding="utf-8")
             interface_file.parent.mkdir(parents=True)
@@ -625,24 +646,23 @@ class ZsvCompileTest(unittest.TestCase):
                     return subprocess.CompletedProcess(["git"], 0, "parent\n", "")
                 if args == ("diff", "--name-only", "HEAD^", "HEAD"):
                     out = {
-                        os.path.realpath(root): "storage/src/main/java/org/zstack/storage/encrypt/VolumeEncryptedResourceKeyBackend.java\n",
-                        os.path.realpath(ee): "volumebackup/src/main/java/org/zstack/storage/backup/VolumeBackupManagerImpl.java\n",
+                        os.path.realpath(root): "storage/src/main/java/org/zstack/storage/encrypt/VolumeEncryptedResourceKeyBackend.java\npremium/volumebackup/src/main/java/org/zstack/storage/backup/VolumeBackupManagerImpl.java\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 return subprocess.CompletedProcess(["git"], 0, "", "")
 
             compile._git = fake_git
 
-            main, prem = compile.auto_detect_modules(str(root), str(ee))
+            main, ee_modules = compile.auto_detect_modules(str(root), str(ee))
 
-        self.assertEqual(["storage"], main)
-        self.assertEqual(["volumebackup", "crypto"], prem)
+        self.assertEqual(["storage", "premium/volumebackup", "premium/crypto"], main)
+        self.assertEqual([], ee_modules)
 
     def test_collect_built_jars_uses_maven_main_artifact(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
             ee = Path(td) / "ee"
-            target = ee / "mevoco" / "target"
+            target = root / "premium/mevoco" / "target"
             (target / "maven-archiver").mkdir(parents=True)
             (target / "maven-archiver" / "pom.properties").write_text(
                 "groupId=org.zstack\nartifactId=mevoco\nversion=5.0.0\n",
@@ -654,8 +674,8 @@ class ZsvCompileTest(unittest.TestCase):
 
             jars = compile.collect_built_jars(
                 str(root),
+                ["premium/mevoco"],
                 [],
-                ["mevoco"],
                 ee_root=str(ee),
             )
 
@@ -666,7 +686,7 @@ class ZsvCompileTest(unittest.TestCase):
             root = Path(td) / "zstack"
             ee = Path(td) / "ee"
             main_xml = root / "conf" / "springConfigXml" / "core.xml"
-            ee_xml = ee / "conf" / "springConfigXml" / "crypto.xml"
+            ee_xml = ee / "conf" / "springConfigXml" / "ee" / "coreEe.xml"
             main_xml.parent.mkdir(parents=True)
             ee_xml.parent.mkdir(parents=True)
             main_xml.write_text("<beans/>", encoding="utf-8")
@@ -675,20 +695,20 @@ class ZsvCompileTest(unittest.TestCase):
             files = compile.collect_web_classes_files(
                 str(root),
                 ["conf/springConfigXml/core.xml", "identity/src/main/java/Foo.java"],
-                ["conf/springConfigXml/crypto.xml"],
+                ["conf/springConfigXml/ee/coreEe.xml"],
                 str(ee),
             )
 
         mapped = {item.relative_path: item.source for item in files}
         self.assertEqual(str(main_xml), mapped["springConfigXml/core.xml"])
-        self.assertEqual(str(ee_xml), mapped["springConfigXml/crypto.xml"])
+        self.assertEqual(str(ee_xml), mapped["springConfigXml/ee/coreEe.xml"])
 
     def test_collect_explicit_web_classes_files_maps_spring_config(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
             ee = Path(td) / "ee"
             main_xml = root / "conf" / "springConfigXml" / "VolumeManager.xml"
-            ee_xml = ee / "conf" / "springConfigXml" / "crypto.xml"
+            ee_xml = ee / "conf" / "springConfigXml" / "ee" / "coreEe.xml"
             main_xml.parent.mkdir(parents=True)
             ee_xml.parent.mkdir(parents=True)
             main_xml.write_text("<beans/>", encoding="utf-8")
@@ -699,13 +719,13 @@ class ZsvCompileTest(unittest.TestCase):
                 str(ee),
                 [
                     "zsvirt:conf/springConfigXml/VolumeManager.xml",
-                    "ee:conf/springConfigXml/crypto.xml",
+                    "ee:conf/springConfigXml/ee/coreEe.xml",
                 ],
             )
 
         mapped = {item.relative_path: item.source for item in files}
         self.assertEqual(str(main_xml.resolve()), mapped["springConfigXml/VolumeManager.xml"])
-        self.assertEqual(str(ee_xml.resolve()), mapped["springConfigXml/crypto.xml"])
+        self.assertEqual(str(ee_xml.resolve()), mapped["springConfigXml/ee/coreEe.xml"])
 
     def test_explicit_web_class_overrides_changed_file_with_same_target(self):
         compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
@@ -819,7 +839,7 @@ class ZsvCompileTest(unittest.TestCase):
             ee = Path(td) / "ee"
             worktree_target = root / "identity" / "target"
             worktree_target.mkdir(parents=True)
-            ee_xml = ee / "conf" / "springConfigXml" / "crypto.xml"
+            ee_xml = ee / "conf" / "springConfigXml" / "ee" / "coreEe.xml"
             ee_xml.parent.mkdir(parents=True)
             ee_xml.write_text("<beans/>", encoding="utf-8")
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
@@ -830,7 +850,7 @@ class ZsvCompileTest(unittest.TestCase):
             (jar_copy_target / "identity-5.0.0.jar").write_bytes(b"jar")
             compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
             compile.collect_changed_web_classes_files = lambda _root, _ee_root=None: [
-                compile.WebClassesFile(str(ee_xml), "springConfigXml/crypto.xml")
+                compile.WebClassesFile(str(ee_xml), "springConfigXml/ee/coreEe.xml")
             ]
             runner = FakeRunner()
 
@@ -915,7 +935,7 @@ class ZsvCompileTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
             ee = Path(td) / "ee"
-            ee_xml = ee / "conf" / "springConfigXml" / "crypto.xml"
+            ee_xml = ee / "conf" / "springConfigXml" / "ee" / "coreEe.xml"
             ee_xml.parent.mkdir(parents=True)
             ee_xml.write_text("<beans/>", encoding="utf-8")
             (root / "pom.xml").parent.mkdir(parents=True, exist_ok=True)
@@ -934,8 +954,8 @@ class ZsvCompileTest(unittest.TestCase):
                     [
                         compile.CompileWebClassesState(
                             "ee",
-                            "conf/springConfigXml/crypto.xml",
-                            "springConfigXml/crypto.xml",
+                            "conf/springConfigXml/ee/coreEe.xml",
+                            "springConfigXml/ee/coreEe.xml",
                         )
                     ],
                 ),

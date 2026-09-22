@@ -66,9 +66,13 @@ builds use `-Pee`, with built-in modules such as `premium/mevoco` and external
 modules such as `zsvirt-ee/zvf` in the same reactor. EE builds use distinct
 container and Maven-cache identities from the old repository layout. State
 records use `zsvirt_root` / `zsvirt_head` and `ee_root` / `ee_head`, with separate
-main and EE module selections. Apply the model changes through the existing
-`manage.py makemigrations bbx` and `manage.py migrate` deployment workflow.
-Old premium repository fields are removed; they are not relabeled as EE.
+main and EE module selections. Before starting CBoK with an existing database,
+run `python manage.py makemigrations_bbx` and `python manage.py migrate`.
+The startup script also uses this command. It generates a migration against
+the installation's local migration history without interactive rename guesses:
+main repository fields retain their values, while old premium repository
+fields are removed and EE fields start empty. Existing container records remain
+available for cleanup; their old build keys cannot be reused for EE builds.
 
 ## Groovy integration tests
 
@@ -81,8 +85,11 @@ cbok zsv groovy_test --zsvirt-repo /path/to/zsvirt \
 
 The runner creates worktrees for both repositories, preserves the main
 repository's `premium/`, and links only `zsvirt-ee/`. It finds the requested
-source in `tests/test-simple`, `tests/test-authentication`, or
-`zsvirt-ee/tests-ee/test-ee`. Missing or ambiguous classes fail before building.
+source in `test`, `tests/test-simple`, `tests/test-authentication`, or
+`zsvirt-ee/tests-ee/test-ee`. For classes that exist in multiple modules, add
+`--test-module` with one of these module paths, for example
+`--test-module tests/test-simple`. The class must exist in the selected module;
+missing classes or ambiguity without `--test-module` fail before building.
 The selected module determines its harness (`Test`, `Test` with `PremiumEnv`, or `TestEe`);
 a Java package containing `premium` does not identify an external repository.
 Both full and incremental compilation use the EE build profile.
