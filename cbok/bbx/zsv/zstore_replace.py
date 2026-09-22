@@ -7,6 +7,8 @@ from pathlib import Path
 import shlex
 import time
 
+from cbok.bbx.zsv import base_ref
+
 
 LOG = logging.getLogger(__name__)
 
@@ -117,6 +119,8 @@ def run_zstore_replace_flow(zstore_root: str, nodes: list[str], runner, image: s
         return 1
     if not nodes:
         LOG.error("No healthy KVM hosts discovered")
+        return 1
+    if not base_ref.rebase_worktree(str(root)):
         return 1
 
     if _build(root, runner, image) != 0:

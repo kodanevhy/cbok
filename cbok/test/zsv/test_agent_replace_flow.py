@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from cbok.bbx.zsv import agent_replace
+from cbok.bbx.zsv import agent_replace, base_ref
 
 
 class FakeRunner:
@@ -20,6 +20,12 @@ class FakeRunner:
 class AgentReplaceFlowTest(unittest.TestCase):
     def setUp(self):
         self.repo = tempfile.mkdtemp()
+        rebase_patch = patch.object(base_ref, "rebase_worktree", return_value=True)
+        self.rebase_worktree = rebase_patch.start()
+        self.addCleanup(rebase_patch.stop)
+        clean_patch = patch.object(base_ref, "check_worktree_clean", return_value=True)
+        self.check_worktree_clean = clean_patch.start()
+        self.addCleanup(clean_patch.stop)
 
     def tearDown(self):
         shutil.rmtree(self.repo)
@@ -67,6 +73,74 @@ class AgentReplaceFlowTest(unittest.TestCase):
 
         self.assertEqual(0, rc)
         self.assertEqual([], runner.commands)
+        self.check_worktree_clean.assert_called_once_with(os.path.realpath(self.repo))
+        self.rebase_worktree.assert_not_called()
+
+    def test_dirty_dry_run_stops_before_preview_without_rebasing(self):
+        self.check_worktree_clean.return_value = False
+        runner = FakeRunner()
+        with patch.object(agent_replace, "discover_changed_files") as discover, \
+                patch.object(agent_replace, "print_plan") as preview:
+            rc = agent_replace.run_agent_replace_flow(
+                utility_root=self.repo, nodes="192.0.2.1", dry_run=True, runner=runner,
+            )
+
+        self.assertEqual(1, rc)
+        self.check_worktree_clean.assert_called_once_with(os.path.realpath(self.repo))
+        self.rebase_worktree.assert_not_called()
+        discover.assert_not_called()
+        preview.assert_not_called()
+        self.assertEqual([], runner.commands)
+
+    def test_rebases_utility_before_discovery_and_archiving(self):
+        path = "kvmagent/kvmagent/plugins/vm_plugin.py"
+        events = []
+
+        def rebase(root):
+            self.assertEqual(os.path.realpath(self.repo), root)
+            self.touch(path)
+            events.append("rebase")
+            return True
+
+        def discover(root, command_runner):
+            self.assertEqual(["rebase"], events)
+            events.append("discover")
+            return agent_replace.DiscoverResult(paths=[path], change_scope="rebased changes")
+
+        captured = []
+        make_archive = self.capture_archive_files(captured)
+
+        def archive(files):
+            self.assertEqual(["rebase", "discover"], events)
+            events.append("archive")
+            return make_archive(files)
+
+        self.rebase_worktree.side_effect = rebase
+        with patch.object(agent_replace, "discover_changed_files", side_effect=discover), \
+                patch.object(agent_replace, "create_agent_archive", side_effect=archive):
+            rc = agent_replace.run_agent_replace_flow(
+                utility_root=self.repo, nodes="192.0.2.1", runner=FakeRunner(),
+                state_store=agent_replace.InMemoryAgentReplaceStateStore(),
+            )
+
+        self.assertEqual(0, rc)
+        self.assertEqual(["rebase", "discover", "archive"], events)
+        self.assertEqual([path], captured)
+
+    def test_rebase_failure_stops_before_discovery_archive_or_remote_commands(self):
+        self.rebase_worktree.return_value = False
+        runner = FakeRunner()
+        with patch.object(agent_replace, "discover_changed_files") as discover, \
+                patch.object(agent_replace, "create_agent_archive") as archive:
+            rc = agent_replace.run_agent_replace_flow(
+                utility_root=self.repo, nodes="192.0.2.1", runner=runner,
+            )
+
+        self.assertEqual(1, rc)
+        self.rebase_worktree.assert_called_once_with(os.path.realpath(self.repo))
+        discover.assert_not_called()
+        archive.assert_not_called()
+        self.assertEqual([], runner.commands)
 
     def test_rejects_out_of_scope_change_before_remote_commands(self):
         self.touch("kvmagent/ansible/kvm.py")
@@ -101,6 +175,7 @@ class AgentReplaceFlowTest(unittest.TestCase):
 
         self.assertEqual(0, rc)
         self.assertEqual(["172.26.53.17", "172.26.53.18"], ensured)
+        self.rebase_worktree.assert_called_once_with(os.path.realpath(self.repo))
         joined = "\n".join(" ".join(cmd) for cmd, _ in runner.commands)
         self.assertIn("zsv_agent_stage_archive", joined)
         self.assertIn("zsv_agent_apply_staging", joined)

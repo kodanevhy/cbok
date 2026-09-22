@@ -22,7 +22,9 @@ DEFAULT_M2_VOLUME = "auto"
 DEFAULT_M2_VOLUME_PREFIX = "zsv-m2"
 DEFAULT_MIN_FREE_GB = 20
 MAVEN_REPO = "/var/maven/.m2/repository"
-FULL_COMPILE_CMD = "./runMavenProfile premium"
+MAVEN_MIRROR_HOST = "maven.mirror.zstack.io"
+MAVEN_MIRROR_IP = "172.24.201.252"
+FULL_COMPILE_CMD = "./runMavenProfile ee"
 SOURCE_EXCLUDES = (
     "--exclude .git "
     "--exclude target "
@@ -51,8 +53,7 @@ RSYNC_EXCLUDES = (
     "--exclude __MACOSX "
     "--exclude '*/__MACOSX'"
 )
-PREMIUM_DIR_EXCLUDES = "--exclude premium --exclude ./premium"
-PR_REPOS = ("zstack", "premium", "zstack-utility", "zstack-store")
+PR_REPOS = ("zsvirt", "zsvirt-ee", "zsvirt-utility", "zstack-store")
 
 
 @dataclass(frozen=True)
@@ -63,25 +64,24 @@ class WorktreePullRequest:
 
 @dataclass(frozen=True)
 class WorktreeContainerSpec:
-    zstack_root: str
-    premium_root: str | None
+    zsvirt_root: str
     docker_host: str
     image: str
+    ee_root: str | None = None
     platform: str = ""
     workdir: str = DEFAULT_WORKDIR
     container_name: str = "auto"
     m2_volume: str = DEFAULT_M2_VOLUME
     pr_refs: tuple[WorktreePullRequest, ...] = ()
-    identity_zstack_root: str = ""
-    identity_premium_root: str | None = None
+    identity_zsvirt_root: str = ""
+    identity_ee_root: str | None = None
     min_free_gb: int = DEFAULT_MIN_FREE_GB
 
 
 @dataclass
 class WorktreeContainerRecord:
     worktree_key: str
-    zstack_root: str
-    premium_root: str
+    zsvirt_root: str
     docker_host: str
     image: str
     platform: str
@@ -89,8 +89,9 @@ class WorktreeContainerRecord:
     container_name: str
     m2_volume: str
     pr_refs: tuple[WorktreePullRequest, ...] = ()
-    zstack_head: str = ""
-    premium_head: str = ""
+    zsvirt_head: str = ""
+    ee_root: str = ""
+    ee_head: str = ""
     full_compile_done: bool = False
     full_compile_started_at: datetime.datetime | None = None
     full_compile_finished_at: datetime.datetime | None = None
@@ -104,9 +105,9 @@ class WorktreeContainerHandle:
     container_name: str
     docker_host: str
     workdir: str
-    work_zstack: str
-    work_premium: str
+    work_zsvirt: str
     full_compile_ran: bool
+    work_ee: str = ""
 
 
 class DjangoWorktreeContainerStore:
@@ -122,8 +123,8 @@ class DjangoWorktreeContainerStore:
         if not created:
             changed = []
             for field in (
-                    "zstack_root",
-                    "premium_root",
+                    "zsvirt_root",
+                    "ee_root",
                     "docker_host",
                     "image",
                     "platform",
@@ -179,17 +180,18 @@ def normalize_docker_host(raw: str | None) -> str:
 
 
 def worktree_key_for_spec(spec: WorktreeContainerSpec) -> str:
-    identity_zstack_root = spec.identity_zstack_root or spec.zstack_root
-    identity_premium_root = spec.identity_premium_root if spec.identity_premium_root is not None else spec.premium_root
+    identity_zsvirt_root = spec.identity_zsvirt_root or spec.zsvirt_root
+    identity_ee_root = spec.identity_ee_root if spec.identity_ee_root is not None else spec.ee_root
     parts = [
-        os.path.realpath(identity_zstack_root),
-        os.path.realpath(identity_premium_root) if identity_premium_root else "",
+        os.path.realpath(identity_zsvirt_root),
+        os.path.realpath(identity_ee_root) if identity_ee_root else "",
         normalize_docker_host(spec.docker_host),
         spec.image.strip(),
         (spec.platform or "").strip(),
         (spec.workdir or DEFAULT_WORKDIR).rstrip("/") or DEFAULT_WORKDIR,
         (spec.m2_volume or DEFAULT_M2_VOLUME).strip(),
     ]
+    parts.append("zsvirt-ee-v3")
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -203,8 +205,8 @@ def container_name_for_spec(spec: WorktreeContainerSpec, worktree_key: str) -> s
     raw = (spec.container_name or "").strip()
     if raw and raw.lower() != "auto":
         return raw
-    identity_zstack_root = spec.identity_zstack_root or spec.zstack_root
-    root_name = _safe_docker_token(os.path.basename(os.path.realpath(identity_zstack_root)))
+    identity_zsvirt_root = spec.identity_zsvirt_root or spec.zsvirt_root
+    root_name = _safe_docker_token(os.path.basename(os.path.realpath(identity_zsvirt_root)))
     return f"cbok-zsv-worktree-{root_name}-{worktree_key[:16]}"
 
 
@@ -359,7 +361,8 @@ def _ensure_enough_space_for_new_container(runner, spec: WorktreeContainerSpec, 
 
 
 def _create_container(runner, spec: WorktreeContainerSpec, container_name: str) -> int:
-    cmd = ["create", "--name", container_name]
+    cmd = ["create", "--name", container_name,
+           "--add-host", f"{MAVEN_MIRROR_HOST}:{MAVEN_MIRROR_IP}"]
     if spec.platform:
         cmd.extend(["--platform", spec.platform])
     if spec.m2_volume:
@@ -374,7 +377,7 @@ def _start_and_init_container(runner, spec: WorktreeContainerSpec, container_nam
         return rc
     init_script = f"""
 set -euo pipefail
-	mkdir -p {shlex.quote(spec.workdir)}/zstack /tmp /var/maven/.m2
+	mkdir -p {shlex.quote(spec.workdir)}/zsvirt /tmp /var/maven/.m2
 rm -rf /root/.m2
 ln -sfn /var/maven/.m2 /root/.m2
 """
@@ -414,10 +417,11 @@ def _stream_source_to_upload_dir(
         container_name: str,
         upload_dir: str,
         *,
-        exclude_premium: bool = False,
+        exclude_external: bool = False,
+        external_dir: str = "zsvirt-ee",
 ) -> int:
-    premium_excludes = "--exclude premium --exclude ./premium " if exclude_premium else ""
-    excludes = SOURCE_EXCLUDES + " " + premium_excludes
+    external_excludes = f"--exclude {external_dir} --exclude ./{external_dir} " if exclude_external else ""
+    excludes = SOURCE_EXCLUDES + " " + external_excludes
     inner = f"rm -rf {shlex.quote(upload_dir)} && mkdir -p {shlex.quote(upload_dir)} && tar -xzf - -C {shlex.quote(upload_dir)}"
     script = (
         "tar_extra_opts=''; "
@@ -431,45 +435,48 @@ def _stream_source_to_upload_dir(
 
 
 def sync_sources_to_container(runner, spec: WorktreeContainerSpec, container_name: str) -> int:
-    work_zstack = f"{spec.workdir}/zstack"
-    work_premium = f"{work_zstack}/premium"
+    work_zsvirt = f"{spec.workdir}/zsvirt"
+    external_dir = "zsvirt-ee"
+    work_external = f"{work_zsvirt}/{external_dir}"
+    external_root = spec.ee_root
     upload_root = "/tmp/cbok-zsv-src"
     rc = _stream_source_to_upload_dir(
         runner,
         spec,
-        spec.zstack_root,
+        spec.zsvirt_root,
         container_name,
-        f"{upload_root}/zstack",
-        exclude_premium=True,
+        f"{upload_root}/zsvirt",
+        exclude_external=True,
+        external_dir=external_dir,
     )
     if rc != 0:
         return rc
-    premium_sync = ""
-    if spec.premium_root:
+    external_sync = ""
+    if external_root:
         rc = _stream_source_to_upload_dir(
             runner,
             spec,
-            spec.premium_root,
+            external_root,
             container_name,
-            f"{upload_root}/premium",
+            f"{upload_root}/{external_dir}",
         )
         if rc != 0:
             return rc
-        premium_sync = f"""
-	if [ -L {shlex.quote(work_premium)} ]; then
-	  rm -f {shlex.quote(work_premium)}
+        external_sync = f"""
+	if [ -L {shlex.quote(work_external)} ]; then
+	  rm -f {shlex.quote(work_external)}
 	fi
-	if [ -e {shlex.quote(work_premium)} ] && [ ! -d {shlex.quote(work_premium)} ]; then
-	  rm -f {shlex.quote(work_premium)}
+	if [ -e {shlex.quote(work_external)} ] && [ ! -d {shlex.quote(work_external)} ]; then
+	  rm -f {shlex.quote(work_external)}
 	fi
-	mkdir -p {shlex.quote(work_premium)}
-	rsync -a --delete {RSYNC_EXCLUDES} {upload_root}/premium/ {shlex.quote(work_premium)}/
+	mkdir -p {shlex.quote(work_external)}
+	rsync -a --delete {RSYNC_EXCLUDES} {upload_root}/{external_dir}/ {shlex.quote(work_external)}/
 	"""
     sync_script = f"""
 	set -euo pipefail
-	mkdir -p {shlex.quote(work_zstack)}
-	rsync -a --delete {RSYNC_EXCLUDES} {PREMIUM_DIR_EXCLUDES} {upload_root}/zstack/ {shlex.quote(work_zstack)}/
-	{premium_sync}
+	mkdir -p {shlex.quote(work_zsvirt)}
+	rsync -a --delete {RSYNC_EXCLUDES} --exclude {external_dir} --exclude ./{external_dir} {upload_root}/zsvirt/ {shlex.quote(work_zsvirt)}/
+	{external_sync}
 	"""
     rc = docker_shell(
         runner,
@@ -486,29 +493,17 @@ def sync_sources_to_container(runner, spec: WorktreeContainerSpec, container_nam
 
 
 def full_compile_script(spec: WorktreeContainerSpec) -> str:
-    work_zstack = f"{spec.workdir}/zstack"
-    script = f"""
-set -euo pipefail
-cd {shlex.quote(work_zstack)}
-{FULL_COMPILE_CMD}
-cd {shlex.quote(work_zstack)}/testlib
-mvn clean install -Dmaven.test.skip=true
-if [ -d {shlex.quote(work_zstack)}/premium/testlib-premium ]; then
-  cd {shlex.quote(work_zstack)}/premium/testlib-premium
-  mvn clean install -Dmaven.test.skip=true
-fi
-"""
-    return script
+    work_zsvirt = f"{spec.workdir}/zsvirt"
+    return f"set -euo pipefail\ncd {shlex.quote(work_zsvirt)}\n{FULL_COMPILE_CMD}\n"
 
 
 def _default_record(spec: WorktreeContainerSpec) -> WorktreeContainerRecord:
     key = worktree_key_for_spec(spec)
-    identity_zstack_root = spec.identity_zstack_root or spec.zstack_root
-    identity_premium_root = spec.identity_premium_root if spec.identity_premium_root is not None else spec.premium_root
+    identity_zsvirt_root = spec.identity_zsvirt_root or spec.zsvirt_root
+    identity_ee_root = spec.identity_ee_root if spec.identity_ee_root is not None else spec.ee_root
     return WorktreeContainerRecord(
         worktree_key=key,
-        zstack_root=os.path.realpath(identity_zstack_root),
-        premium_root=os.path.realpath(identity_premium_root) if identity_premium_root else "",
+        zsvirt_root=os.path.realpath(identity_zsvirt_root),
         docker_host=normalize_docker_host(spec.docker_host),
         image=spec.image,
         platform=spec.platform or "",
@@ -516,8 +511,9 @@ def _default_record(spec: WorktreeContainerSpec) -> WorktreeContainerRecord:
         container_name=container_name_for_spec(spec, key),
         m2_volume=m2_volume_for_spec(spec, key),
         pr_refs=tuple(spec.pr_refs or ()),
-        zstack_head=_git_head(identity_zstack_root),
-        premium_head=_git_head(identity_premium_root),
+        zsvirt_head=_git_head(identity_zsvirt_root),
+        ee_root=os.path.realpath(identity_ee_root) if identity_ee_root else "",
+        ee_head=_git_head(identity_ee_root),
     )
 
 
@@ -529,8 +525,8 @@ def ensure_worktree_container(
         state_store=None,
 ) -> tuple[int, WorktreeContainerHandle | None]:
     spec = WorktreeContainerSpec(
-        zstack_root=os.path.realpath(spec.zstack_root),
-        premium_root=os.path.realpath(spec.premium_root) if spec.premium_root else None,
+        zsvirt_root=os.path.realpath(spec.zsvirt_root),
+        ee_root=os.path.realpath(spec.ee_root) if spec.ee_root else None,
         docker_host=normalize_docker_host(spec.docker_host),
         image=spec.image,
         platform=spec.platform or "",
@@ -538,8 +534,8 @@ def ensure_worktree_container(
         container_name=spec.container_name or "auto",
         m2_volume=spec.m2_volume or DEFAULT_M2_VOLUME,
         pr_refs=tuple(spec.pr_refs or ()),
-        identity_zstack_root=os.path.realpath(spec.identity_zstack_root) if spec.identity_zstack_root else "",
-        identity_premium_root=os.path.realpath(spec.identity_premium_root) if spec.identity_premium_root else None,
+        identity_zsvirt_root=os.path.realpath(spec.identity_zsvirt_root) if spec.identity_zsvirt_root else "",
+        identity_ee_root=os.path.realpath(spec.identity_ee_root) if spec.identity_ee_root else None,
         min_free_gb=max(0, int(spec.min_free_gb or 0)),
     )
     store = state_store or default_state_store()
@@ -547,20 +543,20 @@ def ensure_worktree_container(
     container_owner = store.find_by_container_name(defaults.container_name)
     if container_owner and container_owner.worktree_key != defaults.worktree_key:
         LOG.error(
-            "Docker container %s is already bound to another worktree: %s (zstack: %s, premium: %s). "
+            "Docker container %s is already bound to another worktree: %s (zsvirt: %s, ee: %s). "
             "Remove stale worktree container state or use a different worktree path.",
             defaults.container_name,
             container_owner.worktree_key,
-            container_owner.zstack_root,
-            container_owner.premium_root,
+            container_owner.zsvirt_root,
+            container_owner.ee_root,
         )
         return 1, None
 
     record, _created = store.get_or_create(defaults)
     container_created = False
     spec = WorktreeContainerSpec(
-        zstack_root=spec.zstack_root,
-        premium_root=spec.premium_root,
+        zsvirt_root=spec.zsvirt_root,
+        ee_root=spec.ee_root,
         docker_host=spec.docker_host,
         image=spec.image,
         platform=spec.platform,
@@ -568,8 +564,8 @@ def ensure_worktree_container(
         container_name=spec.container_name,
         m2_volume=record.m2_volume,
         pr_refs=tuple(spec.pr_refs or ()),
-        identity_zstack_root=spec.identity_zstack_root,
-        identity_premium_root=spec.identity_premium_root,
+        identity_zsvirt_root=spec.identity_zsvirt_root,
+        identity_ee_root=spec.identity_ee_root,
         min_free_gb=spec.min_free_gb,
     )
 
@@ -588,10 +584,10 @@ def ensure_worktree_container(
         return rc, None
 
     full_compile_ran = False
-    record.zstack_head = defaults.zstack_head
-    record.premium_head = defaults.premium_head
+    record.zsvirt_head = defaults.zsvirt_head
+    record.ee_head = defaults.ee_head
     record.last_used_at = _now()
-    store.save(record, update_fields=["zstack_head", "premium_head", "last_used_at"])
+    store.save(record, update_fields=["zsvirt_head", "ee_head", "last_used_at"])
 
     if require_full_compile and not record.full_compile_done:
         full_compile_ran = True
@@ -606,7 +602,7 @@ def ensure_worktree_container(
                 "last_error",
             ],
         )
-        LOG.info("Running full ZStack premium compile in %s", record.container_name)
+        LOG.info("Running full EE compile in %s", record.container_name)
         rc = docker_shell(
             runner,
             spec.docker_host,
@@ -638,8 +634,8 @@ def ensure_worktree_container(
         container_name=record.container_name,
         docker_host=spec.docker_host,
         workdir=spec.workdir,
-        work_zstack=f"{spec.workdir}/zstack",
-        work_premium=f"{spec.workdir}/zstack/premium",
+        work_zsvirt=f"{spec.workdir}/zsvirt",
+        work_ee=f"{spec.workdir}/zsvirt/zsvirt-ee",
         full_compile_ran=full_compile_ran,
     )
     return 0, handle

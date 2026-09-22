@@ -60,8 +60,8 @@ class DjangoPruneContainerStore:
         ZsvWorktreeContainerState.objects.filter(worktree_key=record.worktree_key).delete()
         if delete_compile_state:
             ZsvCompileState.objects.filter(
-                zstack_root=record.zstack_root,
-                premium_root=record.premium_root or "",
+                zsvirt_root=record.zsvirt_root,
+                ee_root=record.ee_root or "",
             ).delete()
 
 
@@ -76,10 +76,10 @@ def _records_for_docker_host(records, docker_host: str):
 
 def _print_container_record(record) -> None:
     print(f"CONTAINER {record.container_name}")
-    print(f"  zstack: {record.zstack_root}")
-    print(f"  zstack branch: {_branch_label(record.zstack_root)}")
-    print(f"  premium: {record.premium_root or '-'}")
-    print(f"  premium branch: {_branch_label(record.premium_root)}")
+    print(f"  zsvirt: {record.zsvirt_root}")
+    print(f"  zsvirt branch: {_branch_label(record.zsvirt_root)}")
+    print(f"  ee: {record.ee_root or '-'}")
+    print(f"  ee branch: {_branch_label(record.ee_root)}")
     print(f"  docker: {normalize_docker_host(record.docker_host) or 'local'}")
     print(f"  m2 volume: {record.m2_volume or '-'}")
     pr_refs = getattr(record, "pr_refs", []) or []
@@ -158,8 +158,8 @@ def _docker_remove_volume(runner, docker_host: str, volume: str) -> int:
 
 def _print_delete_target(record) -> None:
     print(f"DELETE {record.container_name}")
-    print(f"  zstack: {record.zstack_root}")
-    print(f"  premium: {record.premium_root or '-'}")
+    print(f"  zsvirt: {record.zsvirt_root}")
+    print(f"  ee: {record.ee_root or '-'}")
     print(f"  docker: {normalize_docker_host(record.docker_host) or 'local'}")
     print(f"  m2 volume: {record.m2_volume or '-'}")
 

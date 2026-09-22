@@ -1,5 +1,5 @@
 """
-ZStack: build changed modules from explicit zstack/premium worktree roots.
+ZSvirt: build changed modules from explicit main and zsvirt-ee worktree roots.
 """
 from __future__ import annotations
 
@@ -50,9 +50,9 @@ _SKIP_JAR_SUFFIXES = (
     "-shaded.jar",
 )
 DEPLOY_AUTO_EXCLUDED_MODULES = frozenset(
-    ("test", "testlib", "test-premium", "testlib-premium")
+    ("test", "testlib", "test-premium", "testlib-premium", "tests", "tests-ee", "test-ee", "testlib-ee")
 )
-MAVEN_PROFILE_PREPARE_CMD = "./runMavenProfile premium"
+MAVEN_PROFILE_PREPARE_CMD = "./runMavenProfile ee"
 RSYNC_SOURCE_EXCLUDES = "--exclude .git --exclude target --exclude '*/target' --exclude '._*' --exclude '.DS_Store' --exclude '__MACOSX'"
 SPRING_CONFIG_PREFIX = "conf/springConfigXml/"
 
@@ -90,7 +90,7 @@ class CompileWebClassesState:
 @dataclass(frozen=True)
 class CompileDeploySelection:
     main_modules: list[str]
-    premium_modules: list[str]
+    ee_modules: list[str]
     web_classes: list[CompileWebClassesState]
 
 
@@ -131,7 +131,7 @@ def _normalize_docker_host(raw: str | None) -> str:
 
 def remote_docker_compile_from_conf() -> RemoteDockerCompileConfig:
     return RemoteDockerCompileConfig(
-        image=_conf_get("zsv_compile", "remote_docker_image", "registry.docker.zstack.io:80/buildbin:debug7"),
+        image=_conf_get("zsv_compile", "remote_docker_image", "registry.docker.zstack.io:80/buildbin:debug9-zsvirt"),
         platform=_conf_get("zsv_compile", "remote_docker_platform", "linux/amd64"),
         docker_host=_normalize_docker_host(_conf_get("zsv_compile", "remote_docker_host", "")),
         workdir=_conf_get("zsv_compile", "remote_docker_workdir", "/work").rstrip("/"),
@@ -170,18 +170,18 @@ def is_git_worktree(root: str) -> bool:
     return r.returncode == 0 and (r.stdout or "").strip() == "true"
 
 
-def validate_same_branch(zstack_root: str, premium_root: str) -> bool:
-    zstack_branch = git_branch_name(zstack_root)
-    premium_branch = git_branch_name(premium_root)
-    if not zstack_branch or not premium_branch:
+def validate_same_branch(zsvirt_root: str, ee_root: str) -> bool:
+    zsvirt_branch = git_branch_name(zsvirt_root)
+    ee_branch = git_branch_name(ee_root)
+    if not zsvirt_branch or not ee_branch:
         return True
-    if zstack_branch == premium_branch:
+    if zsvirt_branch == ee_branch:
         return True
 
     LOG.error(
-        "zstack and premium branch names must be the same (zstack: %s, premium: %s)",
-        zstack_branch,
-        premium_branch,
+        "zsvirt and ee branch names must be the same (zsvirt: %s, ee: %s)",
+        zsvirt_branch,
+        ee_branch,
     )
     return False
 
@@ -202,14 +202,14 @@ class CompileDeployStateError(Exception):
 
 
 def _compile_worktree_spec(
-    zstack_root: str,
-    premium_root: str | None,
+    zsvirt_root: str,
+    ee_root: str | None,
     remote: RemoteDockerCompileConfig,
     pr_refs=(),
 ) -> WorktreeContainerSpec:
     return WorktreeContainerSpec(
-        zstack_root=zstack_root,
-        premium_root=premium_root,
+        zsvirt_root=zsvirt_root,
+        ee_root=ee_root,
         docker_host=_normalize_docker_host(remote.docker_host),
         image=remote.image,
         platform=remote.platform,
@@ -222,12 +222,12 @@ def _compile_worktree_spec(
 
 
 def compile_worktree_key(
-    zstack_root: str,
-    premium_root: str | None,
+    zsvirt_root: str,
+    ee_root: str | None,
     remote: RemoteDockerCompileConfig,
 ) -> str:
     container_key = worktree_key_for_spec(
-        _compile_worktree_spec(zstack_root, premium_root, remote)
+        _compile_worktree_spec(zsvirt_root, ee_root, remote)
     )
     base_ref = zsv_config.zsv_base_ref()
     return hashlib.sha256(f"{container_key}\0{base_ref}".encode("utf-8")).hexdigest()
@@ -277,7 +277,7 @@ def _decode_web_classes(value: str) -> list[CompileWebClassesState]:
         repo = str(item.get("repo") or "")
         source_relative_path = str(item.get("source_relative_path") or "")
         relative_path = str(item.get("relative_path") or "")
-        if repo not in ("zstack", "premium") or not source_relative_path or not relative_path:
+        if repo not in ("zsvirt", "ee") or not source_relative_path or not relative_path:
             raise CompileDeployStateError("invalid compile deploy web classes DB state: missing fields")
         out.append(CompileWebClassesState(repo, source_relative_path, relative_path))
     return _dedupe_web_classes_state(out)
@@ -314,40 +314,40 @@ def _relative_to_root(path: Path, root: Path) -> str | None:
 
 def web_classes_state_from_files(
     files: list[WebClassesFile],
-    zstack_root: str,
-    premium_root: str | None,
+    zsvirt_root: str,
+    ee_root: str | None,
 ) -> list[CompileWebClassesState]:
-    zstack_path = Path(zstack_root).resolve()
-    premium_path = Path(premium_root).resolve() if premium_root else None
+    zsvirt_path = Path(zsvirt_root).resolve()
+    ee_path = Path(ee_root).resolve() if ee_root else None
     out: list[CompileWebClassesState] = []
     for item in files:
         source = Path(item.source).resolve()
-        repo = "zstack"
-        source_relative_path = _relative_to_root(source, zstack_path)
-        if premium_path:
-            premium_relative = _relative_to_root(source, premium_path)
-            if premium_relative is not None:
-                repo = "premium"
-                source_relative_path = premium_relative
+        repo = "zsvirt"
+        source_relative_path = _relative_to_root(source, zsvirt_path)
+        if ee_path:
+            ee_relative = _relative_to_root(source, ee_path)
+            if ee_relative is not None:
+                repo = "ee"
+                source_relative_path = ee_relative
         if source_relative_path is None:
-            raise CompileDeployStateError("web classes source is outside zstack/premium roots: %s" % item.source)
+            raise CompileDeployStateError("web classes source is outside zsvirt/ee roots: %s" % item.source)
         out.append(CompileWebClassesState(repo, source_relative_path, item.relative_path))
     return _dedupe_web_classes_state(out)
 
 
 def web_classes_files_from_state(
     selection: CompileDeploySelection,
-    zstack_root: str,
-    premium_root: str | None,
+    zsvirt_root: str,
+    ee_root: str | None,
 ) -> list[WebClassesFile]:
     out: list[WebClassesFile] = []
     for item in selection.web_classes:
-        if item.repo == "premium":
-            if not premium_root:
-                raise CompileDeployStateError("previous premium web classes deploy requires premium root")
-            root = Path(premium_root)
+        if item.repo == "ee":
+            if not ee_root:
+                raise CompileDeployStateError("previous ee web classes deploy requires ee root")
+            root = Path(ee_root)
         else:
-            root = Path(zstack_root)
+            root = Path(zsvirt_root)
         source = root / item.source_relative_path
         if not source.is_file():
             raise CompileDeployStateError("previous web classes source is missing: %s" % source)
@@ -357,31 +357,31 @@ def web_classes_files_from_state(
 
 def current_compile_deploy_selection(
     main_modules: list[str],
-    premium_modules: list[str],
+    ee_modules: list[str],
     web_classes_files: list[WebClassesFile],
-    zstack_root: str,
-    premium_root: str | None,
+    zsvirt_root: str,
+    ee_root: str | None,
 ) -> CompileDeploySelection:
     return CompileDeploySelection(
         _dedupe(main_modules),
-        _dedupe(premium_modules),
-        web_classes_state_from_files(web_classes_files, zstack_root, premium_root),
+        _dedupe(ee_modules),
+        web_classes_state_from_files(web_classes_files, zsvirt_root, ee_root),
     )
 
 
 def merge_compile_deploy_selection(
     current: CompileDeploySelection,
     previous: CompileDeploySelection,
-    zstack_root: str,
-    premium_root: str | None,
+    zsvirt_root: str,
+    ee_root: str | None,
 ) -> tuple[CompileDeploySelection, list[WebClassesFile]]:
-    current_web_files = web_classes_files_from_state(current, zstack_root, premium_root)
-    previous_web_files = web_classes_files_from_state(previous, zstack_root, premium_root)
+    current_web_files = web_classes_files_from_state(current, zsvirt_root, ee_root)
+    previous_web_files = web_classes_files_from_state(previous, zsvirt_root, ee_root)
     merged_web_files = _dedupe_web_classes_files(current_web_files + previous_web_files)
     return CompileDeploySelection(
         _dedupe(current.main_modules + previous.main_modules),
-        _dedupe(current.premium_modules + previous.premium_modules),
-        web_classes_state_from_files(merged_web_files, zstack_root, premium_root),
+        _dedupe(current.ee_modules + previous.ee_modules),
+        web_classes_state_from_files(merged_web_files, zsvirt_root, ee_root),
     ), merged_web_files
 
 
@@ -395,8 +395,8 @@ class InMemoryCompileDeployStateStore:
     def save_selection(
         self,
         worktree_key: str,
-        zstack_root: str,
-        premium_root: str | None,
+        zsvirt_root: str,
+        ee_root: str | None,
         selection: CompileDeploySelection,
     ) -> None:
         self.selections_by_key[worktree_key] = selection
@@ -409,35 +409,35 @@ class DjangoCompileDeployStateStore:
             return CompileDeploySelection([], [], [])
         return CompileDeploySelection(
             _decode_list(obj.last_main_modules),
-            _decode_list(obj.last_premium_modules),
+            _decode_list(obj.last_ee_modules),
             _decode_web_classes(obj.last_web_classes),
         )
 
     def save_selection(
         self,
         worktree_key: str,
-        zstack_root: str,
-        premium_root: str | None,
+        zsvirt_root: str,
+        ee_root: str | None,
         selection: CompileDeploySelection,
     ) -> None:
         obj, _created = ZsvCompileState.objects.get_or_create(
             worktree_key=worktree_key,
             defaults={
-                "zstack_root": zstack_root,
-                "premium_root": premium_root or "",
+                "zsvirt_root": zsvirt_root,
+                "ee_root": ee_root or "",
             },
         )
-        obj.zstack_root = zstack_root
-        obj.premium_root = premium_root or ""
+        obj.zsvirt_root = zsvirt_root
+        obj.ee_root = ee_root or ""
         obj.last_main_modules = _encode_list(selection.main_modules)
-        obj.last_premium_modules = _encode_list(selection.premium_modules)
+        obj.last_ee_modules = _encode_list(selection.ee_modules)
         obj.last_web_classes = _encode_web_classes(selection.web_classes)
         obj.last_deployed_at = timezone.now()
         obj.save(update_fields=[
-            "zstack_root",
-            "premium_root",
+            "zsvirt_root",
+            "ee_root",
             "last_main_modules",
-            "last_premium_modules",
+            "last_ee_modules",
             "last_web_classes",
             "last_deployed_at",
         ])
@@ -453,8 +453,7 @@ def _is_auto_excluded(
     module: str,
     excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> bool:
-    head = module.split("/", 1)[0]
-    return head in excluded_modules
+    return any(part in excluded_modules for part in module.split("/"))
 
 
 def module_for_changed_path(
@@ -480,26 +479,26 @@ def module_for_changed_path(
 
 
 def modules_from_changed_paths(
-    zstack_root: str,
+    zsvirt_root: str,
     main_paths: list[str],
-    premium_paths: list[str],
-    premium_root: str | None = None,
+    external_paths: list[str],
+    external_root: str | None = None,
     excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> tuple[list[str], list[str]]:
     main: list[str] = []
     for path in main_paths:
-        module = module_for_changed_path(zstack_root, path, excluded_modules)
+        module = module_for_changed_path(zsvirt_root, path, excluded_modules)
         if module:
             main.append(module)
 
-    premium: list[str] = []
-    premium_root = premium_root or os.path.join(zstack_root, "premium")
-    for path in premium_paths:
-        module = module_for_changed_path(premium_root, path, excluded_modules)
+    external: list[str] = []
+    external_root = external_root or os.path.join(zsvirt_root, "zsvirt-ee")
+    for path in external_paths:
+        module = module_for_changed_path(external_root, path, excluded_modules)
         if module:
-            premium.append(module)
+            external.append(module)
 
-    return _dedupe(main), _dedupe(premium)
+    return _dedupe(main), _dedupe(external)
 
 
 def _remote_base_ref_fetch_spec(repo_root: str, base_ref: str) -> tuple[str, str, str] | None:
@@ -573,12 +572,13 @@ def _web_classes_files_from_paths(repo_root: str, rel_paths: list[str]) -> list[
     files: dict[str, WebClassesFile] = {}
     for rel_path in rel_paths:
         normalized = str(rel_path).replace("\\", "/")
-        if not normalized.startswith(SPRING_CONFIG_PREFIX):
+        prefix = "premium/" + SPRING_CONFIG_PREFIX if normalized.startswith("premium/") else SPRING_CONFIG_PREFIX
+        if not normalized.startswith(prefix):
             continue
         source = root / normalized
         if not source.is_file():
             continue
-        target = normalized[len(SPRING_CONFIG_PREFIX):].strip("/")
+        target = normalized[len(prefix):].strip("/")
         if not target:
             continue
         files[f"springConfigXml/{target}"] = WebClassesFile(
@@ -589,45 +589,51 @@ def _web_classes_files_from_paths(repo_root: str, rel_paths: list[str]) -> list[
 
 
 def collect_web_classes_files(
-    zstack_root: str,
+    zsvirt_root: str,
     main_paths: list[str],
-    premium_paths: list[str],
-    premium_root: str | None = None,
+    ee_paths: list[str],
+    ee_root: str | None = None,
 ) -> list[WebClassesFile]:
     files: dict[str, WebClassesFile] = {}
-    for item in _web_classes_files_from_paths(zstack_root, main_paths):
+    for item in _web_classes_files_from_paths(zsvirt_root, main_paths):
         files[item.relative_path] = item
-    if premium_root and os.path.isdir(premium_root):
-        for item in _web_classes_files_from_paths(premium_root, premium_paths):
+    if ee_root and os.path.isdir(ee_root):
+        for item in _web_classes_files_from_paths(ee_root, ee_paths):
             files[item.relative_path] = item
+    # Match the WAR overlay order even when only a lower-priority file changed.
+    for target in list(files):
+        relative = "conf/" + target
+        for base in (Path(zsvirt_root) / "premium", Path(ee_root) if ee_root else None):
+            if base is not None and (base / relative).is_file():
+                files[target] = WebClassesFile(str(base / relative), target)
     return list(files.values())
 
 
-def collect_changed_web_classes_files(zstack_root: str, premium_root: str | None = None) -> list[WebClassesFile]:
-    premium_root = premium_root or os.path.join(zstack_root, "premium")
+def collect_changed_web_classes_files(zsvirt_root: str, ee_root: str | None = None) -> list[WebClassesFile]:
+    ee_root = ee_root or os.path.join(zsvirt_root, "zsvirt-ee")
     main_paths: list[str] = []
-    if is_git_worktree(zstack_root):
+    if is_git_worktree(zsvirt_root):
         main_paths = _dedupe(
-            changed_paths_from_worktree(zstack_root) + changed_paths_from_head_commit(zstack_root)
+            changed_paths_from_worktree(zsvirt_root) + changed_paths_from_head_commit(zsvirt_root)
         )
-    premium_paths: list[str] = []
-    if os.path.isdir(premium_root) and is_git_worktree(premium_root):
-        premium_paths = _dedupe(
-            changed_paths_from_worktree(premium_root) + changed_paths_from_head_commit(premium_root)
+    ee_paths: list[str] = []
+    if os.path.isdir(ee_root) and is_git_worktree(ee_root):
+        ee_paths = _dedupe(
+            changed_paths_from_worktree(ee_root) + changed_paths_from_head_commit(ee_root)
         )
-    return collect_web_classes_files(zstack_root, main_paths, premium_paths, premium_root)
+    return collect_web_classes_files(zsvirt_root, main_paths, ee_paths, ee_root)
 
 
 def collect_explicit_web_classes_files(
-    zstack_root: str,
-    premium_root: str | None,
+    zsvirt_root: str,
+    ee_root: str | None,
     paths: list[str] | None,
 ) -> list[WebClassesFile]:
     if not paths:
         return []
 
-    zstack_base = Path(zstack_root).resolve()
-    premium_base = Path(premium_root).resolve() if premium_root else None
+    zsvirt_base = Path(zsvirt_root).resolve()
+    ee_base = Path(ee_root).resolve() if ee_root else None
     out: dict[str, WebClassesFile] = {}
 
     for raw_path in paths:
@@ -635,32 +641,33 @@ def collect_explicit_web_classes_files(
         if not value:
             continue
 
-        repo_base = zstack_base
-        if value.startswith("zstack:"):
-            value = value[len("zstack:"):]
-            repo_base = zstack_base
-        elif value.startswith("premium:"):
-            value = value[len("premium:"):]
-            if not premium_base:
-                raise CompileDeployStateError("explicit premium web class requires premium root")
-            repo_base = premium_base
+        repo_base = zsvirt_base
+        if value.startswith("zsvirt:"):
+            value = value[len("zsvirt:"):]
+            repo_base = zsvirt_base
+        elif value.startswith("ee:"):
+            value = value[len("ee:"):]
+            if not ee_base:
+                raise CompileDeployStateError("explicit ee web class requires ee root")
+            repo_base = ee_base
 
         source = Path(value)
         if not source.is_absolute():
             source = repo_base / value
         source = source.resolve()
 
-        zstack_relative = _relative_to_root(source, zstack_base)
-        premium_relative = _relative_to_root(source, premium_base) if premium_base else None
-        source_relative = premium_relative or zstack_relative
+        zsvirt_relative = _relative_to_root(source, zsvirt_base)
+        ee_relative = _relative_to_root(source, ee_base) if ee_base else None
+        source_relative = ee_relative or zsvirt_relative
         if source_relative is None:
-            raise CompileDeployStateError("explicit web class is outside zstack/premium roots: %s" % raw_path)
-        if not source_relative.startswith(SPRING_CONFIG_PREFIX):
+            raise CompileDeployStateError("explicit web class is outside zsvirt/ee roots: %s" % raw_path)
+        prefix = "premium/" + SPRING_CONFIG_PREFIX if source_relative.startswith("premium/") else SPRING_CONFIG_PREFIX
+        if not source_relative.startswith(prefix):
             raise CompileDeployStateError("explicit web class must be under conf/springConfigXml/: %s" % raw_path)
         if not source.is_file():
             raise CompileDeployStateError("explicit web class source is missing: %s" % source)
 
-        target = source_relative[len(SPRING_CONFIG_PREFIX):].strip("/")
+        target = source_relative[len(prefix):].strip("/")
         if not target:
             raise CompileDeployStateError("explicit web class target is empty: %s" % raw_path)
         relative_path = f"springConfigXml/{target}"
@@ -783,103 +790,103 @@ def _modules_implementing_interfaces(
 
 
 def infer_interface_implementation_modules(
-    zstack_root: str,
-    premium_root: str | None,
+    zsvirt_root: str,
+    external_root: str | None,
     main_paths: list[str],
-    premium_paths: list[str],
+    external_paths: list[str],
     excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> tuple[list[str], list[str]]:
-    interfaces = _java_interfaces_from_changed_paths(zstack_root, main_paths)
-    if premium_root and os.path.isdir(premium_root):
-        interfaces.extend(_java_interfaces_from_changed_paths(premium_root, premium_paths))
+    interfaces = _java_interfaces_from_changed_paths(zsvirt_root, main_paths)
+    if external_root and os.path.isdir(external_root):
+        interfaces.extend(_java_interfaces_from_changed_paths(external_root, external_paths))
     interfaces = _dedupe(interfaces)
     if not interfaces:
         return [], []
 
     excluded_from_main: list[str] = []
-    if premium_root and os.path.isdir(premium_root):
-        main_root = Path(zstack_root).resolve()
-        premium_path = Path(premium_root).resolve()
-        if _is_under(premium_path, main_root):
-            excluded_from_main.append(str(premium_path))
+    if external_root and os.path.isdir(external_root):
+        main_root = Path(zsvirt_root).resolve()
+        external_path = Path(external_root).resolve()
+        if _is_under(external_path, main_root):
+            excluded_from_main.append(str(external_path))
 
     main = _modules_implementing_interfaces(
-        zstack_root,
+        zsvirt_root,
         interfaces,
         excluded_from_main,
         excluded_modules,
     )
-    premium: list[str] = []
-    if premium_root and os.path.isdir(premium_root):
-        premium = _modules_implementing_interfaces(
-            premium_root,
+    external: list[str] = []
+    if external_root and os.path.isdir(external_root):
+        external = _modules_implementing_interfaces(
+            external_root,
             interfaces,
             excluded_modules=excluded_modules,
         )
-    return _dedupe(main), _dedupe(premium)
+    return _dedupe(main), _dedupe(external)
 
 
 def auto_detect_modules(
-    zstack_root: str,
-    premium_root: str | None = None,
+    zsvirt_root: str,
+    external_root: str | None = None,
     excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> tuple[list[str], list[str]]:
-    premium_root = premium_root or os.path.join(zstack_root, "premium")
-    main_worktree_paths = changed_paths_from_worktree(zstack_root)
-    premium_worktree_paths: list[str] = []
-    if os.path.isdir(premium_root):
-        premium_worktree_paths = changed_paths_from_worktree(premium_root)
-    main, premium = modules_from_changed_paths(
-        zstack_root,
+    external_root = external_root or os.path.join(zsvirt_root, "zsvirt-ee")
+    main_worktree_paths = changed_paths_from_worktree(zsvirt_root)
+    external_worktree_paths: list[str] = []
+    if os.path.isdir(external_root):
+        external_worktree_paths = changed_paths_from_worktree(external_root)
+    main, external = modules_from_changed_paths(
+        zsvirt_root,
         main_worktree_paths,
-        premium_worktree_paths,
-        premium_root,
+        external_worktree_paths,
+        external_root,
         excluded_modules,
     )
 
-    main_paths = changed_paths_from_head_commit(zstack_root)
-    premium_paths: list[str] = []
-    if os.path.isdir(premium_root):
-        premium_paths = changed_paths_from_head_commit(premium_root)
-    head_main, head_premium = modules_from_changed_paths(
-        zstack_root,
+    main_paths = changed_paths_from_head_commit(zsvirt_root)
+    external_paths: list[str] = []
+    if os.path.isdir(external_root):
+        external_paths = changed_paths_from_head_commit(external_root)
+    head_main, head_external = modules_from_changed_paths(
+        zsvirt_root,
         main_paths,
-        premium_paths,
-        premium_root,
+        external_paths,
+        external_root,
         excluded_modules,
     )
-    inferred_main, inferred_premium = infer_interface_implementation_modules(
-        zstack_root,
-        premium_root,
+    inferred_main, inferred_external = infer_interface_implementation_modules(
+        zsvirt_root,
+        external_root,
         _dedupe(main_worktree_paths + main_paths),
-        _dedupe(premium_worktree_paths + premium_paths),
+        _dedupe(external_worktree_paths + external_paths),
         excluded_modules,
     )
-    return _dedupe(main + head_main + inferred_main), _dedupe(premium + head_premium + inferred_premium)
+    return _dedupe(main + head_main + inferred_main), _dedupe(external + head_external + inferred_external)
 
 
-def _normalize_premium_module(module: str) -> str:
+def _normalize_ee_module(module: str) -> str:
     module = module.strip().replace("\\", "/").strip("/")
-    if module.startswith("premium/"):
-        module = module[len("premium/"):]
+    if module.startswith("zsvirt-ee/"):
+        module = module[len("zsvirt-ee/"):]
     return module.strip("/")
 
 
-def maven_build_plan(main_mods: list[str], prem_mods: list[str]) -> MavenBuildPlan:
-    premium = [_normalize_premium_module(m) for m in prem_mods]
-    premium = [m for m in premium if m]
+def maven_build_plan(main_mods: list[str], external_mods: list[str]) -> MavenBuildPlan:
+    ee = [_normalize_ee_module(m) for m in external_mods]
+    ee = [m for m in ee if m]
     modules = list(main_mods)
-    modules.extend(f"premium/{m}" for m in premium)
+    modules.extend(f"zsvirt-ee/{m}" for m in ee)
     return MavenBuildPlan(
         modules=_dedupe(modules),
-        profiles=["premium"] if premium else [],
+        profiles=["ee"],
     )
 
 
 def _maven_pl_lines(grouped: dict) -> tuple[str, str]:
     return (
         ",".join(grouped["main"]) or "(none)",
-        ",".join(grouped["premium"]) or "(none)",
+        ",".join(grouped["ee"]) or "(none)",
     )
 
 
@@ -931,17 +938,17 @@ def _artifact_jars(module_dir: Path) -> list[str]:
 
 
 def collect_built_jars(
-    zstack_root: str,
+    zsvirt_root: str,
     main_mods: list[str],
-    prem_mods: list[str],
-    premium_root: str | None = None,
+    external_mods: list[str],
+    ee_root: str | None = None,
 ) -> list[str]:
-    root = Path(zstack_root)
+    root = Path(zsvirt_root)
     jars: list[str] = []
     for m in main_mods:
         jars.extend(_artifact_jars(root / m))
-    pr = Path(premium_root) if premium_root else root / "premium"
-    for m in prem_mods:
+    pr = Path(ee_root) if ee_root else root / "zsvirt-ee"
+    for m in external_mods:
         jars.extend(_artifact_jars(pr / m))
     by_base: dict[str, str] = {}
     for j in jars:
@@ -1020,20 +1027,20 @@ def _local_jar_copy_root_for_root(root: str) -> str:
 
 def _docker_sync_target_lines(
         plan: MavenBuildPlan,
-        work_zstack: str,
-        work_premium: str,
+        work_zsvirt: str,
+        work_ee: str,
         out_root: str = "/out",
 ) -> str:
     lines: list[str] = []
     for module in plan.modules:
-        if module.startswith("premium/"):
+        if module.startswith("zsvirt-ee/"):
             lines.append(
-                f"sync_target {shlex.quote(work_premium)} {shlex.quote(out_root + '/premium')} "
-                f"{shlex.quote(module[len('premium/'):])}"
+                f"sync_target {shlex.quote(work_ee)} {shlex.quote(out_root + '/ee')} "
+                f"{shlex.quote(module[len('zsvirt-ee/'):])}"
             )
         else:
             lines.append(
-                f"sync_target {shlex.quote(work_zstack)} {shlex.quote(out_root + '/zstack')} {shlex.quote(module)}"
+                f"sync_target {shlex.quote(work_zsvirt)} {shlex.quote(out_root + '/zsvirt')} {shlex.quote(module)}"
             )
     return "\n".join(lines)
 
@@ -1079,8 +1086,8 @@ sync_target() {
 
 
 def run_mvn_in_remote_docker(
-    zstack_root: str,
-    premium_root: str | None,
+    zsvirt_root: str,
+    ee_root: str | None,
     plan: MavenBuildPlan,
     remote: RemoteDockerCompileConfig,
     local_jar_copy_root: str,
@@ -1099,8 +1106,8 @@ def run_mvn_in_remote_docker(
 
     workdir = remote.workdir or "/work"
     spec = _compile_worktree_spec(
-        zstack_root,
-        premium_root,
+        zsvirt_root,
+        ee_root,
         RemoteDockerCompileConfig(
             image=remote.image,
             platform=remote.platform,
@@ -1120,16 +1127,16 @@ def run_mvn_in_remote_docker(
     if rc != 0 or handle is None:
         return rc or 1
 
-    work_zstack = handle.work_zstack
-    work_premium = handle.work_premium
+    work_zsvirt = handle.work_zsvirt
+    work_ee = handle.work_ee
     out_root = "/tmp/cbok-zsv-out"
-    sync_targets = _docker_sync_target_lines(plan, work_zstack, work_premium, out_root)
+    sync_targets = _docker_sync_target_lines(plan, work_zsvirt, work_ee, out_root)
     compile_line = "" if handle.full_compile_ran else mvn_inner
     build_script = f"""
 set -euo pipefail
 rm -rf {out_root}
-mkdir -p {out_root}/zstack {out_root}/premium
-cd {shlex.quote(work_zstack)}
+mkdir -p {out_root}/zsvirt {out_root}/ee
+cd {shlex.quote(work_zsvirt)}
 {compile_line}
 {_docker_sync_target_function()}
 {sync_targets}
@@ -1149,27 +1156,27 @@ cd {shlex.quote(work_zstack)}
     )
     if rc != 0:
         return rc
-    local_zstack_jars = os.path.join(local_jar_copy_root, "zstack")
-    local_premium_jars = os.path.join(local_jar_copy_root, "premium")
-    Path(local_zstack_jars).mkdir(parents=True, exist_ok=True)
-    Path(local_premium_jars).mkdir(parents=True, exist_ok=True)
+    local_zsvirt_jars = os.path.join(local_jar_copy_root, "zsvirt")
+    local_ee_jars = os.path.join(local_jar_copy_root, "ee")
+    Path(local_zsvirt_jars).mkdir(parents=True, exist_ok=True)
+    Path(local_ee_jars).mkdir(parents=True, exist_ok=True)
 
     rc = _docker_cp_from_container(
         runner,
         docker_host,
         handle.container_name,
-        f"{out_root}/zstack/.",
-        local_zstack_jars,
+        f"{out_root}/zsvirt/.",
+        local_zsvirt_jars,
     )
     if rc != 0:
         return rc
-    if premium_root:
+    if ee_root:
         rc = _docker_cp_from_container(
             runner,
             docker_host,
             handle.container_name,
-            f"{out_root}/premium/.",
-            local_premium_jars,
+            f"{out_root}/ee/.",
+            local_ee_jars,
         )
         if rc != 0:
             return rc
@@ -1183,14 +1190,14 @@ def print_plan(
     grouped: dict,
     plan: MavenBuildPlan,
 ) -> None:
-    print("== Git (zstack repo) ==")
+    print("== Git (zsvirt repo) ==")
     print(f"HEAD: {head_line}")
     if full_hash:
         print(f"Full: {full_hash}")
     g_m, g_p = _maven_pl_lines(grouped)
     print("\n== Maven -pl (auto-detected) ==")
-    print("main (zstack/):", g_m)
-    print("premium (premium/):", g_p)
+    print("main (zsvirt/):", g_m)
+    print("EE (zsvirt-ee/):", g_p)
     print("combined -pl:", ",".join(plan.modules) or "(none)")
     print("profiles:", ",".join(plan.profiles) or "(none)")
     sys.stdout.flush()
@@ -1272,17 +1279,17 @@ def run_compile_flow(
     address: str | None,
     remote_lib: str,
     no_deploy: bool,
-    zstack_root: str | None = None,
-    premium_root: str | None = None,
+    zsvirt_root: str | None = None,
+    ee_root: str | None = None,
     extra_web_classes: list[str] | None = None,
     pr_url: str | None = None,
     runner,
     compile_state_store=None,
 ) -> int:
-    if not zstack_root:
-        LOG.error("--zstack-root is required for remote Docker compile.")
+    if not zsvirt_root:
+        LOG.error("--zsvirt-root is required for remote Docker compile.")
         return 1
-    root = os.path.realpath(zstack_root)
+    root = os.path.realpath(zsvirt_root)
     pom = os.path.join(root, "pom.xml")
     if not os.path.isfile(pom):
         LOG.error("Not a ZStack Maven root (missing pom.xml): %s", root)
@@ -1297,28 +1304,35 @@ def run_compile_flow(
     if not remote_docker.docker_host:
         LOG.error("remote Docker compile requires [zsv_compile] remote_docker_host.")
         return 1
-    if not premium_root:
-        LOG.error("--premium-root is required for remote Docker compile.")
+    if not ee_root:
+        LOG.error("--ee-root is required for remote Docker compile.")
         return 1
-    premium_real_root = os.path.realpath(premium_root)
-    if not premium_real_root:
-        LOG.error("Remote Docker compile requires premium source for ./runMavenProfile premium.")
+    ee_real_root = os.path.realpath(ee_root)
+    if not ee_real_root:
+        LOG.error("Remote Docker compile requires ee source for ./runMavenProfile ee.")
         return 1
-    if not os.path.isdir(premium_real_root):
-        LOG.error("premium root is not a directory: %s", premium_real_root)
+    if not os.path.isdir(ee_real_root):
+        LOG.error("ee root is not a directory: %s", ee_real_root)
         return 1
-    if not validate_same_branch(root, premium_real_root):
+    if ee_real_root in (root, os.path.realpath(os.path.join(root, "premium"))):
+        LOG.error("--ee-root must point to the independent zsvirt-ee checkout, not the main repository or its premium directory.")
         return 1
-    if not validate_changed_paths_base_ref(root):
+    if not validate_same_branch(root, ee_real_root):
         return 1
-    if not validate_changed_paths_base_ref(premium_real_root):
+    if not zsv_base_ref.check_worktree_clean(root):
+        return 1
+    if not zsv_base_ref.check_worktree_clean(ee_real_root):
+        return 1
+    if not zsv_base_ref.rebase_worktree(root):
+        return 1
+    if not zsv_base_ref.rebase_worktree(ee_real_root):
         return 1
 
-    user_main, user_prem = auto_detect_modules(root, premium_real_root)
+    user_main, user_ee = auto_detect_modules(root, ee_real_root)
     try:
         web_classes_files = _dedupe_web_classes_files(
-            collect_explicit_web_classes_files(root, premium_real_root, extra_web_classes) +
-            collect_changed_web_classes_files(root, premium_real_root)
+            collect_explicit_web_classes_files(root, ee_real_root, extra_web_classes) +
+            collect_changed_web_classes_files(root, ee_real_root)
         )
     except CompileDeployStateError as exc:
         LOG.error("%s", exc)
@@ -1328,42 +1342,42 @@ def run_compile_flow(
     worktree_key = ""
     if not no_deploy:
         try:
-            worktree_key = compile_worktree_key(root, premium_real_root, remote_docker)
+            worktree_key = compile_worktree_key(root, ee_real_root, remote_docker)
             state_store = compile_state_store or default_compile_deploy_state_store()
             previous_selection = state_store.load_selection(worktree_key)
             current_selection = current_compile_deploy_selection(
                 user_main,
-                user_prem,
+                user_ee,
                 web_classes_files,
                 root,
-                premium_real_root,
+                ee_real_root,
             )
             merged_selection, web_classes_files = merge_compile_deploy_selection(
                 current_selection,
                 previous_selection,
                 root,
-                premium_real_root,
+                ee_real_root,
             )
             user_main = merged_selection.main_modules
-            user_prem = merged_selection.premium_modules
+            user_ee = merged_selection.ee_modules
         except CompileDeployStateError as exc:
             LOG.error("%s", exc)
             return 1
-    if not user_main and not user_prem and not web_classes_files:
+    if not user_main and not user_ee and not web_classes_files:
         LOG.error("No changed Maven modules or deployable web classes found from current HEAD commit.")
         return 1
 
     grouped = {
         "main": list(user_main),
-        "premium": list(user_prem),
+        "ee": list(user_ee),
     }
-    plan = maven_build_plan(grouped["main"], grouped["premium"])
+    plan = maven_build_plan(grouped["main"], grouped["ee"])
     head_line, full_hash = git_summary(root)
     print_plan(root, head_line, full_hash, grouped, plan)
 
-    if grouped["premium"]:
-        if not premium_real_root:
-            LOG.error("Premium modules requested but premium source is not a directory.")
+    if grouped["ee"]:
+        if not ee_real_root:
+            LOG.error("EE modules requested but ee source is not a directory.")
             return 1
 
     local_jar_copy_root = _local_jar_copy_root_for_root(root)
@@ -1371,7 +1385,7 @@ def run_compile_flow(
 
     rc = run_mvn_in_remote_docker(
         root,
-        premium_real_root,
+        ee_real_root,
         plan,
         remote_docker,
         local_jar_copy_root,
@@ -1381,13 +1395,13 @@ def run_compile_flow(
     if rc != 0:
         return rc
 
-    local_zstack_jars = os.path.join(local_jar_copy_root, "zstack")
-    local_premium_jars = os.path.join(local_jar_copy_root, "premium")
+    local_zsvirt_jars = os.path.join(local_jar_copy_root, "zsvirt")
+    local_ee_jars = os.path.join(local_jar_copy_root, "ee")
     jars = collect_built_jars(
-        local_zstack_jars,
+        local_zsvirt_jars,
         grouped["main"],
-        grouped["premium"],
-        local_premium_jars,
+        grouped["ee"],
+        local_ee_jars,
     )
     if not jars:
         LOG.warning("Build finished but no JARs found under target/ for selected modules.")
@@ -1433,7 +1447,7 @@ def run_compile_flow(
             return rc
     if state_store and current_selection is not None:
         try:
-            state_store.save_selection(worktree_key, root, premium_real_root, current_selection)
+            state_store.save_selection(worktree_key, root, ee_real_root, current_selection)
         except CompileDeployStateError as exc:
             LOG.error("%s", exc)
             return 1

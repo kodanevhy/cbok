@@ -306,34 +306,34 @@ class ZSphereCommands(base.BaseCommand):
         return returncode
 
     @args.action_description(
-        "Build changed ZStack modules, copy JARs to remote Tomcat lib")
+        "Build changed ZSvirt modules, copy JARs to remote Tomcat lib")
     @args.args(
         "--address", metavar="<ip>", required=False,
         help="Target ZSphere/ZStack node (root SSH); required for deploy "
              "(omit with --no-deploy)")
     @args.args(
-        "--zstack-root", metavar="<dir>", required=True,
-        help="ZStack checkout root for the current worktree")
+        "--zsvirt-root", metavar="<dir>", required=True,
+        help="ZSvirt checkout root for the current worktree")
     @args.args(
-        "--premium-root", metavar="<dir>", required=True,
-        help="premium checkout root for the current worktree")
+        "--ee-root", metavar="<dir>", required=True,
+        help="zsvirt-ee checkout root for the current worktree")
     @args.args(
         "--no-deploy", action="store_true",
         help="Build and skip remote backup/copy")
     @args.args(
         "--web-class", action="append", default=[],
         help="Extra conf/springConfigXml file to sync to WEB-INF/classes. "
-             "Use zstack:<path> or premium:<path> to disambiguate.")
+             "Use zsvirt:<path> or ee:<path> to disambiguate.")
     @args.args(
         "--pr-url", metavar="<repo=url[,repo=url...]>",
-        help="PR/MR URLs linked to this worktree container; repo is zstack, "
-             "premium, zstack-utility, or zstack-store")
+        help="PR/MR URLs linked to this worktree container; repo is zsvirt, "
+             "zsvirt-ee, zsvirt-utility, or zstack-store")
     def compile(
             self,
             address=None,
             no_deploy=False,
-            zstack_root=None,
-            premium_root=None,
+            zsvirt_root=None,
+            ee_root=None,
             web_class=None,
             pr_url=None,
     ):
@@ -355,21 +355,21 @@ class ZSphereCommands(base.BaseCommand):
             address=address if deploy else None,
             remote_lib=_zsv_deploy_conf("remote_lib", DEFAULT_REMOTE_LIB),
             no_deploy=no_deploy,
-            zstack_root=zstack_root,
-            premium_root=premium_root,
+            zsvirt_root=zsvirt_root,
+            ee_root=ee_root,
             extra_web_classes=web_class or [],
             pr_url=pr_url or "",
             runner=self.p_runner,
         )
 
     @args.action_description(
-        "Run a ZStack Groovy integration test in a reusable worktree Docker container")
+        "Run a ZSvirt Groovy integration test in a reusable worktree Docker container")
     @args.args(
-        "--zstack-branch", metavar="<git-ref>", required=True,
-        help="ZStack branch/ref to test")
+        "--zsvirt-branch", metavar="<git-ref>", required=True,
+        help="ZSvirt branch/ref to test")
     @args.args(
-        "--premium-branch", metavar="<git-ref>", required=True,
-        help="premium branch/ref to test")
+        "--ee-branch", metavar="<git-ref>", required=True,
+        help="zsvirt-ee branch/ref to test")
     @args.args(
         "--test-class", metavar="<fqcn>", required=True,
         help="Groovy Test or Case class; Case mode requires fully qualified class name")
@@ -377,47 +377,47 @@ class ZSphereCommands(base.BaseCommand):
         "--test-mode", choices=("auto", "case", "suite"), default="auto",
         help="auto: *Test runs as a suite, other classes run as designated Case")
     @args.args(
-        "--zstack-repo", metavar="<dir>", required=True,
-        help="Source ZStack repo for the current worktree")
+        "--zsvirt-repo", metavar="<dir>", required=True,
+        help="Source ZSvirt repo for the current worktree")
     @args.args(
-        "--premium-repo", metavar="<dir>", required=True,
-        help="Source premium repo for the current worktree")
+        "--ee-repo", metavar="<dir>", required=True,
+        help="Source zsvirt-ee repo for the current worktree")
     @args.args(
         "--work-root", metavar="<dir>", required=False,
         default=None,
-        help="Reusable run directory; default is /tmp/cbok-zsv-groovy-test-<zstack-branch>-<premium-branch>")
+        help="Reusable run directory; default is /tmp/cbok-zsv-groovy-test-<zsvirt-branch>-<ee-branch>")
     @args.args(
         "--run-id", metavar="<name>", required=False,
         default=None,
         help="Stable suffix for Docker network/container and default work root")
     @args.args(
         "--refresh-worktree", action="store_true",
-        help="Replace the generated zstack/premium worktree before the run")
+        help="Replace the generated zsvirt/zsvirt-ee worktrees before the run")
     @args.args(
         "--refresh-deploy-db", action="store_true",
         help="Redeploy the Groovy test database instead of reusing a prepared database")
     def groovy_test(
             self,
-            zstack_branch=None,
-            premium_branch=None,
+            zsvirt_branch=None,
+            ee_branch=None,
             test_class=None,
             test_mode="auto",
-            zstack_repo=None,
-            premium_repo=None,
+            zsvirt_repo=None,
+            ee_repo=None,
             work_root=None,
             run_id=None,
             refresh_worktree=False,
             refresh_deploy_db=False,
     ):
-        """Run a ZStack Groovy integration test in a reusable Docker container"""
+        """Run a ZSvirt Groovy integration test in a reusable Docker container"""
         _log_zsv_base_ref()
         return run_groovy_test_flow(
-            zstack_branch=zstack_branch,
-            premium_branch=premium_branch,
+            zsvirt_branch=zsvirt_branch,
+            ee_branch=ee_branch,
             test_class=test_class,
             test_mode=test_mode,
-            zstack_repo=zstack_repo,
-            premium_repo=premium_repo,
+            zsvirt_repo=zsvirt_repo,
+            ee_repo=ee_repo,
             work_root=work_root,
             run_id=run_id,
             keep_worktree=not refresh_worktree,
@@ -464,7 +464,7 @@ class ZSphereCommands(base.BaseCommand):
         help="Node used to discover ZSphere nodes")
     @args.args(
         "--utility-root", metavar="<dir>", required=True,
-        help="zstack-utility checkout root for the current worktree")
+        help="zsvirt-utility checkout root for the current worktree")
     @args.args(
         "--dry-run", action="store_true",
         help="Only print detected files and nodes")

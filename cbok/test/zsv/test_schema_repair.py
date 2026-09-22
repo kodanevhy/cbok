@@ -460,7 +460,7 @@ class SchemaRepairTest(unittest.TestCase):
             self.assertNotIn("--iso-url", option_names)
             self.assertNotIn("--schema-branch", option_names)
             self.assertNotIn("--no-apply-schema-repair", option_names)
-            self.assertNotIn("--zstack-root", option_names)
+            self.assertNotIn("--zsvirt-root", option_names)
             self.assertNotIn("--db-file", option_names)
 
     def test_zsv_shared_settings_configure_base_ref_only(self):
@@ -470,7 +470,7 @@ class SchemaRepairTest(unittest.TestCase):
 
         self.assertIn("base_ref", option_names)
         self.assertIsNone(base_ref.default)
-        self.assertNotIn("zstack_root", option_names)
+        self.assertNotIn("zsvirt_root", option_names)
         self.assertNotIn("schema_branch", option_names)
         self.assertNotIn("db_file", option_names)
 
@@ -500,12 +500,12 @@ class SchemaRepairTest(unittest.TestCase):
     def test_zsv_runtime_target_args_are_required_cli(self):
         required_by_method = {
             ZSphereCommands.restart_mn: ("--address",),
-            ZSphereCommands.compile: ("--zstack-root", "--premium-root"),
+            ZSphereCommands.compile: ("--zsvirt-root", "--ee-root"),
             ZSphereCommands.groovy_test: (
-                "--zstack-branch",
-                "--premium-branch",
-                "--zstack-repo",
-                "--premium-repo",
+                "--zsvirt-branch",
+                "--ee-branch",
+                "--zsvirt-repo",
+                "--ee-repo",
                 "--test-class",
             ),
             ZSphereCommands.replace_agent: ("--primary-node", "--utility-root"),

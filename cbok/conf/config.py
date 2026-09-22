@@ -94,7 +94,8 @@ ZSV_COMPILE = Group(
     options=[
         Option("remote_docker_host", default="tcp://172.26.50.70:2375",
         help="Remote Docker daemon used for ZSV compile"),
-        Option("remote_docker_image", default="registry.docker.zstack.io:80/buildbin:debug7",
+        # Source: zstackio/devops, jenkins/build_job_pipeline.jenkinsfile (zsvirtbin container).
+        Option("remote_docker_image", default="registry.docker.zstack.io:80/buildbin:debug9-zsvirt",
         help="Docker image used for compile and Groovy tests"),
         Option("remote_docker_platform", default="linux/amd64",
         help="Docker platform for compile and Groovy tests"),

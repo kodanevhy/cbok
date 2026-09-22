@@ -61,13 +61,13 @@ class FakeWorktreeContainerStore:
 
 class WorktreeContainerTest(unittest.TestCase):
     def _write_repo(self, root: Path):
-        (root / "testlib").mkdir(parents=True)
+        (root / "tests/testlib-simple").mkdir(parents=True)
         (root / "plugin/foo").mkdir(parents=True)
         (root / "pom.xml").write_text("<project/>", encoding="utf-8")
 
-    def _write_premium(self, root: Path):
-        (root / "testlib-premium").mkdir(parents=True)
-        (root / "test-premium").mkdir(parents=True)
+    def _write_ee(self, root: Path):
+        (root / "tests-ee/testlib-ee").mkdir(parents=True)
+        (root / "tests-ee/test-ee").mkdir(parents=True)
 
     def _shell_scripts(self, runner):
         return [
@@ -75,28 +75,46 @@ class WorktreeContainerTest(unittest.TestCase):
             if isinstance(cmd, list) and cmd[:2] == ["bash", "-lc"]
         ]
 
+    def test_new_container_pins_maven_mirror_without_relying_on_dns(self):
+        spec = worktree_container.WorktreeContainerSpec(
+            zsvirt_root="/source/zsvirt", docker_host="", image="compile-image:unit",
+            min_free_gb=0,
+        )
+        runner = FakeRunner()
+        rc, created = worktree_container.ensure_container_exists(runner, spec, "compile-container")
+        self.assertEqual((0, True), (rc, created))
+        create = next(shlex.split(script) for script in self._shell_scripts(runner)
+                      if "docker create" in script)
+        self.assertEqual("maven.mirror.zstack.io:172.24.201.252", create[create.index("--add-host") + 1])
+
+    def test_old_repository_labels_are_rejected(self):
+        self.assertEqual(("zsvirt", "zsvirt-ee", "zsvirt-utility", "zstack-store"), worktree_container.PR_REPOS)
+        for repo in ("zstack", "premium", "zstack-utility"):
+            with self.subTest(repo=repo), self.assertRaises(ValueError):
+                worktree_container.parse_worktree_pr_refs(repo + "=https://example.test/mr/1")
+
     def test_parse_worktree_pr_refs_validates_repo_prefixed_urls(self):
         refs = worktree_container.parse_worktree_pr_refs(
-            "ZStack=https://github.com/kodanevhy/cbok/pull/78,"
-            "zstack=https://github.com/kodanevhy/cbok/pull/78,"
-            "premium=https://dev.zstack.io/zstackio/premium/-/merge_requests/2,"
-            "zstack-utility=https://dev.zstack.io/zstackio/zstack-utility/-/merge_requests/3,"
+            "ZSvirt=http://dev.zstack.io:9080/zvf/zsvirt/-/merge_requests/78,"
+            "zsvirt=http://dev.zstack.io:9080/zvf/zsvirt/-/merge_requests/78,"
+            "zsvirt-ee=http://dev.zstack.io:9080/zvf/zsvirt-ee/-/merge_requests/2,"
+            "zsvirt-utility=http://dev.zstack.io:9080/zvf/zsvirt-utility/-/merge_requests/3,"
             "zstack-store=https://dev.zstack.io/zstackio/zstack-store/-/merge_requests/4"
         )
 
         self.assertEqual(
             (
                 worktree_container.WorktreePullRequest(
-                    repo="zstack",
-                    pr_url="https://github.com/kodanevhy/cbok/pull/78",
+                    repo="zsvirt",
+                    pr_url="http://dev.zstack.io:9080/zvf/zsvirt/-/merge_requests/78",
                 ),
                 worktree_container.WorktreePullRequest(
-                    repo="premium",
-                    pr_url="https://dev.zstack.io/zstackio/premium/-/merge_requests/2",
+                    repo="zsvirt-ee",
+                    pr_url="http://dev.zstack.io:9080/zvf/zsvirt-ee/-/merge_requests/2",
                 ),
                 worktree_container.WorktreePullRequest(
-                    repo="zstack-utility",
-                    pr_url="https://dev.zstack.io/zstackio/zstack-utility/-/merge_requests/3",
+                    repo="zsvirt-utility",
+                    pr_url="http://dev.zstack.io:9080/zvf/zsvirt-utility/-/merge_requests/3",
                 ),
                 worktree_container.WorktreePullRequest(
                     repo="zstack-store",
@@ -112,15 +130,15 @@ class WorktreeContainerTest(unittest.TestCase):
 
     def test_full_compile_runs_once_per_worktree_state(self):
         with tempfile.TemporaryDirectory() as td:
-            zstack = Path(td) / "zstack"
-            premium = Path(td) / "premium"
-            self._write_repo(zstack)
-            self._write_premium(premium)
+            zsvirt = Path(td) / "zsvirt"
+            ee = Path(td) / "zsvirt-ee"
+            self._write_repo(zsvirt)
+            self._write_ee(ee)
             runner = FakeRunner()
             store = FakeWorktreeContainerStore()
             spec = worktree_container.WorktreeContainerSpec(
-                zstack_root=str(zstack),
-                premium_root=str(premium),
+                zsvirt_root=str(zsvirt),
+                ee_root=str(ee),
                 docker_host="http://172.26.50.70:2375",
                 image="compile-image:unit",
                 platform="linux/amd64",
@@ -148,27 +166,27 @@ class WorktreeContainerTest(unittest.TestCase):
         self.assertFalse(second.full_compile_ran)
         self.assertEqual(first.container_name, second.container_name)
         shell_scripts = self._shell_scripts(runner)
-        self.assertEqual(1, sum("./runMavenProfile premium" in script for script in shell_scripts))
+        self.assertEqual(1, sum("./runMavenProfile ee" in script for script in shell_scripts))
         self.assertFalse(any("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in shell_scripts))
         self.assertTrue(any("DOCKER_HOST=tcp://172.26.50.70:2375 docker create" in script for script in shell_scripts))
         self.assertTrue(any("-v zsv-m2-" in script and ":/var/maven/.m2" in script for script in shell_scripts))
 
     def test_worktree_record_stores_explicit_pr_refs(self):
         with tempfile.TemporaryDirectory() as td:
-            zstack = Path(td) / "zstack"
-            premium = Path(td) / "premium"
-            self._write_repo(zstack)
-            self._write_premium(premium)
+            zsvirt = Path(td) / "zsvirt"
+            ee = Path(td) / "zsvirt-ee"
+            self._write_repo(zsvirt)
+            self._write_ee(ee)
             runner = FakeRunner()
             store = FakeWorktreeContainerStore()
             spec = worktree_container.WorktreeContainerSpec(
-                zstack_root=str(zstack),
-                premium_root=str(premium),
+                zsvirt_root=str(zsvirt),
+                ee_root=str(ee),
                 docker_host="",
                 image="compile-image:unit",
                 pr_refs=worktree_container.parse_worktree_pr_refs(
-                    "zstack=https://github.com/kodanevhy/cbok/pull/78,"
-                    "premium=https://dev.zstack.io/zstackio/premium/-/merge_requests/2"
+                    "zsvirt=http://dev.zstack.io:9080/zvf/zsvirt/-/merge_requests/78,"
+                    "zsvirt-ee=http://dev.zstack.io:9080/zvf/zsvirt-ee/-/merge_requests/2"
                 ),
             )
 
@@ -184,12 +202,12 @@ class WorktreeContainerTest(unittest.TestCase):
         self.assertEqual(
             (
                 worktree_container.WorktreePullRequest(
-                    repo="zstack",
-                    pr_url="https://github.com/kodanevhy/cbok/pull/78",
+                    repo="zsvirt",
+                    pr_url="http://dev.zstack.io:9080/zvf/zsvirt/-/merge_requests/78",
                 ),
                 worktree_container.WorktreePullRequest(
-                    repo="premium",
-                    pr_url="https://dev.zstack.io/zstackio/premium/-/merge_requests/2",
+                    repo="zsvirt-ee",
+                    pr_url="http://dev.zstack.io:9080/zvf/zsvirt-ee/-/merge_requests/2",
                 ),
             ),
             records[0].pr_refs,
@@ -197,24 +215,26 @@ class WorktreeContainerTest(unittest.TestCase):
 
     def test_full_compile_does_not_rerun_when_worktree_head_changes(self):
         with tempfile.TemporaryDirectory() as td:
-            zstack = Path(td) / "zstack"
-            premium = Path(td) / "premium"
-            self._write_repo(zstack)
-            self._write_premium(premium)
+            zsvirt = Path(td) / "zsvirt"
+            ee = Path(td) / "zsvirt-ee"
+            self._write_repo(zsvirt)
+            self._write_ee(ee)
             runner = FakeRunner()
             store = FakeWorktreeContainerStore()
             spec = worktree_container.WorktreeContainerSpec(
-                zstack_root=str(zstack),
-                premium_root=str(premium),
+                zsvirt_root=str(zsvirt),
+                ee_root=str(ee),
                 docker_host="",
                 image="compile-image:unit",
             )
             heads = {
-                str(zstack.resolve()): "zstack-old",
-                str(premium.resolve()): "premium-old",
+                str(zsvirt.resolve()): "zsvirt-old",
+                str(ee.resolve()): "ee-old",
             }
 
             def fake_git_head(root):
+                if not root:
+                    return ""
                 return heads[str(Path(root).resolve())]
 
             with patch.object(worktree_container, "_git_head", side_effect=fake_git_head):
@@ -223,7 +243,7 @@ class WorktreeContainerTest(unittest.TestCase):
                     spec,
                     state_store=store,
                 )
-                heads[str(premium.resolve())] = "premium-new"
+                heads[str(ee.resolve())] = "ee-new"
                 rc2, second = worktree_container.ensure_worktree_container(
                     runner,
                     spec,
@@ -238,29 +258,29 @@ class WorktreeContainerTest(unittest.TestCase):
         self.assertFalse(second.full_compile_ran)
         self.assertEqual(first.container_name, second.container_name)
         shell_scripts = self._shell_scripts(runner)
-        self.assertEqual(1, sum("./runMavenProfile premium" in script for script in shell_scripts))
+        self.assertEqual(1, sum("./runMavenProfile ee" in script for script in shell_scripts))
 
     def test_m2_volume_is_scoped_to_worktree(self):
         with tempfile.TemporaryDirectory() as td:
-            zstack_a = Path(td) / "task-a" / "zstack"
-            premium_a = Path(td) / "task-a" / "premium"
-            zstack_b = Path(td) / "task-b" / "zstack"
-            premium_b = Path(td) / "task-b" / "premium"
-            self._write_repo(zstack_a)
-            self._write_premium(premium_a)
-            self._write_repo(zstack_b)
-            self._write_premium(premium_b)
+            zsvirt_a = Path(td) / "task-a" / "zsvirt"
+            ee_a = Path(td) / "task-a" / "zsvirt-ee"
+            zsvirt_b = Path(td) / "task-b" / "zsvirt"
+            ee_b = Path(td) / "task-b" / "zsvirt-ee"
+            self._write_repo(zsvirt_a)
+            self._write_ee(ee_a)
+            self._write_repo(zsvirt_b)
+            self._write_ee(ee_b)
 
             spec_a = worktree_container.WorktreeContainerSpec(
-                zstack_root=str(zstack_a),
-                premium_root=str(premium_a),
+                zsvirt_root=str(zsvirt_a),
+                ee_root=str(ee_a),
                 docker_host="",
                 image="compile-image:unit",
                 m2_volume="zsv-m2",
             )
             spec_b = worktree_container.WorktreeContainerSpec(
-                zstack_root=str(zstack_b),
-                premium_root=str(premium_b),
+                zsvirt_root=str(zsvirt_b),
+                ee_root=str(ee_b),
                 docker_host="",
                 image="compile-image:unit",
                 m2_volume="zsv-m2",
@@ -275,15 +295,15 @@ class WorktreeContainerTest(unittest.TestCase):
 
     def test_min_free_gb_does_not_change_worktree_key(self):
         spec_a = worktree_container.WorktreeContainerSpec(
-            zstack_root="/zstack",
-            premium_root="/premium",
+            zsvirt_root="/zsvirt",
+            ee_root="/zsvirt-ee",
             docker_host="tcp://172.26.50.70:2375",
             image="compile-image:unit",
             min_free_gb=20,
         )
         spec_b = worktree_container.WorktreeContainerSpec(
-            zstack_root="/zstack",
-            premium_root="/premium",
+            zsvirt_root="/zsvirt",
+            ee_root="/zsvirt-ee",
             docker_host="tcp://172.26.50.70:2375",
             image="compile-image:unit",
             min_free_gb=40,
@@ -296,15 +316,15 @@ class WorktreeContainerTest(unittest.TestCase):
 
     def test_full_compile_uses_run_maven_profile_entrypoint(self):
         with tempfile.TemporaryDirectory() as td:
-            zstack = Path(td) / "zstack"
-            premium = Path(td) / "premium"
-            self._write_repo(zstack)
-            self._write_premium(premium)
+            zsvirt = Path(td) / "zsvirt"
+            ee = Path(td) / "zsvirt-ee"
+            self._write_repo(zsvirt)
+            self._write_ee(ee)
             runner = FakeRunner()
             store = FakeWorktreeContainerStore()
             spec = worktree_container.WorktreeContainerSpec(
-                zstack_root=str(zstack),
-                premium_root=str(premium),
+                zsvirt_root=str(zsvirt),
+                ee_root=str(ee),
                 docker_host="",
                 image="compile-image:unit",
             )
@@ -320,24 +340,24 @@ class WorktreeContainerTest(unittest.TestCase):
         shell_scripts = self._shell_scripts(runner)
         full_compile_scripts = [
             script for script in shell_scripts
-            if "testlib" in script and "./runMavenProfile premium" in script
+            if "./runMavenProfile ee" in script
         ]
         self.assertEqual(1, len(full_compile_scripts))
         self.assertNotIn("sed -i -E", full_compile_scripts[0])
         self.assertNotIn("mvn -T 12 -Dmaven.test.skip=true -P premium clean install", full_compile_scripts[0])
-        self.assertIn("./runMavenProfile premium", full_compile_scripts[0])
+        self.assertIn("./runMavenProfile ee", full_compile_scripts[0])
 
     def test_source_sync_deletes_stale_sources_but_preserves_targets(self):
         with tempfile.TemporaryDirectory() as td:
-            zstack = Path(td) / "zstack"
-            premium = Path(td) / "premium"
-            self._write_repo(zstack)
-            self._write_premium(premium)
+            zsvirt = Path(td) / "zsvirt"
+            ee = Path(td) / "zsvirt-ee"
+            self._write_repo(zsvirt)
+            self._write_ee(ee)
             runner = FakeRunner()
             store = FakeWorktreeContainerStore()
             spec = worktree_container.WorktreeContainerSpec(
-                zstack_root=str(zstack),
-                premium_root=str(premium),
+                zsvirt_root=str(zsvirt),
+                ee_root=str(ee),
                 docker_host="",
                 image="compile-image:unit",
             )
@@ -350,23 +370,23 @@ class WorktreeContainerTest(unittest.TestCase):
 
         self.assertEqual(0, rc)
         shell_scripts = self._shell_scripts(runner)
-        zstack_archive = [
+        zsvirt_archive = [
             script for script in shell_scripts
-            if "tar -xzf - -C /tmp/cbok-zsv-src/zstack" in script
+            if "tar -xzf - -C /tmp/cbok-zsv-src/zsvirt" in script
         ][0]
-        self.assertIn("--exclude target", zstack_archive)
-        self.assertIn("*/target", zstack_archive)
-        self.assertIn("--exclude premium", zstack_archive)
+        self.assertIn("--exclude target", zsvirt_archive)
+        self.assertIn("*/target", zsvirt_archive)
+        self.assertIn("--exclude zsvirt-ee", zsvirt_archive)
         sync_script = [
             script for script in shell_scripts
-            if "rsync -a --delete" in script and "/work/zstack/" in script
+            if "rsync -a --delete" in script and "/work/zsvirt/" in script
         ][0]
         self.assertIn("--exclude target", sync_script)
         self.assertIn("*/target", sync_script)
-        self.assertIn("--exclude premium", sync_script)
+        self.assertIn("--exclude zsvirt-ee", sync_script)
         self.assertIn("rsync -a --delete", sync_script)
-        self.assertIn("/work/zstack/premium/", sync_script)
-        self.assertNotIn("ln -sfn ../premium", sync_script)
+        self.assertIn("/work/zsvirt/zsvirt-ee/", sync_script)
+        self.assertNotIn("ln -sfn ../zsvirt-ee", sync_script)
         cleanup_scripts = [
             script for script in shell_scripts
             if "bash -lc 'rm -rf /tmp/cbok-zsv-src'" in script
@@ -376,14 +396,14 @@ class WorktreeContainerTest(unittest.TestCase):
 
     def test_source_sync_keeps_upload_staging_when_rsync_fails(self):
         with tempfile.TemporaryDirectory() as td:
-            zstack = Path(td) / "zstack"
-            premium = Path(td) / "premium"
-            self._write_repo(zstack)
-            self._write_premium(premium)
+            zsvirt = Path(td) / "zsvirt"
+            ee = Path(td) / "zsvirt-ee"
+            self._write_repo(zsvirt)
+            self._write_ee(ee)
             runner = FakeRunner(fail_on="rsync -a --delete")
             spec = worktree_container.WorktreeContainerSpec(
-                zstack_root=str(zstack),
-                premium_root=str(premium),
+                zsvirt_root=str(zsvirt),
+                ee_root=str(ee),
                 docker_host="",
                 image="compile-image:unit",
             )
@@ -401,26 +421,26 @@ class WorktreeContainerTest(unittest.TestCase):
 
     def test_rejects_reusing_container_name_for_different_worktree(self):
         with tempfile.TemporaryDirectory() as td:
-            zstack_a = Path(td) / "task-a" / "zstack"
-            premium_a = Path(td) / "task-a" / "premium"
-            zstack_b = Path(td) / "task-b" / "zstack"
-            premium_b = Path(td) / "task-b" / "premium"
-            self._write_repo(zstack_a)
-            self._write_premium(premium_a)
-            self._write_repo(zstack_b)
-            self._write_premium(premium_b)
+            zsvirt_a = Path(td) / "task-a" / "zsvirt"
+            ee_a = Path(td) / "task-a" / "zsvirt-ee"
+            zsvirt_b = Path(td) / "task-b" / "zsvirt"
+            ee_b = Path(td) / "task-b" / "zsvirt-ee"
+            self._write_repo(zsvirt_a)
+            self._write_ee(ee_a)
+            self._write_repo(zsvirt_b)
+            self._write_ee(ee_b)
             runner = FakeRunner()
             store = FakeWorktreeContainerStore()
             spec_a = worktree_container.WorktreeContainerSpec(
-                zstack_root=str(zstack_a),
-                premium_root=str(premium_a),
+                zsvirt_root=str(zsvirt_a),
+                ee_root=str(ee_a),
                 docker_host="",
                 image="compile-image:unit",
                 container_name="shared-container",
             )
             spec_b = worktree_container.WorktreeContainerSpec(
-                zstack_root=str(zstack_b),
-                premium_root=str(premium_b),
+                zsvirt_root=str(zsvirt_b),
+                ee_root=str(ee_b),
                 docker_host="",
                 image="compile-image:unit",
                 container_name="shared-container",
@@ -449,8 +469,8 @@ class WorktreeContainerTest(unittest.TestCase):
     def test_new_container_requires_enough_remote_docker_space(self):
         runner = FakeRunner(free_kb=5 * 1024 * 1024)
         spec = worktree_container.WorktreeContainerSpec(
-            zstack_root="/zstack",
-            premium_root="/premium",
+            zsvirt_root="/zsvirt",
+            ee_root="/zsvirt-ee",
             docker_host="tcp://172.26.50.70:2375",
             image="compile-image:unit",
             min_free_gb=20,
@@ -473,8 +493,8 @@ class WorktreeContainerTest(unittest.TestCase):
     def test_new_container_treats_no_space_during_precheck_as_insufficient(self):
         runner = FakeRunner(df_error="write /var/lib/docker: no space left on device")
         spec = worktree_container.WorktreeContainerSpec(
-            zstack_root="/zstack",
-            premium_root="/premium",
+            zsvirt_root="/zsvirt",
+            ee_root="/zsvirt-ee",
             docker_host="tcp://172.26.50.70:2375",
             image="compile-image:unit",
             min_free_gb=20,
@@ -496,8 +516,8 @@ class WorktreeContainerTest(unittest.TestCase):
         runner = FakeRunner(free_kb=5 * 1024 * 1024)
         runner.containers.add("cbok-zsv-worktree-existing")
         spec = worktree_container.WorktreeContainerSpec(
-            zstack_root="/zstack",
-            premium_root="/premium",
+            zsvirt_root="/zsvirt",
+            ee_root="/zsvirt-ee",
             docker_host="",
             image="compile-image:unit",
             min_free_gb=20,
