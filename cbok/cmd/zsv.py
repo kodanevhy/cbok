@@ -306,34 +306,34 @@ class ZSphereCommands(base.BaseCommand):
         return returncode
 
     @args.action_description(
-        "Build changed ZStack modules, copy JARs to remote Tomcat lib")
+        "Build changed ZSvirt modules, copy JARs to remote Tomcat lib")
     @args.args(
         "--address", metavar="<ip>", required=False,
         help="Target ZSphere/ZStack node (root SSH); required for deploy "
              "(omit with --no-deploy)")
     @args.args(
         "--zstack-root", metavar="<dir>", required=True,
-        help="ZStack checkout root for the current worktree")
+        help="ZSvirt checkout root for the current worktree")
     @args.args(
-        "--premium-root", metavar="<dir>", required=True,
-        help="premium checkout root for the current worktree")
+        "--ee-root", metavar="<dir>", required=True,
+        help="zsvirt-ee checkout root for the current worktree")
     @args.args(
         "--no-deploy", action="store_true",
         help="Build and skip remote backup/copy")
     @args.args(
         "--web-class", action="append", default=[],
         help="Extra conf/springConfigXml file to sync to WEB-INF/classes. "
-             "Use zstack:<path> or premium:<path> to disambiguate.")
+             "Use zstack:<path> or ee:<path> to disambiguate.")
     @args.args(
         "--pr-url", metavar="<repo=url[,repo=url...]>",
-        help="PR/MR URLs linked to this worktree container; repo is zstack, "
-             "premium, zstack-utility, or zstack-store")
+        help="PR/MR URLs linked to this worktree container; repo is zsvirt, "
+             "zsvirt-ee, zsvirt-utility, or zstack-store")
     def compile(
             self,
             address=None,
             no_deploy=False,
             zstack_root=None,
-            premium_root=None,
+            ee_root=None,
             web_class=None,
             pr_url=None,
     ):
@@ -356,7 +356,7 @@ class ZSphereCommands(base.BaseCommand):
             remote_lib=_zsv_deploy_conf("remote_lib", DEFAULT_REMOTE_LIB),
             no_deploy=no_deploy,
             zstack_root=zstack_root,
-            premium_root=premium_root,
+            ee_root=ee_root,
             extra_web_classes=web_class or [],
             pr_url=pr_url or "",
             runner=self.p_runner,

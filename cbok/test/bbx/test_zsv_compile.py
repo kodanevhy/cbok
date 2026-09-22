@@ -115,7 +115,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual("auto", conf.container_name)
         self.assertEqual("zsv-m2", conf.m2_volume)
         self.assertEqual(42, conf.min_free_gb)
-        self.assertFalse(hasattr(conf, "premium_source"))
+        self.assertFalse(hasattr(conf, "ee_source"))
 
     def test_remote_docker_conf_defaults_to_worktree_scoped_m2(self):
         compile.settings.CONF = _conf()
@@ -128,10 +128,10 @@ class ZsvCompileTest(unittest.TestCase):
     def test_compile_deploy_state_key_is_scoped_to_base_ref(self):
         compile.settings.CONF = _conf(base_ref="origin/feature")
         remote = compile.remote_docker_compile_from_conf()
-        feature_key = compile.compile_worktree_key("/zstack", "/premium", remote)
+        feature_key = compile.compile_worktree_key("/zstack", "/ee", remote)
 
         compile.settings.CONF = _conf(base_ref="origin/zsv_5.1.0")
-        zsv_key = compile.compile_worktree_key("/zstack", "/premium", remote)
+        zsv_key = compile.compile_worktree_key("/zstack", "/ee", remote)
 
         self.assertNotEqual(feature_key, zsv_key)
 
@@ -187,7 +187,7 @@ class ZsvCompileTest(unittest.TestCase):
                 address=None,
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=True,
-                premium_root="/repo/premium",
+                ee_root="/repo/ee",
                 runner=runner,
             )
 
@@ -202,14 +202,14 @@ class ZsvCompileTest(unittest.TestCase):
             base_ref="origin/test-base",
         )
         self._allow_changed_paths_base_ref_validation()
-        compile.auto_detect_modules = lambda _root, _premium_root=None: (["plugin/foo"], [])
+        compile.auto_detect_modules = lambda _root, _ee_root=None: (["plugin/foo"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             (root / "plugin" / "foo").mkdir(parents=True)
-            premium.mkdir(parents=True)
+            ee.mkdir(parents=True)
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             (root / "plugin" / "foo" / "pom.xml").write_text(
                 "<project/>", encoding="utf-8")
@@ -220,10 +220,10 @@ class ZsvCompileTest(unittest.TestCase):
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=True,
                 zstack_root=str(root),
-                premium_root=str(premium),
+                ee_root=str(ee),
                 pr_url=(
                     "zstack=https://dev.zstack.io/zstackio/zstack/-/merge_requests/10001,"
-                    "premium=https://dev.zstack.io/zstackio/premium/-/merge_requests/20002"
+                    "zsvirt-ee=https://dev.zstack.io/zstackio/ee/-/merge_requests/20002"
                 ),
                 runner=runner,
             )
@@ -246,15 +246,15 @@ class ZsvCompileTest(unittest.TestCase):
             base_ref="origin/test-base",
         )
         self._allow_changed_paths_base_ref_validation()
-        compile.auto_detect_modules = lambda _root, _premium_root=None: (["plugin/foo"], [])
+        compile.auto_detect_modules = lambda _root, _ee_root=None: (["plugin/foo"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             (root / "plugin" / "foo").mkdir(parents=True)
             (root / "testlib").mkdir(parents=True)
-            (premium / "testlib-premium").mkdir(parents=True)
+            (ee / "testlib-ee").mkdir(parents=True)
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             (root / "plugin" / "foo" / "pom.xml").write_text("<project/>", encoding="utf-8")
             runner = FakeRunner()
@@ -264,10 +264,10 @@ class ZsvCompileTest(unittest.TestCase):
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=True,
                 zstack_root=str(root),
-                premium_root=str(premium),
+                ee_root=str(ee),
                 pr_url=(
                     "zstack=https://dev.zstack.io/zstackio/zstack/-/merge_requests/10001,"
-                    "premium=https://dev.zstack.io/zstackio/premium/-/merge_requests/20002"
+                    "zsvirt-ee=https://dev.zstack.io/zstackio/ee/-/merge_requests/20002"
                 ),
                 runner=runner,
             )
@@ -289,8 +289,8 @@ class ZsvCompileTest(unittest.TestCase):
                     pr_url="https://dev.zstack.io/zstackio/zstack/-/merge_requests/10001",
                 ),
                 worktree_container.WorktreePullRequest(
-                    repo="premium",
-                    pr_url="https://dev.zstack.io/zstackio/premium/-/merge_requests/20002",
+                    repo="zsvirt-ee",
+                    pr_url="https://dev.zstack.io/zstackio/ee/-/merge_requests/20002",
                 ),
             ),
             records[0].pr_refs,
@@ -312,35 +312,35 @@ class ZsvCompileTest(unittest.TestCase):
         ]
         self.assertTrue(docker_cp_scripts)
         self.assertFalse(any(str(root) in script for script in docker_cp_scripts))
-        self.assertFalse(any(str(premium) in script for script in docker_cp_scripts))
+        self.assertFalse(any(str(ee) in script for script in docker_cp_scripts))
         self.assertTrue(any("cbok-zsv-jars-" in script for script in docker_cp_scripts))
         build_scripts = [script for script in shell_scripts if "docker exec cbok-zsv-worktree-zstack-" in script and " bash -lc" in script]
         self.assertGreaterEqual(len(build_scripts), 3)
-        self.assertTrue(any("./runMavenProfile premium" in script for script in build_scripts))
-        self.assertFalse(any("mvn -T 12 -Dmaven.test.skip=true -P premium clean install" in script for script in build_scripts))
-        self.assertTrue(any("cd /work/zstack/testlib" in script for script in build_scripts))
+        self.assertTrue(any("./runMavenProfile ee" in script for script in build_scripts))
+        self.assertFalse(any("mvn -T 12 -Dmaven.test.skip=true -P ee clean install" in script for script in build_scripts))
+        self.assertFalse(any("cd /work/zstack/testlib" in script for script in build_scripts))
         self.assertNotIn("mvn -DskipTests clean install -pl plugin/foo", build_scripts[-1])
         self.assertIn("sync_target /work/zstack /tmp/cbok-zsv-out/zstack plugin/foo", build_scripts[-1])
         self.assertIn('local props="$target/maven-archiver/pom.properties"', build_scripts[-1])
         self.assertIn('cp "$jar" "$dest/"', build_scripts[-1])
         self.assertNotIn('rsync -a --delete "$target"/ "$dest"/', build_scripts[-1])
 
-    def test_run_compile_flow_rejects_configured_premium_branch_mismatch(self):
+    def test_run_compile_flow_rejects_configured_ee_branch_mismatch(self):
         compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="")
-        compile.auto_detect_modules = lambda _root, _premium_root=None: (["plugin/foo"], [])
+        compile.auto_detect_modules = lambda _root, _ee_root=None: (["plugin/foo"], [])
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             (root / "plugin" / "foo").mkdir(parents=True)
-            premium.mkdir(parents=True)
+            ee.mkdir(parents=True)
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             (root / "plugin" / "foo" / "pom.xml").write_text(
                 "<project/>", encoding="utf-8")
 
             branches = {
                 str(root.resolve()): "feature-a",
-                str(premium.resolve()): "feature-b",
+                str(ee.resolve()): "feature-b",
             }
 
             def fake_git(repo, *args):
@@ -362,12 +362,12 @@ class ZsvCompileTest(unittest.TestCase):
                     remote_lib=compile.DEFAULT_REMOTE_LIB,
                     no_deploy=True,
                     zstack_root=str(root),
-                    premium_root=str(premium),
+                    ee_root=str(ee),
                     runner=runner,
                 )
 
         self.assertEqual(1, rc)
-        self.assertIn("zstack and premium branch names must be the same", "\n".join(logs.output))
+        self.assertIn("zstack and ee branch names must be the same", "\n".join(logs.output))
         self.assertEqual([], runner.calls)
 
     def test_run_compile_flow_rejects_base_ref_before_detecting_modules(self):
@@ -376,16 +376,16 @@ class ZsvCompileTest(unittest.TestCase):
             base_ref="origin/feature",
         )
 
-        def fail_auto_detect(_root, _premium_root=None):
+        def fail_auto_detect(_root, _ee_root=None):
             raise AssertionError("auto_detect_modules should not run when base_ref is invalid")
 
         compile.auto_detect_modules = fail_auto_detect
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             root.mkdir()
-            premium.mkdir()
+            ee.mkdir()
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
 
             def fake_git(repo, *args):
@@ -404,7 +404,7 @@ class ZsvCompileTest(unittest.TestCase):
                     remote_lib=compile.DEFAULT_REMOTE_LIB,
                     no_deploy=True,
                     zstack_root=str(root),
-                    premium_root=str(premium),
+                    ee_root=str(ee),
                     runner=runner,
                 )
 
@@ -416,20 +416,20 @@ class ZsvCompileTest(unittest.TestCase):
         compile.settings.CONF = _conf(base_ref="")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             for module in ("utils", "identity"):
                 (root / module).mkdir(parents=True)
                 (root / module / "pom.xml").write_text("<project/>", encoding="utf-8")
             for module in ("volumebackup", "mevoco"):
-                (premium / module).mkdir(parents=True)
-                (premium / module / "pom.xml").write_text("<project/>", encoding="utf-8")
+                (ee / module).mkdir(parents=True)
+                (ee / module / "pom.xml").write_text("<project/>", encoding="utf-8")
 
             def fake_git(repo, *args):
                 repo = os.path.realpath(repo)
                 if args == ("diff", "--name-only", "HEAD"):
                     out = {
                         os.path.realpath(root): "utils/src/main/java/org/zstack/utils/Digest.java\n",
-                        os.path.realpath(premium): "volumebackup/src/main/java/org/zstack/storage/backup/BackupQosStruct.java\n",
+                        os.path.realpath(ee): "volumebackup/src/main/java/org/zstack/storage/backup/BackupQosStruct.java\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 if args == ("ls-files", "--others", "--exclude-standard"):
@@ -439,14 +439,14 @@ class ZsvCompileTest(unittest.TestCase):
                 if args == ("diff", "--name-only", "HEAD^", "HEAD"):
                     out = {
                         os.path.realpath(root): "identity/src/main/java/org/zstack/identity/Account.java\n",
-                        os.path.realpath(premium): "mevoco/src/main/java/org/zstack/mevoco/MevocoGlobalProperty.java\n",
+                        os.path.realpath(ee): "mevoco/src/main/java/org/zstack/mevoco/MevocoGlobalProperty.java\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 return subprocess.CompletedProcess(["git"], 0, "", "")
 
             compile._git = fake_git
 
-            main, prem = compile.auto_detect_modules(str(root), str(premium))
+            main, prem = compile.auto_detect_modules(str(root), str(ee))
 
         self.assertEqual(["utils", "identity"], main)
         self.assertEqual(["volumebackup", "mevoco"], prem)
@@ -455,8 +455,8 @@ class ZsvCompileTest(unittest.TestCase):
         compile.settings.CONF = _conf(base_ref="")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
-            for module in (root / "testlib", premium / "testlib-premium"):
+            ee = Path(td) / "ee"
+            for module in (root / "testlib", ee / "testlib-ee"):
                 module.mkdir(parents=True)
                 (module / "pom.xml").write_text("<project/>", encoding="utf-8")
 
@@ -471,34 +471,34 @@ class ZsvCompileTest(unittest.TestCase):
                 if args == ("diff", "--name-only", "HEAD^", "HEAD"):
                     out = {
                         os.path.realpath(root): "testlib/src/main/java/org/zstack/testlib/EnvSpec.groovy\n",
-                        os.path.realpath(premium): "testlib-premium/src/main/java/org/zstack/testlib/premium/TestPremium.groovy\n",
+                        os.path.realpath(ee): "testlib-ee/src/main/java/org/zstack/testlib/ee/TestEE.groovy\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 return subprocess.CompletedProcess(["git"], 0, "", "")
 
             compile._git = fake_git
 
-            default_main, default_prem = compile.auto_detect_modules(str(root), str(premium))
+            default_main, default_prem = compile.auto_detect_modules(str(root), str(ee))
             groovy_main, groovy_prem = compile.auto_detect_modules(
                 str(root),
-                str(premium),
+                str(ee),
                 excluded_modules=groovy_test.GROOVY_TEST_AUTO_EXCLUDED_MODULES,
             )
 
         self.assertEqual([], default_main)
         self.assertEqual([], default_prem)
         self.assertEqual(["testlib"], groovy_main)
-        self.assertEqual(["testlib-premium"], groovy_prem)
+        self.assertEqual(["testlib-ee"], groovy_prem)
 
     def test_auto_detect_modules_falls_back_to_head_when_no_worktree_module_changed(self):
         compile.settings.CONF = _conf(base_ref="")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             (root / "identity").mkdir(parents=True)
             (root / "identity" / "pom.xml").write_text("<project/>", encoding="utf-8")
-            (premium / "mevoco").mkdir(parents=True)
-            (premium / "mevoco" / "pom.xml").write_text("<project/>", encoding="utf-8")
+            (ee / "mevoco").mkdir(parents=True)
+            (ee / "mevoco" / "pom.xml").write_text("<project/>", encoding="utf-8")
 
             def fake_git(repo, *args):
                 repo = os.path.realpath(repo)
@@ -511,14 +511,14 @@ class ZsvCompileTest(unittest.TestCase):
                 if args == ("diff", "--name-only", "HEAD^", "HEAD"):
                     out = {
                         os.path.realpath(root): "identity/src/main/java/org/zstack/identity/Account.java\n",
-                        os.path.realpath(premium): "mevoco/src/main/java/org/zstack/mevoco/MevocoGlobalProperty.java\n",
+                        os.path.realpath(ee): "mevoco/src/main/java/org/zstack/mevoco/MevocoGlobalProperty.java\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 return subprocess.CompletedProcess(["git"], 0, "", "")
 
             compile._git = fake_git
 
-            main, prem = compile.auto_detect_modules(str(root), str(premium))
+            main, prem = compile.auto_detect_modules(str(root), str(ee))
 
         self.assertEqual(["identity"], main)
         self.assertEqual(["mevoco"], prem)
@@ -527,11 +527,11 @@ class ZsvCompileTest(unittest.TestCase):
         compile.settings.CONF = _conf(base_ref="")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             (root / "storage").mkdir(parents=True)
             (root / "storage" / "pom.xml").write_text("<project/>", encoding="utf-8")
-            (premium / "crypto").mkdir(parents=True)
-            (premium / "crypto" / "pom.xml").write_text("<project/>", encoding="utf-8")
+            (ee / "crypto").mkdir(parents=True)
+            (ee / "crypto" / "pom.xml").write_text("<project/>", encoding="utf-8")
 
             def fake_git(repo, *args):
                 repo = os.path.realpath(repo)
@@ -550,14 +550,14 @@ class ZsvCompileTest(unittest.TestCase):
                 if args == ("diff", "--name-only", "HEAD^", "HEAD"):
                     out = {
                         os.path.realpath(root): "storage/src/main/java/org/zstack/storage/encrypt/RemoteOnly.java\n",
-                        os.path.realpath(premium): "crypto/src/main/java/org/zstack/crypto/keyprovider/KeyProviderAvailabilityApiInterceptor.java\n",
+                        os.path.realpath(ee): "crypto/src/main/java/org/zstack/crypto/keyprovider/KeyProviderAvailabilityApiInterceptor.java\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 return subprocess.CompletedProcess(["git"], 0, "", "")
 
             compile._git = fake_git
 
-            main, prem = compile.auto_detect_modules(str(root), str(premium))
+            main, prem = compile.auto_detect_modules(str(root), str(ee))
 
         self.assertEqual(["storage"], main)
         self.assertEqual(["crypto"], prem)
@@ -585,11 +585,11 @@ class ZsvCompileTest(unittest.TestCase):
         compile.settings.CONF = _conf(base_ref="")
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             interface_file = root / "storage" / "src" / "main" / "java" / "org" / "zstack" / "storage" / "encrypt" / "VolumeEncryptedResourceKeyBackend.java"
-            implementer_file = premium / "crypto" / "src" / "main" / "java" / "org" / "zstack" / "crypto" / "keyprovider" / "KeyProviderResourceKeyBackendVolume.java"
-            caller_file = premium / "volumebackup" / "src" / "main" / "java" / "org" / "zstack" / "storage" / "backup" / "VolumeBackupManagerImpl.java"
-            for module in (root / "storage", premium / "crypto", premium / "volumebackup"):
+            implementer_file = ee / "crypto" / "src" / "main" / "java" / "org" / "zstack" / "crypto" / "keyprovider" / "KeyProviderResourceKeyBackendVolume.java"
+            caller_file = ee / "volumebackup" / "src" / "main" / "java" / "org" / "zstack" / "storage" / "backup" / "VolumeBackupManagerImpl.java"
+            for module in (root / "storage", ee / "crypto", ee / "volumebackup"):
                 module.mkdir(parents=True)
                 (module / "pom.xml").write_text("<project/>", encoding="utf-8")
             interface_file.parent.mkdir(parents=True)
@@ -626,14 +626,14 @@ class ZsvCompileTest(unittest.TestCase):
                 if args == ("diff", "--name-only", "HEAD^", "HEAD"):
                     out = {
                         os.path.realpath(root): "storage/src/main/java/org/zstack/storage/encrypt/VolumeEncryptedResourceKeyBackend.java\n",
-                        os.path.realpath(premium): "volumebackup/src/main/java/org/zstack/storage/backup/VolumeBackupManagerImpl.java\n",
+                        os.path.realpath(ee): "volumebackup/src/main/java/org/zstack/storage/backup/VolumeBackupManagerImpl.java\n",
                     }.get(repo, "")
                     return subprocess.CompletedProcess(["git"], 0, out, "")
                 return subprocess.CompletedProcess(["git"], 0, "", "")
 
             compile._git = fake_git
 
-            main, prem = compile.auto_detect_modules(str(root), str(premium))
+            main, prem = compile.auto_detect_modules(str(root), str(ee))
 
         self.assertEqual(["storage"], main)
         self.assertEqual(["volumebackup", "crypto"], prem)
@@ -641,8 +641,8 @@ class ZsvCompileTest(unittest.TestCase):
     def test_collect_built_jars_uses_maven_main_artifact(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
-            target = premium / "mevoco" / "target"
+            ee = Path(td) / "ee"
+            target = ee / "mevoco" / "target"
             (target / "maven-archiver").mkdir(parents=True)
             (target / "maven-archiver" / "pom.properties").write_text(
                 "groupId=org.zstack\nartifactId=mevoco\nversion=5.0.0\n",
@@ -656,7 +656,7 @@ class ZsvCompileTest(unittest.TestCase):
                 str(root),
                 [],
                 ["mevoco"],
-                premium_root=str(premium),
+                ee_root=str(ee),
             )
 
         self.assertEqual([str(main_jar)], jars)
@@ -664,72 +664,72 @@ class ZsvCompileTest(unittest.TestCase):
     def test_collect_web_classes_files_maps_spring_config(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             main_xml = root / "conf" / "springConfigXml" / "core.xml"
-            premium_xml = premium / "conf" / "springConfigXml" / "crypto.xml"
+            ee_xml = ee / "conf" / "springConfigXml" / "crypto.xml"
             main_xml.parent.mkdir(parents=True)
-            premium_xml.parent.mkdir(parents=True)
+            ee_xml.parent.mkdir(parents=True)
             main_xml.write_text("<beans/>", encoding="utf-8")
-            premium_xml.write_text("<beans/>", encoding="utf-8")
+            ee_xml.write_text("<beans/>", encoding="utf-8")
 
             files = compile.collect_web_classes_files(
                 str(root),
                 ["conf/springConfigXml/core.xml", "identity/src/main/java/Foo.java"],
                 ["conf/springConfigXml/crypto.xml"],
-                str(premium),
+                str(ee),
             )
 
         mapped = {item.relative_path: item.source for item in files}
         self.assertEqual(str(main_xml), mapped["springConfigXml/core.xml"])
-        self.assertEqual(str(premium_xml), mapped["springConfigXml/crypto.xml"])
+        self.assertEqual(str(ee_xml), mapped["springConfigXml/crypto.xml"])
 
     def test_collect_explicit_web_classes_files_maps_spring_config(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             main_xml = root / "conf" / "springConfigXml" / "VolumeManager.xml"
-            premium_xml = premium / "conf" / "springConfigXml" / "crypto.xml"
+            ee_xml = ee / "conf" / "springConfigXml" / "crypto.xml"
             main_xml.parent.mkdir(parents=True)
-            premium_xml.parent.mkdir(parents=True)
+            ee_xml.parent.mkdir(parents=True)
             main_xml.write_text("<beans/>", encoding="utf-8")
-            premium_xml.write_text("<beans/>", encoding="utf-8")
+            ee_xml.write_text("<beans/>", encoding="utf-8")
 
             files = compile.collect_explicit_web_classes_files(
                 str(root),
-                str(premium),
+                str(ee),
                 [
                     "zstack:conf/springConfigXml/VolumeManager.xml",
-                    "premium:conf/springConfigXml/crypto.xml",
+                    "ee:conf/springConfigXml/crypto.xml",
                 ],
             )
 
         mapped = {item.relative_path: item.source for item in files}
         self.assertEqual(str(main_xml.resolve()), mapped["springConfigXml/VolumeManager.xml"])
-        self.assertEqual(str(premium_xml.resolve()), mapped["springConfigXml/crypto.xml"])
+        self.assertEqual(str(ee_xml.resolve()), mapped["springConfigXml/crypto.xml"])
 
     def test_explicit_web_class_overrides_changed_file_with_same_target(self):
         compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
         self._allow_changed_paths_base_ref_validation()
-        compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
+        compile.auto_detect_modules = lambda _root, _ee_root=None: (["identity"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             zstack_xml = root / "conf" / "springConfigXml" / "HostAllocatorManager.xml"
-            premium_xml = premium / "conf" / "springConfigXml" / "HostAllocatorManager.xml"
+            ee_xml = ee / "conf" / "springConfigXml" / "HostAllocatorManager.xml"
             zstack_xml.parent.mkdir(parents=True)
-            premium_xml.parent.mkdir(parents=True)
+            ee_xml.parent.mkdir(parents=True)
             zstack_xml.write_text("<beans>zstack</beans>", encoding="utf-8")
-            premium_xml.write_text("<beans>premium</beans>", encoding="utf-8")
+            ee_xml.write_text("<beans>ee</beans>", encoding="utf-8")
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             (root / "identity").mkdir()
             (root / "identity" / "pom.xml").write_text("<project/>", encoding="utf-8")
             jar_copy_root = Path(td) / "jar-copy"
             (jar_copy_root / "zstack").mkdir(parents=True)
-            (jar_copy_root / "premium").mkdir(parents=True)
+            (jar_copy_root / "ee").mkdir(parents=True)
             compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
-            compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: [
+            compile.collect_changed_web_classes_files = lambda _root, _ee_root=None: [
                 compile.WebClassesFile(
                     str(zstack_xml),
                     "springConfigXml/HostAllocatorManager.xml",
@@ -743,30 +743,30 @@ class ZsvCompileTest(unittest.TestCase):
                     remote_lib=compile.DEFAULT_REMOTE_LIB,
                     no_deploy=True,
                     zstack_root=str(root),
-                    premium_root=str(premium),
+                    ee_root=str(ee),
                     extra_web_classes=[
-                        "premium:conf/springConfigXml/HostAllocatorManager.xml"
+                        "ee:conf/springConfigXml/HostAllocatorManager.xml"
                     ],
                     runner=FakeRunner(),
                 )
 
         self.assertEqual(0, rc)
         output = stdout.getvalue()
-        self.assertIn(str(premium_xml.resolve()), output)
+        self.assertIn(str(ee_xml.resolve()), output)
         self.assertNotIn(str(zstack_xml.resolve()), output)
 
     def test_deploy_uses_unique_remote_staging_per_compile(self):
         compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
         self._allow_changed_paths_base_ref_validation()
-        compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
+        compile.auto_detect_modules = lambda _root, _ee_root=None: (["identity"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             worktree_target = root / "identity" / "target"
             worktree_target.mkdir(parents=True)
-            premium.mkdir(parents=True)
+            ee.mkdir(parents=True)
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             (root / "identity" / "pom.xml").write_text("<project/>", encoding="utf-8")
             (worktree_target / "identity-5.0.0.jar").write_bytes(b"wrong")
@@ -785,7 +785,7 @@ class ZsvCompileTest(unittest.TestCase):
                     remote_lib=compile.DEFAULT_REMOTE_LIB,
                     no_deploy=False,
                     zstack_root=str(root),
-                    premium_root=str(premium),
+                    ee_root=str(ee),
                     runner=runner,
                 )
 
@@ -811,17 +811,17 @@ class ZsvCompileTest(unittest.TestCase):
     def test_deploy_syncs_changed_web_classes_archive(self):
         compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
         self._allow_changed_paths_base_ref_validation()
-        compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
+        compile.auto_detect_modules = lambda _root, _ee_root=None: (["identity"], [])
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             worktree_target = root / "identity" / "target"
             worktree_target.mkdir(parents=True)
-            premium_xml = premium / "conf" / "springConfigXml" / "crypto.xml"
-            premium_xml.parent.mkdir(parents=True)
-            premium_xml.write_text("<beans/>", encoding="utf-8")
+            ee_xml = ee / "conf" / "springConfigXml" / "crypto.xml"
+            ee_xml.parent.mkdir(parents=True)
+            ee_xml.write_text("<beans/>", encoding="utf-8")
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             (root / "identity" / "pom.xml").write_text("<project/>", encoding="utf-8")
             jar_copy_root = Path(td) / "jar-copy"
@@ -829,8 +829,8 @@ class ZsvCompileTest(unittest.TestCase):
             jar_copy_target.mkdir(parents=True)
             (jar_copy_target / "identity-5.0.0.jar").write_bytes(b"jar")
             compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
-            compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: [
-                compile.WebClassesFile(str(premium_xml), "springConfigXml/crypto.xml")
+            compile.collect_changed_web_classes_files = lambda _root, _ee_root=None: [
+                compile.WebClassesFile(str(ee_xml), "springConfigXml/crypto.xml")
             ]
             runner = FakeRunner()
 
@@ -839,7 +839,7 @@ class ZsvCompileTest(unittest.TestCase):
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=False,
                 zstack_root=str(root),
-                premium_root=str(premium),
+                ee_root=str(ee),
                 runner=runner,
             )
 
@@ -855,17 +855,17 @@ class ZsvCompileTest(unittest.TestCase):
     def test_deploy_replays_previous_modules_removed_from_current_diff(self):
         compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
         self._allow_changed_paths_base_ref_validation()
-        compile.auto_detect_modules = lambda _root, _premium_root=None: (["identity"], [])
-        compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: []
+        compile.auto_detect_modules = lambda _root, _ee_root=None: (["identity"], [])
+        compile.collect_changed_web_classes_files = lambda _root, _ee_root=None: []
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
+            ee = Path(td) / "ee"
             for module in ("identity", "storage"):
                 (root / module / "target").mkdir(parents=True)
                 (root / module / "pom.xml").write_text("<project/>", encoding="utf-8")
-            premium.mkdir(parents=True)
+            ee.mkdir(parents=True)
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             jar_copy_root = Path(td) / "jar-copy"
             for module in ("identity", "storage"):
@@ -874,11 +874,11 @@ class ZsvCompileTest(unittest.TestCase):
                 (target / f"{module}-5.0.0.jar").write_bytes(b"jar")
             compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
             remote = compile.remote_docker_compile_from_conf()
-            worktree_key = compile.compile_worktree_key(str(root), str(premium), remote)
+            worktree_key = compile.compile_worktree_key(str(root), str(ee), remote)
             self._compile_state_store.save_selection(
                 worktree_key,
                 str(root),
-                str(premium),
+                str(ee),
                 compile.CompileDeploySelection(["storage"], [], []),
             )
             runner = FakeRunner()
@@ -888,7 +888,7 @@ class ZsvCompileTest(unittest.TestCase):
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=False,
                 zstack_root=str(root),
-                premium_root=str(premium),
+                ee_root=str(ee),
                 runner=runner,
             )
 
@@ -903,37 +903,37 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertIn("storage-5.0.0.jar", scp_scripts[0])
         selection = self._compile_state_store.load_selection(worktree_key)
         self.assertEqual(["identity"], selection.main_modules)
-        self.assertEqual([], selection.premium_modules)
+        self.assertEqual([], selection.ee_modules)
 
     def test_deploy_replays_previous_web_classes_when_current_diff_is_empty(self):
         compile.settings.CONF = _conf(remote_docker_host="tcp://172.26.50.70:2375", base_ref="origin/test-base")
         self._allow_changed_paths_base_ref_validation()
-        compile.auto_detect_modules = lambda _root, _premium_root=None: ([], [])
-        compile.collect_changed_web_classes_files = lambda _root, _premium_root=None: []
+        compile.auto_detect_modules = lambda _root, _ee_root=None: ([], [])
+        compile.collect_changed_web_classes_files = lambda _root, _ee_root=None: []
         compile.git_summary = lambda _root: ("abc123 test", "abc123")
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "zstack"
-            premium = Path(td) / "premium"
-            premium_xml = premium / "conf" / "springConfigXml" / "crypto.xml"
-            premium_xml.parent.mkdir(parents=True)
-            premium_xml.write_text("<beans/>", encoding="utf-8")
+            ee = Path(td) / "ee"
+            ee_xml = ee / "conf" / "springConfigXml" / "crypto.xml"
+            ee_xml.parent.mkdir(parents=True)
+            ee_xml.write_text("<beans/>", encoding="utf-8")
             (root / "pom.xml").parent.mkdir(parents=True, exist_ok=True)
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             jar_copy_root = Path(td) / "jar-copy"
             compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
             remote = compile.remote_docker_compile_from_conf()
-            worktree_key = compile.compile_worktree_key(str(root), str(premium), remote)
+            worktree_key = compile.compile_worktree_key(str(root), str(ee), remote)
             self._compile_state_store.save_selection(
                 worktree_key,
                 str(root),
-                str(premium),
+                str(ee),
                 compile.CompileDeploySelection(
                     [],
                     [],
                     [
                         compile.CompileWebClassesState(
-                            "premium",
+                            "ee",
                             "conf/springConfigXml/crypto.xml",
                             "springConfigXml/crypto.xml",
                         )
@@ -947,7 +947,7 @@ class ZsvCompileTest(unittest.TestCase):
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=False,
                 zstack_root=str(root),
-                premium_root=str(premium),
+                ee_root=str(ee),
                 runner=runner,
             )
 
@@ -960,7 +960,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertTrue(any("zsv_remote_install_web_classes_archive" in script for script in shell_scripts))
         selection = self._compile_state_store.load_selection(worktree_key)
         self.assertEqual([], selection.main_modules)
-        self.assertEqual([], selection.premium_modules)
+        self.assertEqual([], selection.ee_modules)
         self.assertEqual([], selection.web_classes)
 
 if __name__ == "__main__":

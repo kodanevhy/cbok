@@ -51,8 +51,7 @@ RSYNC_EXCLUDES = (
     "--exclude __MACOSX "
     "--exclude '*/__MACOSX'"
 )
-PREMIUM_DIR_EXCLUDES = "--exclude premium --exclude ./premium"
-PR_REPOS = ("zstack", "premium", "zstack-utility", "zstack-store")
+PR_REPOS = ("zsvirt", "zsvirt-ee", "zsvirt-utility", "zstack", "premium", "zstack-utility", "zstack-store")
 
 
 @dataclass(frozen=True)
@@ -75,6 +74,7 @@ class WorktreeContainerSpec:
     identity_zstack_root: str = ""
     identity_premium_root: str | None = None
     min_free_gb: int = DEFAULT_MIN_FREE_GB
+    build_profile: str = "premium"
 
 
 @dataclass
@@ -190,6 +190,8 @@ def worktree_key_for_spec(spec: WorktreeContainerSpec) -> str:
         (spec.workdir or DEFAULT_WORKDIR).rstrip("/") or DEFAULT_WORKDIR,
         (spec.m2_volume or DEFAULT_M2_VOLUME).strip(),
     ]
+    if spec.build_profile == "ee":
+        parts.append("zsvirt-ee-v1")
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -415,8 +417,9 @@ def _stream_source_to_upload_dir(
         upload_dir: str,
         *,
         exclude_premium: bool = False,
+        external_dir: str = "premium",
 ) -> int:
-    premium_excludes = "--exclude premium --exclude ./premium " if exclude_premium else ""
+    premium_excludes = f"--exclude {external_dir} --exclude ./{external_dir} " if exclude_premium else ""
     excludes = SOURCE_EXCLUDES + " " + premium_excludes
     inner = f"rm -rf {shlex.quote(upload_dir)} && mkdir -p {shlex.quote(upload_dir)} && tar -xzf - -C {shlex.quote(upload_dir)}"
     script = (
@@ -432,7 +435,8 @@ def _stream_source_to_upload_dir(
 
 def sync_sources_to_container(runner, spec: WorktreeContainerSpec, container_name: str) -> int:
     work_zstack = f"{spec.workdir}/zstack"
-    work_premium = f"{work_zstack}/premium"
+    external_dir = "zsvirt-ee" if spec.build_profile == "ee" else "premium"
+    work_premium = f"{work_zstack}/{external_dir}"
     upload_root = "/tmp/cbok-zsv-src"
     rc = _stream_source_to_upload_dir(
         runner,
@@ -441,6 +445,7 @@ def sync_sources_to_container(runner, spec: WorktreeContainerSpec, container_nam
         container_name,
         f"{upload_root}/zstack",
         exclude_premium=True,
+        external_dir=external_dir,
     )
     if rc != 0:
         return rc
@@ -468,7 +473,7 @@ def sync_sources_to_container(runner, spec: WorktreeContainerSpec, container_nam
     sync_script = f"""
 	set -euo pipefail
 	mkdir -p {shlex.quote(work_zstack)}
-	rsync -a --delete {RSYNC_EXCLUDES} {PREMIUM_DIR_EXCLUDES} {upload_root}/zstack/ {shlex.quote(work_zstack)}/
+	rsync -a --delete {RSYNC_EXCLUDES} --exclude {external_dir} --exclude ./{external_dir} {upload_root}/zstack/ {shlex.quote(work_zstack)}/
 	{premium_sync}
 	"""
     rc = docker_shell(
@@ -487,6 +492,8 @@ def sync_sources_to_container(runner, spec: WorktreeContainerSpec, container_nam
 
 def full_compile_script(spec: WorktreeContainerSpec) -> str:
     work_zstack = f"{spec.workdir}/zstack"
+    if spec.build_profile == "ee":
+        return f"set -euo pipefail\ncd {shlex.quote(work_zstack)}\n./runMavenProfile ee\n"
     script = f"""
 set -euo pipefail
 cd {shlex.quote(work_zstack)}
@@ -541,6 +548,7 @@ def ensure_worktree_container(
         identity_zstack_root=os.path.realpath(spec.identity_zstack_root) if spec.identity_zstack_root else "",
         identity_premium_root=os.path.realpath(spec.identity_premium_root) if spec.identity_premium_root else None,
         min_free_gb=max(0, int(spec.min_free_gb or 0)),
+        build_profile=spec.build_profile,
     )
     store = state_store or default_state_store()
     defaults = _default_record(spec)
@@ -571,6 +579,7 @@ def ensure_worktree_container(
         identity_zstack_root=spec.identity_zstack_root,
         identity_premium_root=spec.identity_premium_root,
         min_free_gb=spec.min_free_gb,
+        build_profile=spec.build_profile,
     )
 
     rc, container_created = ensure_container_exists(runner, spec, record.container_name)
@@ -606,7 +615,7 @@ def ensure_worktree_container(
                 "last_error",
             ],
         )
-        LOG.info("Running full ZStack premium compile in %s", record.container_name)
+        LOG.info("Running full %s compile in %s", spec.build_profile, record.container_name)
         rc = docker_shell(
             runner,
             spec.docker_host,
@@ -639,7 +648,7 @@ def ensure_worktree_container(
         docker_host=spec.docker_host,
         workdir=spec.workdir,
         work_zstack=f"{spec.workdir}/zstack",
-        work_premium=f"{spec.workdir}/zstack/premium",
+        work_premium=f"{spec.workdir}/zstack/" + ("zsvirt-ee" if spec.build_profile == "ee" else "premium"),
         full_compile_ran=full_compile_ran,
     )
     return 0, handle

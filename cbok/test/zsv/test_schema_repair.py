@@ -500,7 +500,7 @@ class SchemaRepairTest(unittest.TestCase):
     def test_zsv_runtime_target_args_are_required_cli(self):
         required_by_method = {
             ZSphereCommands.restart_mn: ("--address",),
-            ZSphereCommands.compile: ("--zstack-root", "--premium-root"),
+            ZSphereCommands.compile: ("--zstack-root", "--ee-root"),
             ZSphereCommands.groovy_test: (
                 "--zstack-branch",
                 "--premium-branch",

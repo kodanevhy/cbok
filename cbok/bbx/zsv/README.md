@@ -1,6 +1,6 @@
 # ZSV compile helpers
 
-`cbok zsv compile` builds changed ZStack Maven modules in a remote Docker
+`cbok zsv compile` builds changed ZSvirt Maven modules in a remote Docker
 worktree container and can deploy the resulting JARs to a ZSphere/ZStack node.
 
 ## Remote Docker compile
@@ -10,15 +10,15 @@ remote container name from the current worktree and reuses it on later runs:
 
 ```bash
 cbok zsv compile --address 172.26.213.50 \
-  --zstack-root /path/to/zstack \
-  --premium-root /path/to/premium
+  --zstack-root /path/to/zsvirt \
+  --ee-root /path/to/zsvirt-ee
 ```
 
 Configure the remote daemon and build image in `[zsv_compile]`:
 
 ```ini
 [zsv]
-base_ref = origin/feature-zsv-5.1.0-encryption
+base_ref = origin/zsv_5.2.0
 
 [zsv_compile]
 remote_docker_host = tcp://172.26.50.70:2375
@@ -42,9 +42,9 @@ backup_root = /var/lib/zstack/agent-replace-backup
 Behavior:
 
 - Reuses the worktree container on the configured remote Docker daemon.
-- Creates the worktree container and runs the full premium profile preparation
+- Creates the worktree container and runs the full `./runMavenProfile ee` preparation
   only when the container has not completed full compile before.
-- Streams local `zstack/` and `premium/` worktrees into the container with
+- Streams local ZSvirt and `zsvirt-ee` worktrees into the container with
   `docker exec` tar pipes, so the remote daemon does not need local filesystem
   paths.
 - Mounts a worktree-scoped Maven volume at `/var/maven/.m2` and links
@@ -59,6 +59,17 @@ Behavior:
   source worktree.
 - Uses `[zsv] base_ref` as the shared upstream base for incremental compile
   changed-path detection.
+
+The main checkout owns `premium/`; it is included in source synchronization.
+The external EE checkout is synchronized into `<main>/zsvirt-ee/`. Incremental
+builds use `-Pee`, with built-in modules such as `premium/mevoco` and external
+modules such as `zsvirt-ee/zvf` in the same reactor. EE builds use distinct
+container and Maven-cache identities from the old premium layout. Existing
+persisted secondary-source columns retain their names to avoid a DB migration.
+
+This change migrates `compile`. The Groovy runner still uses its existing
+legacy test layout and explicitly selects the premium profile; migrating
+`tests/test-simple`, `tests/test-authentication`, and `tests-ee` is separate.
 
 ## ZSphere upgrade schema file
 

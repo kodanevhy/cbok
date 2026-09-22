@@ -829,7 +829,7 @@ def _incremental_compile_changed_modules(runner, docker_host: str, handle, work_
         str(work_premium),
         excluded_modules=GROOVY_TEST_AUTO_EXCLUDED_MODULES,
     )
-    plan = maven_build_plan(main_mods, prem_mods)
+    plan = maven_build_plan(main_mods, prem_mods, profile="premium")
     if not plan.modules:
         return 0
 
