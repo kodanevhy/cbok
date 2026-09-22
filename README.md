@@ -39,10 +39,8 @@
   docker run -d --name mariadb -e MYSQL_ROOT_PASSWORD=000000 -e MYSQL_DATABASE=cbok -p 3306:3306 -v mariadb_data:/var/lib/mysql mariadb:11.3
 ```
 
-示例如下，执行命令后会在对应的app目录下生成`migrations`文件夹。
-先运行 `makemigrations_bbx`，确定 ZSvirt 状态字段的升级规则，再处理其他 app。
+示例如下，执行命令后会在对应的app目录下生成`migrations`文件夹
 ```shell
-  python3 manage.py makemigrations_bbx
   python3 manage.py makemigrations user
   python3 manage.py makemigrations <其他app...>
 ```

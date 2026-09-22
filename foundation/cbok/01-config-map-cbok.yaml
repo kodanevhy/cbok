@@ -8,8 +8,8 @@ data:
     #!/bin/bash
     set -ex
 
-    python3 manage.py makemigrations_bbx && \
     python3 manage.py makemigrations user && \
+    python3 manage.py makemigrations bbx && \
     python3 manage.py makemigrations alert && \
     python3 manage.py migrate
 

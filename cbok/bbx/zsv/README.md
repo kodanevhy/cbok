@@ -66,13 +66,8 @@ builds use `-Pee`, with built-in modules such as `premium/mevoco` and external
 modules such as `zsvirt-ee/zvf` in the same reactor. EE builds use distinct
 container and Maven-cache identities from the old repository layout. State
 records use `zsvirt_root` / `zsvirt_head` and `ee_root` / `ee_head`, with separate
-main and EE module selections. Before starting CBoK with an existing database,
-run `python manage.py makemigrations_bbx` and `python manage.py migrate`.
-The startup script also uses this command. It generates a migration against
-the installation's local migration history without interactive rename guesses:
-main repository fields retain their values, while old premium repository
-fields are removed and EE fields start empty. Existing container records remain
-available for cleanup; their old build keys cannot be reused for EE builds.
+main and EE module selections. Upgrading an existing CBoK server database is
+outside the scope of this change.
 
 ## Groovy integration tests
 
