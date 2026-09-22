@@ -34,7 +34,7 @@ REMOTE_RUN_SCRIPT = "/tmp/cbok-zsv-groovy-run.sh"
 REMOTE_RUN_LOG = "/tmp/cbok-zsv-groovy-run.log"
 REMOTE_RUN_EXIT = "/tmp/cbok-zsv-groovy-run.exit"
 REMOTE_POLL_INTERVAL_SECONDS = 15
-GROOVY_TEST_AUTO_EXCLUDED_MODULES = frozenset(("test", "test-premium"))
+GROOVY_TEST_AUTO_EXCLUDED_MODULES = frozenset(("test-simple", "test-authentication", "test-ee"))
 PREPARED_DB_SCHEMA_FAILURE_PATTERNS = (
     re.compile(r"Table 'zstack(?:_rest)?\.[^']+' doesn't exist", re.IGNORECASE),
     re.compile(r"Unknown database 'zstack(?:_rest)?'", re.IGNORECASE),
@@ -79,17 +79,18 @@ class ContainerGroovyTest extends Test {
 """
 
 
-PREMIUM_HARNESS_BODY = """\
+AUTHENTICATION_HARNESS_BODY = """\
 import org.zstack.core.StartMode
-import org.zstack.testlib.premium.TestPremium
+import org.zstack.testlib.Test
+import org.zstack.testlib.premium.PremiumEnv
 
-class ContainerPremiumGroovyTest extends TestPremium {
+class ContainerAuthenticationGroovyTest extends Test {
     @Override
     void setup() {
         if (Boolean.getBoolean("cbokReuseDeployDb")) {
             DEPLOY_DB = false
         }
-        useSpring(makePremiumSpring())
+        useSpring(PremiumEnv.makeSpring())
     }
 
     @Override
@@ -109,9 +110,34 @@ class ContainerPremiumGroovyTest extends TestPremium {
 """
 
 
+EE_HARNESS_BODY = """\
+import org.zstack.core.StartMode
+import org.zstack.testlib.ee.TestEe
+
+class ContainerEeGroovyTest extends TestEe {
+    @Override
+    void setup() {
+        if (Boolean.getBoolean("cbokReuseDeployDb")) {
+            DEPLOY_DB = false
+        }
+        useSpring(makeEeSpring())
+    }
+
+    @Override
+    void environment() {}
+
+    @Override
+    void test() { runSubCases() }
+
+    @Override
+    StartMode getCaseMode() { return StartMode.SIMULATOR }
+}
+"""
+
+
 @dataclass(frozen=True)
 class TestTarget:
-    premium: bool
+    module: str
     mode: str
     surefire_test: str
     needs_case_file: bool
@@ -218,20 +244,20 @@ def _is_case_source(source: Path | None) -> bool:
     base = _extends_name(source)
     if not base:
         return False
-    if base in ("SubCase", "PremiumSubCase"):
+    if base in ("SubCase", "SubCaseEe"):
         return True
     return (
         base.endswith("CaseStub")
         or base.endswith("CaseSub")
         or base.endswith("TestBase")
-        or base in ("AllowedDBRemaining", "PremiumFSMCase", "SnapShotCaseSub")
+        or base in ("AllowedDBRemaining", "SnapShotCaseSub")
     )
 
 
 def _is_direct_test_source(source: Path | None) -> bool:
     text = _source_text(source)
     base = _extends_name(source)
-    if base in ("Test", "TestPremium", "PremiumTest", "KvmTest", "StabilityTest", "StabilityTestPremium"):
+    if base in ("Test", "TestEe", "KvmTest", "StabilityTest", "StabilityTestEe"):
         return True
     return "@Test" in text
 
@@ -257,20 +283,21 @@ def _nearest_suite_class(source_root: Path, test_class: str) -> str | None:
         current = current.parent
 
 
-def _is_premium_test_class(work_zstack: Path, work_premium: Path, test_class: str) -> bool:
-    premium_src = work_premium / "test-premium" / "src" / "test" / "groovy"
-    zstack_src = work_zstack / "test" / "src" / "test" / "groovy"
-    if _class_source_exists(premium_src, test_class):
-        return True
-    if _class_source_exists(zstack_src, test_class):
-        return False
-    return test_class.startswith("org.zstack.test.integration.premium.")
+TEST_MODULES = ("tests/test-simple", "tests/test-authentication", "zsvirt-ee/tests-ee/test-ee")
 
 
-def _source_root_for_target(work_zstack: Path, work_premium: Path, premium: bool) -> Path:
-    if premium:
-        return work_premium / "test-premium/src/test/groovy"
-    return work_zstack / "test/src/test/groovy"
+def _test_module_root(work_zsvirt: Path, work_ee: Path, module: str) -> Path:
+    if module.startswith("zsvirt-ee/"):
+        return work_ee / module.removeprefix("zsvirt-ee/")
+    return work_zsvirt / module
+
+
+def _find_test_module(work_zsvirt: Path, work_ee: Path, test_class: str) -> str:
+    matches = [module for module in TEST_MODULES
+               if _class_source_exists(_test_module_root(work_zsvirt, work_ee, module) / "src/test/groovy", test_class)]
+    if len(matches) != 1:
+        raise ValueError(f"Expected one test module for {test_class}, found: {matches}")
+    return matches[0]
 
 
 def _package_for_source_or_class(source: Path | None, test_class: str) -> str:
@@ -281,14 +308,14 @@ def _package_for_source_or_class(source: Path | None, test_class: str) -> str:
 
 
 def _resolve_test_target(
-        work_zstack: Path,
-        work_premium: Path,
+        work_zsvirt: Path,
+        work_ee: Path,
         test_class: str,
         test_mode: str,
 ) -> TestTarget:
     mode = test_mode
-    premium = _is_premium_test_class(work_zstack, work_premium, test_class)
-    source_root = _source_root_for_target(work_zstack, work_premium, premium)
+    module = _find_test_module(work_zsvirt, work_ee, test_class)
+    source_root = _test_module_root(work_zsvirt, work_ee, module) / "src/test/groovy"
     source = _class_source_file(source_root, test_class)
     if mode == "auto":
         if _is_case_source(source):
@@ -301,15 +328,15 @@ def _resolve_test_target(
         suite_class = _nearest_suite_class(source_root, test_class)
         if suite_class:
             return TestTarget(
-                premium=premium,
+                module=module,
                 mode=mode,
                 surefire_test=_simple_class_name(suite_class),
                 needs_case_file=True,
             )
         harness_package = _package_for_source_or_class(source, test_class)
-        harness_class = _harness_class_for_premium(premium, harness_package)
+        harness_class = _harness_class_for_module(module, harness_package)
         return TestTarget(
-            premium=premium,
+            module=module,
             mode=mode,
             surefire_test=_simple_class_name(harness_class),
             needs_case_file=True,
@@ -317,7 +344,7 @@ def _resolve_test_target(
             harness_class=harness_class,
         )
     return TestTarget(
-        premium=premium,
+        module=module,
         mode=mode,
         surefire_test=_simple_class_name(test_class),
         needs_case_file=False,
@@ -353,60 +380,48 @@ def _ensure_repo(path: str, label: str) -> bool:
     return False
 
 
-def _create_premium_link(work_zstack: Path) -> None:
-    link = work_zstack / "premium"
-    if link.exists() or link.is_symlink():
-        if link.is_dir() and not link.is_symlink():
-            shutil.rmtree(link)
-        else:
-            link.unlink()
-    os.symlink("../premium", link)
+def _create_ee_link(work_zsvirt: Path) -> None:
+    link = work_zsvirt / "zsvirt-ee"
+    if link.is_symlink():
+        link.unlink()
+    elif link.exists():
+        raise ValueError(f"Cannot replace existing EE directory: {link}")
+    os.symlink("../zsvirt-ee", link)
 
 
-def _write_harnesses(work_zstack: Path, work_premium: Path, target: TestTarget) -> None:
+def _write_harnesses(work_zsvirt: Path, work_ee: Path, target: TestTarget) -> None:
     if not target.needs_harness:
         return
     harness_class = _harness_class(target)
     harness_path = Path(*harness_class.split(".")).with_suffix(".groovy")
     package = harness_class.rsplit(".", 1)[0] if "." in harness_class else ""
     package_line = f"package {package}\n\n" if package else ""
-    body = PREMIUM_HARNESS_BODY if target.premium else CORE_HARNESS_BODY
-    if target.premium:
-        _write_file(
-            work_premium
-            / "test-premium/src/test/groovy"
-            / harness_path,
-            package_line + body,
-        )
-    else:
-        _write_file(
-            work_zstack
-            / "test/src/test/groovy"
-            / harness_path,
-            package_line + body,
-        )
+    body = CORE_HARNESS_BODY
+    if target.module == "tests/test-authentication":
+        body = AUTHENTICATION_HARNESS_BODY
+    elif target.module.startswith("zsvirt-ee/"):
+        body = EE_HARNESS_BODY
+    _write_file(_module_source_root(work_zsvirt, work_ee, target) / harness_path, package_line + body)
 
 
-def _module_source_root(work_zstack: Path, work_premium: Path, target: TestTarget) -> Path:
-    if target.premium:
-        return work_premium / "test-premium/src/test/groovy"
-    return work_zstack / "test/src/test/groovy"
+def _module_source_root(work_zsvirt: Path, work_ee: Path, target: TestTarget) -> Path:
+    return _module_root(work_zsvirt, work_ee, target) / "src/test/groovy"
 
 
-def _module_root(work_zstack: Path, work_premium: Path, target: TestTarget) -> Path:
-    if target.premium:
-        return work_premium / "test-premium"
-    return work_zstack / "test"
+def _module_root(work_zsvirt: Path, work_ee: Path, target: TestTarget) -> Path:
+    return _test_module_root(work_zsvirt, work_ee, target.module)
 
 
 def _harness_class(target: TestTarget) -> str:
-    return target.harness_class or _harness_class_for_premium(target.premium)
+    return target.harness_class or _harness_class_for_module(target.module)
 
 
-def _harness_class_for_premium(premium: bool, package: str = "org.zstack.test.integration") -> str:
+def _harness_class_for_module(module: str, package: str = "org.zstack.test.integration") -> str:
     prefix = f"{package}." if package else ""
-    if premium:
-        return f"{prefix}ContainerPremiumGroovyTest"
+    if module == "tests/test-authentication":
+        return f"{prefix}ContainerAuthenticationGroovyTest"
+    if module.startswith("zsvirt-ee/"):
+        return f"{prefix}ContainerEeGroovyTest"
     return f"{prefix}ContainerGroovyTest"
 
 
@@ -459,15 +474,15 @@ def _patch_module_sources(module_root: Path, selected_root: Path) -> None:
 
 
 def _prepare_selected_test_sources(
-        work_zstack: Path,
-        work_premium: Path,
+        work_zsvirt: Path,
+        work_ee: Path,
         test_class: str,
         target: TestTarget,
 ) -> None:
     if not target.needs_harness:
         return
-    source_root = _module_source_root(work_zstack, work_premium, target)
-    module_root = _module_root(work_zstack, work_premium, target)
+    source_root = _module_source_root(work_zsvirt, work_ee, target)
+    module_root = _module_root(work_zsvirt, work_ee, target)
     selected = _collect_selected_sources(source_root, test_class, target)
     if not _class_source_path(source_root, test_class) in selected:
         raise FileNotFoundError(f"Test class source not found under {source_root}: {test_class}")
@@ -486,7 +501,7 @@ def _prepare_selected_test_sources(
 
 
 def _mvn_base(offline: bool = False) -> str:
-    parts = ["mvn"]
+    parts = ["mvn", "-Pee"]
     if offline:
         parts.append("-o")
     parts.extend([
@@ -523,8 +538,9 @@ def _properties_patch_script(work_root: str = DOCKER_WORK_ROOT) -> str:
     return f"""\
 patch_zstack_properties() {{
   for props in \\
-    {work_root}/zstack/test/target/test-classes/zstack.properties \\
-    {work_root}/zstack/premium/test-premium/target/test-classes/zstack.properties
+    {work_root}/zsvirt/tests/test-simple/target/test-classes/zstack.properties \\
+    {work_root}/zsvirt/tests/test-authentication/target/test-classes/zstack.properties \\
+    {work_root}/zsvirt/zsvirt-ee/tests-ee/test-ee/target/test-classes/zstack.properties
   do
     if [ -f "$props" ]; then
       sed -i \\
@@ -542,10 +558,12 @@ def _ukey_patch_script(work_root: str = DOCKER_WORK_ROOT) -> str:
     return f"""\
 disable_ukey_util() {{
   for util in \\
-    {work_root}/zstack/test/target/test-classes/tools/zskey-util \\
-    {work_root}/zstack/test/target/test-classes/tools/zskey-util-aarch64 \\
-    {work_root}/zstack/premium/test-premium/target/test-classes/tools/zskey-util \\
-    {work_root}/zstack/premium/test-premium/target/test-classes/tools/zskey-util-aarch64
+    {work_root}/zsvirt/tests/test-simple/target/test-classes/tools/zskey-util \\
+    {work_root}/zsvirt/tests/test-simple/target/test-classes/tools/zskey-util-aarch64 \\
+    {work_root}/zsvirt/tests/test-authentication/target/test-classes/tools/zskey-util \\
+    {work_root}/zsvirt/tests/test-authentication/target/test-classes/tools/zskey-util-aarch64 \\
+    {work_root}/zsvirt/zsvirt-ee/tests-ee/test-ee/target/test-classes/tools/zskey-util \\
+    {work_root}/zsvirt/zsvirt-ee/tests-ee/test-ee/target/test-classes/tools/zskey-util-aarch64
   do
     rm -f "$util"
   done
@@ -660,24 +678,7 @@ def build_container_test_script(
         work_root: str = DOCKER_WORK_ROOT,
         reuse_deploy_db: bool = False,
 ) -> str:
-    test_dir = f"{work_root}/zstack/test"
-    if target.premium:
-        test_dir = f"{work_root}/zstack/premium/test-premium"
-    test_resource_copy = ""
-    if target.premium:
-        source_classes = f"{work_root}/zstack/test/target/test-classes"
-        target_classes = f"{test_dir}/target/test-classes"
-        test_resource_copy = f"""\
-if [ -d {source_classes} ]; then
-  mkdir -p {target_classes}
-  for file in zstack.properties log4j2.xml; do
-    if [ -f {source_classes}/$file ]; then
-      cp {source_classes}/$file {target_classes}/$file
-    fi
-  done
-fi
-"""
-
+    test_dir = f"{work_root}/zsvirt/{target.module}"
     return f"""\
 set -euo pipefail
 dump_failure_context() {{
@@ -717,7 +718,6 @@ start_mysql
 cd {test_dir}
 {_reuse_deploy_db_patch_script(target, reuse_deploy_db)}
 {_test_compile_command()}
-{test_resource_copy}
 {_properties_patch_script(work_root)}
 patch_zstack_properties
 {_ukey_patch_script(work_root)}
@@ -755,14 +755,14 @@ def _looks_like_prepared_db_schema_failure(log_text: str) -> bool:
 
 def _cleanup_worktrees(
         runner,
-        zstack_repo: str,
-        premium_repo: str,
-        work_zstack: Path,
-        work_premium: Path,
+        zsvirt_repo: str,
+        ee_repo: str,
+        work_zsvirt: Path,
+        work_ee: Path,
         work_root: Path,
 ) -> None:
-    _run(runner, ["git", "-C", zstack_repo, "worktree", "remove", "-f", str(work_zstack)])
-    _run(runner, ["git", "-C", premium_repo, "worktree", "remove", "-f", str(work_premium)])
+    _run(runner, ["git", "-C", zsvirt_repo, "worktree", "remove", "-f", str(work_zsvirt)])
+    _run(runner, ["git", "-C", ee_repo, "worktree", "remove", "-f", str(work_ee)])
     shutil.rmtree(work_root, ignore_errors=True)
 
 
@@ -775,20 +775,20 @@ def _git_ref(runner, repo: str | Path, ref: str) -> str:
 
 def _worktrees_match_requested_refs(
         runner,
-        zstack_repo: str,
-        premium_repo: str,
-        work_zstack: Path,
-        work_premium: Path,
-        zstack_branch: str,
-        premium_branch: str,
+        zsvirt_repo: str,
+        ee_repo: str,
+        work_zsvirt: Path,
+        work_ee: Path,
+        zsvirt_branch: str,
+        ee_branch: str,
 ) -> bool:
-    expected_zstack = _git_ref(runner, zstack_repo, zstack_branch)
-    actual_zstack = _git_ref(runner, work_zstack, "HEAD")
-    expected_premium = _git_ref(runner, premium_repo, premium_branch)
-    actual_premium = _git_ref(runner, work_premium, "HEAD")
-    if expected_zstack and actual_zstack and expected_zstack != actual_zstack:
+    expected_zsvirt = _git_ref(runner, zsvirt_repo, zsvirt_branch)
+    actual_zsvirt = _git_ref(runner, work_zsvirt, "HEAD")
+    expected_ee = _git_ref(runner, ee_repo, ee_branch)
+    actual_ee = _git_ref(runner, work_ee, "HEAD")
+    if expected_zsvirt and actual_zsvirt and expected_zsvirt != actual_zsvirt:
         return False
-    if expected_premium and actual_premium and expected_premium != actual_premium:
+    if expected_ee and actual_ee and expected_ee != actual_ee:
         return False
     return True
 
@@ -818,18 +818,18 @@ done < <(git -C "$source_repo" ls-files --others --exclude-standard -z)
     return _run_shell(runner, script)
 
 
-def _incremental_compile_changed_modules(runner, docker_host: str, handle, work_zstack: Path, work_premium: Path) -> int:
-    if not validate_changed_paths_base_ref(str(work_zstack)):
+def _incremental_compile_changed_modules(runner, docker_host: str, handle, work_zsvirt: Path, work_ee: Path) -> int:
+    if not validate_changed_paths_base_ref(str(work_zsvirt)):
         return 1
-    if work_premium.is_dir() and not validate_changed_paths_base_ref(str(work_premium)):
+    if work_ee.is_dir() and not validate_changed_paths_base_ref(str(work_ee)):
         return 1
 
-    main_mods, prem_mods = auto_detect_modules(
-        str(work_zstack),
-        str(work_premium),
+    main_mods, ee_mods = auto_detect_modules(
+        str(work_zsvirt),
+        str(work_ee),
         excluded_modules=GROOVY_TEST_AUTO_EXCLUDED_MODULES,
     )
-    plan = maven_build_plan(main_mods, prem_mods, profile="premium")
+    plan = maven_build_plan(main_mods, ee_mods)
     if not plan.modules:
         return 0
 
@@ -841,7 +841,7 @@ def _incremental_compile_changed_modules(runner, docker_host: str, handle, work_
     LOG.info("Running incremental compile in %s: %s", handle.container_name, mvn_inner)
     script = f"""
 set -euo pipefail
-cd {shlex.quote(handle.work_zstack)}
+cd {shlex.quote(handle.work_zsvirt)}
 {mvn_inner}
 """
     return _docker_shell(
@@ -881,7 +881,7 @@ def _docker_shell_capture(runner, docker_host: str, args: list[str]):
     )
 
 
-def _docker_cp_zstack_to_remote_container(
+def _docker_cp_zsvirt_to_remote_container(
         runner,
         docker_host: str,
         source_dir: Path,
@@ -894,7 +894,7 @@ def _docker_cp_zstack_to_remote_container(
         source_dir,
         container_name,
         dest_dir,
-        exclude_premium=True,
+        exclude_ee=True,
     )
 
 
@@ -905,9 +905,9 @@ def _docker_stream_archive_to_container(
         container_name: str,
         dest_dir: str,
         *,
-        exclude_premium: bool = False,
+        exclude_ee: bool = False,
 ) -> int:
-    premium_excludes = "--exclude premium --exclude ./premium " if exclude_premium else ""
+    ee_excludes = "--exclude zsvirt-ee --exclude ./zsvirt-ee " if exclude_ee else ""
     excludes = (
         "--exclude .git "
         "--exclude target "
@@ -915,7 +915,7 @@ def _docker_stream_archive_to_container(
         "--exclude .idea "
         "--exclude .gradle "
         "--exclude node_modules "
-        f"{premium_excludes}"
+        f"{ee_excludes}"
         "--exclude '._*' "
         "--exclude '*/._*' "
         "--exclude .DS_Store "
@@ -1019,8 +1019,8 @@ def _run_remote_docker_test(
         runner,
         docker_host: str,
         runner_container: str,
-        work_zstack: Path,
-        work_premium: Path,
+        work_zsvirt: Path,
+        work_ee: Path,
         case_file: Path,
         target: TestTarget,
         image: str,
@@ -1050,26 +1050,26 @@ def _run_remote_docker_test(
                 runner_container,
                 "bash",
                 "-lc",
-                f"mkdir -p {DOCKER_WORK_ROOT}/zstack {DOCKER_WORK_ROOT}/premium /tmp",
+                f"mkdir -p {DOCKER_WORK_ROOT}/zsvirt {DOCKER_WORK_ROOT}/zsvirt-ee /tmp",
             ],
         )
         if rc != 0:
             return rc
-        rc = _docker_cp_zstack_to_remote_container(
+        rc = _docker_cp_zsvirt_to_remote_container(
             runner,
             docker_host,
-            work_zstack,
+            work_zsvirt,
             runner_container,
-            f"{DOCKER_WORK_ROOT}/zstack",
+            f"{DOCKER_WORK_ROOT}/zsvirt",
         )
         if rc != 0:
             return rc
         rc = _docker_stream_archive_to_container(
             runner,
             docker_host,
-            work_premium,
+            work_ee,
             runner_container,
-            f"{DOCKER_WORK_ROOT}/premium",
+            f"{DOCKER_WORK_ROOT}/zsvirt-ee",
         )
         if rc != 0:
             return rc
@@ -1081,7 +1081,7 @@ def _run_remote_docker_test(
                 runner_container,
                 "bash",
                 "-lc",
-                f"ln -sfn ../premium {DOCKER_WORK_ROOT}/zstack/premium",
+                f"ln -sfn ../zsvirt-ee {DOCKER_WORK_ROOT}/zsvirt/zsvirt-ee",
             ],
         )
         if rc != 0:
@@ -1119,12 +1119,12 @@ def _validate_inputs(test_class: str, test_mode: str) -> bool:
 
 def run_groovy_test_flow(
         *,
-        zstack_branch: str,
-        premium_branch: str,
+        zsvirt_branch: str,
+        ee_branch: str,
         test_class: str,
         test_mode: str = "auto",
-        zstack_repo: str | None = None,
-        premium_repo: str | None = None,
+        zsvirt_repo: str | None = None,
+        ee_repo: str | None = None,
         work_root: str | None = None,
         image: str | None = None,
         platform: str | None = None,
@@ -1138,20 +1138,20 @@ def run_groovy_test_flow(
     if not _validate_inputs(test_class, test_mode):
         return 1
 
-    if not zstack_repo:
-        LOG.error("--zstack-repo is required.")
+    if not zsvirt_repo:
+        LOG.error("--zsvirt-repo is required.")
         return 1
-    if not premium_repo:
-        LOG.error("--premium-repo is required.")
+    if not ee_repo:
+        LOG.error("--ee-repo is required.")
         return 1
-    zstack_repo = os.path.realpath(zstack_repo)
-    premium_repo = os.path.realpath(premium_repo)
-    if not _ensure_repo(zstack_repo, "zstack") or not _ensure_repo(premium_repo, "premium"):
+    zsvirt_repo = os.path.realpath(zsvirt_repo)
+    ee_repo = os.path.realpath(ee_repo)
+    if not _ensure_repo(zsvirt_repo, "zsvirt") or not _ensure_repo(ee_repo, "zsvirt-ee"):
         return 1
 
     runner = runner or cbok_utils.UnifiedProcessRunner()
     docker_conf = remote_docker_compile_from_conf()
-    run_id = _safe_run_id(run_id or f"{zstack_branch}-{premium_branch}")
+    run_id = _safe_run_id(run_id or f"{zsvirt_branch}-{ee_branch}")
     if work_root:
         root = Path(os.path.realpath(work_root))
         root.mkdir(parents=True, exist_ok=True)
@@ -1159,8 +1159,8 @@ def run_groovy_test_flow(
         root = Path("/tmp") / f"cbok-zsv-groovy-test-{run_id}"
         root.mkdir(parents=True, exist_ok=True)
 
-    work_zstack = root / "zstack"
-    work_premium = root / "premium"
+    work_zsvirt = root / "zsvirt"
+    work_ee = root / "zsvirt-ee"
     case_file = root / "cases.txt"
     runner_container = f"cbok-zsv-groovy-{run_id}-runner"
     image = image or docker_conf.image.strip() or FALLBACK_IMAGE
@@ -1171,69 +1171,73 @@ def run_groovy_test_flow(
     workdir = (docker_conf.workdir.strip() or DOCKER_WORK_ROOT).rstrip("/")
     m2_volume = docker_conf.m2_volume.strip() or "auto"
 
-    partial_worktree = (work_zstack.exists() and not work_premium.exists()) or (
-        work_premium.exists() and not work_zstack.exists()
+    partial_worktree = (work_zsvirt.exists() and not work_ee.exists()) or (
+        work_ee.exists() and not work_zsvirt.exists()
     )
     if partial_worktree:
-        _cleanup_worktrees(runner, zstack_repo, premium_repo, work_zstack, work_premium, root)
+        _cleanup_worktrees(runner, zsvirt_repo, ee_repo, work_zsvirt, work_ee, root)
         root.mkdir(parents=True, exist_ok=True)
-    elif work_zstack.exists() and work_premium.exists() and keep_worktree:
+    elif work_zsvirt.exists() and work_ee.exists() and keep_worktree:
         if not _worktrees_match_requested_refs(
                 runner,
-                zstack_repo,
-                premium_repo,
-                work_zstack,
-                work_premium,
-                zstack_branch,
-                premium_branch,
+                zsvirt_repo,
+                ee_repo,
+                work_zsvirt,
+                work_ee,
+                zsvirt_branch,
+                ee_branch,
         ):
-            _cleanup_worktrees(runner, zstack_repo, premium_repo, work_zstack, work_premium, root)
+            _cleanup_worktrees(runner, zsvirt_repo, ee_repo, work_zsvirt, work_ee, root)
             root.mkdir(parents=True, exist_ok=True)
-    elif (work_zstack.exists() or work_premium.exists()) and not keep_worktree:
-        _cleanup_worktrees(runner, zstack_repo, premium_repo, work_zstack, work_premium, root)
+    elif (work_zsvirt.exists() or work_ee.exists()) and not keep_worktree:
+        _cleanup_worktrees(runner, zsvirt_repo, ee_repo, work_zsvirt, work_ee, root)
         root.mkdir(parents=True, exist_ok=True)
 
-    if not work_zstack.exists() and not work_premium.exists():
+    if not work_zsvirt.exists() and not work_ee.exists():
         rc = _run(
             runner,
-            ["git", "-C", zstack_repo, "worktree", "add", "--detach", str(work_zstack), zstack_branch],
+            ["git", "-C", zsvirt_repo, "worktree", "add", "--detach", str(work_zsvirt), zsvirt_branch],
         )
         if rc != 0:
             return rc
         rc = _run(
             runner,
-            ["git", "-C", premium_repo, "worktree", "add", "--detach", str(work_premium), premium_branch],
+            ["git", "-C", ee_repo, "worktree", "add", "--detach", str(work_ee), ee_branch],
         )
         if rc != 0:
             return rc
 
-    rc = _overlay_source_worktree_changes(runner, zstack_repo, work_zstack)
+    rc = _overlay_source_worktree_changes(runner, zsvirt_repo, work_zsvirt)
     if rc != 0:
         return rc
-    rc = _overlay_source_worktree_changes(runner, premium_repo, work_premium)
+    rc = _overlay_source_worktree_changes(runner, ee_repo, work_ee)
     if rc != 0:
         return rc
 
-    _create_premium_link(work_zstack)
-    target = _resolve_test_target(work_zstack, work_premium, test_class, test_mode)
+    try:
+        _create_ee_link(work_zsvirt)
+        target = _resolve_test_target(work_zsvirt, work_ee, test_class, test_mode)
+    except ValueError as exc:
+        LOG.error("%s", exc)
+        return 1
     if target.needs_case_file and "." not in test_class:
         LOG.error("Case mode requires fully qualified --test-class, got: %s", test_class)
         return 1
-    _write_harnesses(work_zstack, work_premium, target)
+    _write_harnesses(work_zsvirt, work_ee, target)
     if target.needs_case_file:
         _write_file(case_file, f"{test_class}\n")
 
     spec = WorktreeContainerSpec(
-        zstack_root=str(work_zstack),
-        premium_root=str(work_premium),
+        zsvirt_root=str(work_zsvirt),
+        ee_root=str(work_ee),
         docker_host=docker_host,
         image=image,
         platform=platform or "",
         workdir=workdir,
         container_name="auto",
         m2_volume=m2_volume,
-        identity_zstack_root=zstack_repo,
-        identity_premium_root=premium_repo,
+        identity_zsvirt_root=zsvirt_repo,
+        identity_ee_root=ee_repo,
         min_free_gb=docker_conf.min_free_gb,
     )
     rc, handle = ensure_worktree_container(
@@ -1245,7 +1249,7 @@ def run_groovy_test_flow(
         return rc or 1
 
     if not handle.full_compile_ran:
-        rc = _incremental_compile_changed_modules(runner, docker_host, handle, work_zstack, work_premium)
+        rc = _incremental_compile_changed_modules(runner, docker_host, handle, work_zsvirt, work_ee)
         if rc != 0:
             return rc
 

@@ -10,7 +10,7 @@ remote container name from the current worktree and reuses it on later runs:
 
 ```bash
 cbok zsv compile --address 172.26.213.50 \
-  --zstack-root /path/to/zsvirt \
+  --zsvirt-root /path/to/zsvirt \
   --ee-root /path/to/zsvirt-ee
 ```
 
@@ -64,15 +64,31 @@ The main checkout owns `premium/`; it is included in source synchronization.
 The external EE checkout is synchronized into `<main>/zsvirt-ee/`. Incremental
 builds use `-Pee`, with built-in modules such as `premium/mevoco` and external
 modules such as `zsvirt-ee/zvf` in the same reactor. EE builds use distinct
-container and Maven-cache identities from the old premium layout. EE source paths, revisions, and deployed module selections use dedicated
-`ee_root`, `ee_head`, and `last_ee_modules` fields. Premium fields retain their
-original meaning for the legacy Groovy runner. Apply these additional fields
-through the existing `manage.py makemigrations bbx` and `manage.py migrate`
-deployment workflow before running the updated command.
+container and Maven-cache identities from the old repository layout. State
+records use `zsvirt_root` / `zsvirt_head` and `ee_root` / `ee_head`, with separate
+main and EE module selections. Apply the model changes through the existing
+`manage.py makemigrations bbx` and `manage.py migrate` deployment workflow.
+Old premium repository fields are removed; they are not relabeled as EE.
 
-This change migrates `compile`. The Groovy runner still uses its existing
-legacy test layout and explicitly selects the premium profile; migrating
-`tests/test-simple`, `tests/test-authentication`, and `tests-ee` is separate.
+## Groovy integration tests
+
+```bash
+cbok zsv groovy_test --zsvirt-repo /path/to/zsvirt \
+  --ee-repo /path/to/zsvirt-ee \
+  --zsvirt-branch zsv_5.2.0 --ee-branch zsv_5.2.0 \
+  --test-class org.zstack.test.integration.kvm.KvmTest
+```
+
+The runner creates worktrees for both repositories, preserves the main
+repository's `premium/`, and links only `zsvirt-ee/`. It finds the requested
+source in `tests/test-simple`, `tests/test-authentication`, or
+`zsvirt-ee/tests-ee/test-ee`. Missing or ambiguous classes fail before building.
+The selected module determines its harness (`Test`, `Test` with `PremiumEnv`, or `TestEe`);
+a Java package containing `premium` does not identify an external repository.
+Both full and incremental compilation use the EE build profile.
+
+PR references accept `zsvirt`, `zsvirt-ee`, `zsvirt-utility`, and `zstack-store`.
+The old `zstack` and `premium` repository labels are no longer accepted.
 
 ## ZSphere upgrade schema file
 
@@ -93,7 +109,7 @@ List reusable worktree containers and their recorded PR/MR links first:
 cbok zsv list_worktree_container_prs
 ```
 
-The output includes each container's main, premium, and EE roots, current branch, and
+The output includes each container's ZSvirt and EE roots, current branch, and
 database-recorded PR/MR links. Review those PR/MR states outside cbok, then pass the
 explicit container names to delete:
 
@@ -113,7 +129,7 @@ by compile.
 PR/MR links are stored in `bbx_zsvworktreecontainerpullrequest` when the
 worktree container record is created or refreshed by `cbok zsv compile`. Pass
 them explicitly to compile with one `--pr-url <repo>=<url>[,<repo>=<url>...]`,
-where `<repo>` is `zstack`, `premium`, `zstack-utility`, or `zstack-store`.
+where `<repo>` is `zsvirt`, `zsvirt-ee`, `zsvirt-utility`, or `zstack-store`.
 `cbok zsv groovy_test` does not refresh PR/MR links.
 The list command only reads those recorded URLs; cbok does not query or decide
 PR/MR state.

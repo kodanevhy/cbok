@@ -13,27 +13,24 @@ from cbok.test.zsv.test_worktree_container import FakeRunner, FakeWorktreeContai
 class EeCompileLayoutTest(unittest.TestCase):
     def spec(self, root='/repo/zsvirt', ee='/repo/zsvirt-ee'):
         return worktree_container.WorktreeContainerSpec(
-            zstack_root=root, ee_root=ee, docker_host='tcp://build:2375',
-            image='builder', build_profile='ee')
+            zsvirt_root=root, ee_root=ee, docker_host='tcp://build:2375',
+            image='builder')
 
     def test_builtin_premium_and_external_ee_use_the_same_ee_reactor(self):
         plan = compile.maven_build_plan(['plugin/kvm', 'premium/mevoco'], ['zvf'])
         self.assertEqual(['plugin/kvm', 'premium/mevoco', 'zsvirt-ee/zvf'], plan.modules)
         self.assertEqual(['ee'], plan.profiles)
         self.assertEqual(['ee'], compile.maven_build_plan(['plugin/kvm'], []).profiles)
-        targets = compile._docker_sync_target_lines(plan, '/work/zstack', '/work/zstack/zsvirt-ee')
-        self.assertIn('sync_target /work/zstack /out/zstack premium/mevoco', targets)
-        self.assertIn('sync_target /work/zstack/zsvirt-ee /out/ee zvf', targets)
+        targets = compile._docker_sync_target_lines(plan, '/work/zsvirt', '/work/zsvirt/zsvirt-ee')
+        self.assertIn('sync_target /work/zsvirt /out/zsvirt premium/mevoco', targets)
+        self.assertIn('sync_target /work/zsvirt/zsvirt-ee /out/ee zvf', targets)
 
-    def test_ee_container_cannot_reuse_premium_build_state(self):
+    def test_container_key_identifies_both_repositories(self):
         spec = self.spec()
-        legacy = replace(spec, build_profile='premium')
-        self.assertNotEqual(worktree_container.worktree_key_for_spec(spec),
-                            worktree_container.worktree_key_for_spec(legacy))
-        script = worktree_container.full_compile_script(spec)
-        self.assertIn('./runMavenProfile ee', script)
-        self.assertNotIn('/testlib', script)
-        self.assertNotIn('runMavenProfile premium', script)
+        key = worktree_container.worktree_key_for_spec(spec)
+        self.assertNotEqual(key, worktree_container.worktree_key_for_spec(replace(spec, ee_root='/other/ee')))
+        self.assertNotEqual(key, worktree_container.worktree_key_for_spec(replace(spec, zsvirt_root='/other/main')))
+        self.assertIn('./runMavenProfile ee', worktree_container.full_compile_script(spec))
 
     def test_main_archive_keeps_builtin_premium_and_excludes_external_ee(self):
         with tempfile.TemporaryDirectory(prefix='cbok ee ') as td:
@@ -54,7 +51,7 @@ class EeCompileLayoutTest(unittest.TestCase):
             self.assertNotIn('stale.java', listing)
             self.assertNotIn('stale.class', listing)
             sync = next(s for s in scripts if 'rsync -a --delete' in s)
-            self.assertIn('/work/zstack/zsvirt-ee', sync)
+            self.assertIn('/work/zsvirt/zsvirt-ee', sync)
             self.assertNotIn('--exclude premium', sync)
 
     def test_ee_profile_survives_container_spec_normalization_and_reuse(self):
@@ -62,7 +59,7 @@ class EeCompileLayoutTest(unittest.TestCase):
         store = FakeWorktreeContainerStore()
         rc, handle = worktree_container.ensure_worktree_container(runner, self.spec(), state_store=store)
         self.assertEqual(0, rc)
-        self.assertEqual('/work/zstack/zsvirt-ee', handle.work_ee)
+        self.assertEqual('/work/zsvirt/zsvirt-ee', handle.work_ee)
         self.assertTrue(handle.full_compile_ran)
         rc, reused = worktree_container.ensure_worktree_container(runner, self.spec(), state_store=store)
         self.assertEqual(0, rc)
@@ -95,30 +92,30 @@ class EeCompileLayoutTest(unittest.TestCase):
     def test_ee_state_never_uses_premium_fields(self):
         spec = compile._compile_worktree_spec('/repo/zsvirt', '/repo/zsvirt-ee',
                                              compile.RemoteDockerCompileConfig(image='builder', docker_host='tcp://build:2375', platform='', workdir='/work', container_name='auto', m2_volume='auto'))
-        self.assertIsNone(spec.premium_root)
+        self.assertFalse(hasattr(spec, "premium_root"))
         self.assertEqual('/repo/zsvirt-ee', spec.ee_root)
         record = worktree_container._default_record(spec)
-        self.assertEqual('', record.premium_root)
+        self.assertFalse(hasattr(record, "premium_root"))
         self.assertEqual('/repo/zsvirt-ee', record.ee_root)
         runner = FakeRunner()
         store = FakeWorktreeContainerStore()
         rc, handle = worktree_container.ensure_worktree_container(runner, spec, state_store=store)
         self.assertEqual(0, rc)
-        self.assertEqual('/work/zstack/premium', handle.work_premium)
-        self.assertEqual('/work/zstack/zsvirt-ee', handle.work_ee)
+        self.assertFalse(hasattr(handle, "work_premium"))
+        self.assertEqual('/work/zsvirt/zsvirt-ee', handle.work_ee)
         self.assertNotEqual(worktree_container.worktree_key_for_spec(spec),
                             worktree_container.worktree_key_for_spec(replace(spec, ee_root='/repo/other-ee')))
 
-        obj = SimpleNamespace(premium_root='/old/premium', last_premium_modules='["old"]', save=Mock())
+        obj = SimpleNamespace(save=Mock())
         manager = Mock()
         manager.get_or_create.return_value = (obj, False)
         manager.filter.return_value.first.return_value = obj
         with patch.object(compile.ZsvCompileState, 'objects', manager):
             db = compile.DjangoCompileDeployStateStore()
             selection = compile.CompileDeploySelection(['premium/mevoco'], ['zvf'], [])
-            db.save_selection('key', spec.zstack_root, spec.ee_root, selection)
+            db.save_selection('key', spec.zsvirt_root, spec.ee_root, selection)
             self.assertEqual(selection, db.load_selection('key'))
-        self.assertEqual('/old/premium', obj.premium_root)
-        self.assertEqual('["old"]', obj.last_premium_modules)
+        self.assertFalse(hasattr(obj, "premium_root"))
+        self.assertFalse(hasattr(obj, "last_premium_modules"))
         self.assertEqual(spec.ee_root, obj.ee_root)
         self.assertNotIn('premium_root', obj.save.call_args.kwargs['update_fields'])

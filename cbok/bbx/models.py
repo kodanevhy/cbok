@@ -27,8 +27,7 @@ class ZSphereUpgradeState(models.Model):
 
 class ZsvWorktreeContainerState(models.Model):
     worktree_key = models.CharField(max_length=64, unique=True)
-    zstack_root = models.CharField(max_length=512)
-    premium_root = models.CharField(max_length=512, blank=True, default="")
+    zsvirt_root = models.CharField(max_length=512)
     ee_root = models.CharField(max_length=512, blank=True, default="")
     docker_host = models.CharField(max_length=255, blank=True, default="")
     image = models.CharField(max_length=255)
@@ -36,8 +35,7 @@ class ZsvWorktreeContainerState(models.Model):
     workdir = models.CharField(max_length=255, default="/work")
     container_name = models.CharField(max_length=128, unique=True)
     m2_volume = models.CharField(max_length=128, blank=True, default="")
-    zstack_head = models.CharField(max_length=64, blank=True, default="")
-    premium_head = models.CharField(max_length=64, blank=True, default="")
+    zsvirt_head = models.CharField(max_length=64, blank=True, default="")
     ee_head = models.CharField(max_length=64, blank=True, default="")
     full_compile_done = models.BooleanField(default=False)
     full_compile_started_at = models.DateTimeField(blank=True, null=True)
@@ -77,14 +75,12 @@ class ZsvAgentReplaceState(models.Model):
 
 class ZsvCompileState(models.Model):
     worktree_key = models.CharField(max_length=64, unique=True)
-    zstack_root = models.CharField(max_length=512)
-    premium_root = models.CharField(max_length=512, blank=True, default="")
+    zsvirt_root = models.CharField(max_length=512)
     ee_root = models.CharField(max_length=512, blank=True, default="")
     last_main_modules = models.TextField(blank=True, default="")
-    last_premium_modules = models.TextField(blank=True, default="")
     last_ee_modules = models.TextField(blank=True, default="")
     last_web_classes = models.TextField(blank=True, default="")
     last_deployed_at = models.DateTimeField(blank=True, null=True)
 
     def __str__(self):
-        return f"{self.zstack_root}: compile"
+        return f"{self.zsvirt_root}: compile"

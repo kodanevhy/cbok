@@ -179,7 +179,7 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertIn("base_ref", zsv_option_names)
         self.assertIn("remote_docker_min_free_gb", option_names)
 
-    def test_run_compile_flow_requires_zstack_root(self):
+    def test_run_compile_flow_requires_zsvirt_root(self):
         runner = FakeRunner()
 
         with self.assertLogs(compile.LOG.name, level="ERROR") as logs:
@@ -192,7 +192,7 @@ class ZsvCompileTest(unittest.TestCase):
             )
 
         self.assertEqual(1, rc)
-        self.assertIn("--zstack-root is required", "\n".join(logs.output))
+        self.assertIn("--zsvirt-root is required", "\n".join(logs.output))
         self.assertEqual([], runner.calls)
 
     def test_run_compile_flow_defaults_to_worktree_container_name(self):
@@ -219,11 +219,11 @@ class ZsvCompileTest(unittest.TestCase):
                 address=None,
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=True,
-                zstack_root=str(root),
+                zsvirt_root=str(root),
                 ee_root=str(ee),
                 pr_url=(
-                    "zstack=https://dev.zstack.io/zstackio/zstack/-/merge_requests/10001,"
-                    "zsvirt-ee=https://dev.zstack.io/zstackio/ee/-/merge_requests/20002"
+                    "zsvirt=http://dev.zstack.io:9080/zvf/zsvirt/-/merge_requests/10001,"
+                    "zsvirt-ee=http://dev.zstack.io:9080/zvf/zsvirt-ee/-/merge_requests/20002"
                 ),
                 runner=runner,
             )
@@ -263,11 +263,11 @@ class ZsvCompileTest(unittest.TestCase):
                 address=None,
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=True,
-                zstack_root=str(root),
+                zsvirt_root=str(root),
                 ee_root=str(ee),
                 pr_url=(
-                    "zstack=https://dev.zstack.io/zstackio/zstack/-/merge_requests/10001,"
-                    "zsvirt-ee=https://dev.zstack.io/zstackio/ee/-/merge_requests/20002"
+                    "zsvirt=http://dev.zstack.io:9080/zvf/zsvirt/-/merge_requests/10001,"
+                    "zsvirt-ee=http://dev.zstack.io:9080/zvf/zsvirt-ee/-/merge_requests/20002"
                 ),
                 runner=runner,
             )
@@ -285,19 +285,19 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertEqual(
             (
                 worktree_container.WorktreePullRequest(
-                    repo="zstack",
-                    pr_url="https://dev.zstack.io/zstackio/zstack/-/merge_requests/10001",
+                    repo="zsvirt",
+                    pr_url="http://dev.zstack.io:9080/zvf/zsvirt/-/merge_requests/10001",
                 ),
                 worktree_container.WorktreePullRequest(
                     repo="zsvirt-ee",
-                    pr_url="https://dev.zstack.io/zstackio/ee/-/merge_requests/20002",
+                    pr_url="http://dev.zstack.io:9080/zvf/zsvirt-ee/-/merge_requests/20002",
                 ),
             ),
             records[0].pr_refs,
         )
         self.assertTrue(any("--platform linux/amd64" in script for script in shell_scripts))
         self.assertTrue(
-            any("docker exec -i cbok-zsv-worktree-zstack-" in script and "/tmp/cbok-zsv-src/zstack" in script for script in shell_scripts)
+            any("docker exec -i cbok-zsv-worktree-zstack-" in script and "/tmp/cbok-zsv-src/zsvirt" in script for script in shell_scripts)
         )
         archive_scripts = [script for script in shell_scripts if "tar $tar_extra_opts -C" in script and "docker exec -i" in script]
         self.assertTrue(any("COPYFILE_DISABLE=1 COPY_EXTENDED_ATTRIBUTES_DISABLE=1 tar $tar_extra_opts -C" in script for script in archive_scripts))
@@ -318,9 +318,9 @@ class ZsvCompileTest(unittest.TestCase):
         self.assertGreaterEqual(len(build_scripts), 3)
         self.assertTrue(any("./runMavenProfile ee" in script for script in build_scripts))
         self.assertFalse(any("mvn -T 12 -Dmaven.test.skip=true -P ee clean install" in script for script in build_scripts))
-        self.assertFalse(any("cd /work/zstack/testlib" in script for script in build_scripts))
+        self.assertFalse(any("cd /work/zsvirt/testlib" in script for script in build_scripts))
         self.assertNotIn("mvn -DskipTests clean install -pl plugin/foo", build_scripts[-1])
-        self.assertIn("sync_target /work/zstack /tmp/cbok-zsv-out/zstack plugin/foo", build_scripts[-1])
+        self.assertIn("sync_target /work/zsvirt /tmp/cbok-zsv-out/zsvirt plugin/foo", build_scripts[-1])
         self.assertIn('local props="$target/maven-archiver/pom.properties"', build_scripts[-1])
         self.assertIn('cp "$jar" "$dest/"', build_scripts[-1])
         self.assertNotIn('rsync -a --delete "$target"/ "$dest"/', build_scripts[-1])
@@ -361,13 +361,13 @@ class ZsvCompileTest(unittest.TestCase):
                     address=None,
                     remote_lib=compile.DEFAULT_REMOTE_LIB,
                     no_deploy=True,
-                    zstack_root=str(root),
+                    zsvirt_root=str(root),
                     ee_root=str(ee),
                     runner=runner,
                 )
 
         self.assertEqual(1, rc)
-        self.assertIn("zstack and ee branch names must be the same", "\n".join(logs.output))
+        self.assertIn("zsvirt and ee branch names must be the same", "\n".join(logs.output))
         self.assertEqual([], runner.calls)
 
     def test_run_compile_flow_rejects_base_ref_before_detecting_modules(self):
@@ -403,7 +403,7 @@ class ZsvCompileTest(unittest.TestCase):
                     address=None,
                     remote_lib=compile.DEFAULT_REMOTE_LIB,
                     no_deploy=True,
-                    zstack_root=str(root),
+                    zsvirt_root=str(root),
                     ee_root=str(ee),
                     runner=runner,
                 )
@@ -698,7 +698,7 @@ class ZsvCompileTest(unittest.TestCase):
                 str(root),
                 str(ee),
                 [
-                    "zstack:conf/springConfigXml/VolumeManager.xml",
+                    "zsvirt:conf/springConfigXml/VolumeManager.xml",
                     "ee:conf/springConfigXml/crypto.xml",
                 ],
             )
@@ -726,7 +726,7 @@ class ZsvCompileTest(unittest.TestCase):
             (root / "identity").mkdir()
             (root / "identity" / "pom.xml").write_text("<project/>", encoding="utf-8")
             jar_copy_root = Path(td) / "jar-copy"
-            (jar_copy_root / "zstack").mkdir(parents=True)
+            (jar_copy_root / "zsvirt").mkdir(parents=True)
             (jar_copy_root / "ee").mkdir(parents=True)
             compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
             compile.collect_changed_web_classes_files = lambda _root, _ee_root=None: [
@@ -742,7 +742,7 @@ class ZsvCompileTest(unittest.TestCase):
                     address=None,
                     remote_lib=compile.DEFAULT_REMOTE_LIB,
                     no_deploy=True,
-                    zstack_root=str(root),
+                    zsvirt_root=str(root),
                     ee_root=str(ee),
                     extra_web_classes=[
                         "ee:conf/springConfigXml/HostAllocatorManager.xml"
@@ -771,7 +771,7 @@ class ZsvCompileTest(unittest.TestCase):
             (root / "identity" / "pom.xml").write_text("<project/>", encoding="utf-8")
             (worktree_target / "identity-5.0.0.jar").write_bytes(b"wrong")
             jar_copy_root = Path(td) / "jar-copy"
-            jar_copy_target = jar_copy_root / "zstack" / "identity" / "target"
+            jar_copy_target = jar_copy_root / "zsvirt" / "identity" / "target"
             jar_copy_target.mkdir(parents=True)
             copied_jar = jar_copy_target / "identity-5.0.0.jar"
             copied_jar.write_bytes(b"jar")
@@ -784,7 +784,7 @@ class ZsvCompileTest(unittest.TestCase):
                     address="172.26.213.50",
                     remote_lib=compile.DEFAULT_REMOTE_LIB,
                     no_deploy=False,
-                    zstack_root=str(root),
+                    zsvirt_root=str(root),
                     ee_root=str(ee),
                     runner=runner,
                 )
@@ -825,7 +825,7 @@ class ZsvCompileTest(unittest.TestCase):
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             (root / "identity" / "pom.xml").write_text("<project/>", encoding="utf-8")
             jar_copy_root = Path(td) / "jar-copy"
-            jar_copy_target = jar_copy_root / "zstack" / "identity" / "target"
+            jar_copy_target = jar_copy_root / "zsvirt" / "identity" / "target"
             jar_copy_target.mkdir(parents=True)
             (jar_copy_target / "identity-5.0.0.jar").write_bytes(b"jar")
             compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
@@ -838,7 +838,7 @@ class ZsvCompileTest(unittest.TestCase):
                 address="172.26.213.50",
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=False,
-                zstack_root=str(root),
+                zsvirt_root=str(root),
                 ee_root=str(ee),
                 runner=runner,
             )
@@ -869,7 +869,7 @@ class ZsvCompileTest(unittest.TestCase):
             (root / "pom.xml").write_text("<project/>", encoding="utf-8")
             jar_copy_root = Path(td) / "jar-copy"
             for module in ("identity", "storage"):
-                target = jar_copy_root / "zstack" / module / "target"
+                target = jar_copy_root / "zsvirt" / module / "target"
                 target.mkdir(parents=True)
                 (target / f"{module}-5.0.0.jar").write_bytes(b"jar")
             compile._local_jar_copy_root_for_root = lambda _root: str(jar_copy_root)
@@ -887,7 +887,7 @@ class ZsvCompileTest(unittest.TestCase):
                 address="172.26.213.50",
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=False,
-                zstack_root=str(root),
+                zsvirt_root=str(root),
                 ee_root=str(ee),
                 runner=runner,
             )
@@ -946,7 +946,7 @@ class ZsvCompileTest(unittest.TestCase):
                 address="172.26.213.50",
                 remote_lib=compile.DEFAULT_REMOTE_LIB,
                 no_deploy=False,
-                zstack_root=str(root),
+                zsvirt_root=str(root),
                 ee_root=str(ee),
                 runner=runner,
             )
