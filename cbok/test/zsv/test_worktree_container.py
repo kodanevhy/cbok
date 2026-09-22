@@ -215,6 +215,8 @@ class WorktreeContainerTest(unittest.TestCase):
             }
 
             def fake_git_head(root):
+                if not root:
+                    return ""
                 return heads[str(Path(root).resolve())]
 
             with patch.object(worktree_container, "_git_head", side_effect=fake_git_head):

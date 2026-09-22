@@ -64,8 +64,11 @@ The main checkout owns `premium/`; it is included in source synchronization.
 The external EE checkout is synchronized into `<main>/zsvirt-ee/`. Incremental
 builds use `-Pee`, with built-in modules such as `premium/mevoco` and external
 modules such as `zsvirt-ee/zvf` in the same reactor. EE builds use distinct
-container and Maven-cache identities from the old premium layout. Existing
-persisted secondary-source columns retain their names to avoid a DB migration.
+container and Maven-cache identities from the old premium layout. EE source paths, revisions, and deployed module selections use dedicated
+`ee_root`, `ee_head`, and `last_ee_modules` fields. Premium fields retain their
+original meaning for the legacy Groovy runner. Apply these additional fields
+through the existing `manage.py makemigrations bbx` and `manage.py migrate`
+deployment workflow before running the updated command.
 
 This change migrates `compile`. The Groovy runner still uses its existing
 legacy test layout and explicitly selects the premium profile; migrating
@@ -90,7 +93,7 @@ List reusable worktree containers and their recorded PR/MR links first:
 cbok zsv list_worktree_container_prs
 ```
 
-The output includes each container's zstack/premium root, current branch, and
+The output includes each container's main, premium, and EE roots, current branch, and
 database-recorded PR/MR links. Review those PR/MR states outside cbok, then pass the
 explicit container names to delete:
 

@@ -30,7 +30,7 @@ Use it through the remote Docker compile settings:
 ```bash
 cbok zsv compile --address 172.26.213.50 \
   --zstack-root /path/to/zstack \
-  --premium-root /path/to/premium
+  --ee-root /path/to/zsvirt-ee
 ```
 
 Configure `cbok.conf`:

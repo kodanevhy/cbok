@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from cbok.bbx.zsv import compile, worktree_container
 from cbok.test.zsv.test_worktree_container import FakeRunner, FakeWorktreeContainerStore
@@ -11,7 +13,7 @@ from cbok.test.zsv.test_worktree_container import FakeRunner, FakeWorktreeContai
 class EeCompileLayoutTest(unittest.TestCase):
     def spec(self, root='/repo/zsvirt', ee='/repo/zsvirt-ee'):
         return worktree_container.WorktreeContainerSpec(
-            zstack_root=root, premium_root=ee, docker_host='tcp://build:2375',
+            zstack_root=root, ee_root=ee, docker_host='tcp://build:2375',
             image='builder', build_profile='ee')
 
     def test_builtin_premium_and_external_ee_use_the_same_ee_reactor(self):
@@ -60,7 +62,7 @@ class EeCompileLayoutTest(unittest.TestCase):
         store = FakeWorktreeContainerStore()
         rc, handle = worktree_container.ensure_worktree_container(runner, self.spec(), state_store=store)
         self.assertEqual(0, rc)
-        self.assertEqual('/work/zstack/zsvirt-ee', handle.work_premium)
+        self.assertEqual('/work/zstack/zsvirt-ee', handle.work_ee)
         self.assertTrue(handle.full_compile_ran)
         rc, reused = worktree_container.ensure_worktree_container(runner, self.spec(), state_store=store)
         self.assertEqual(0, rc)
@@ -89,3 +91,34 @@ class EeCompileLayoutTest(unittest.TestCase):
                        'premium/test-premium', 'premium/testlib-premium'):
             self.assertTrue(compile._is_auto_excluded(module), module)
         self.assertFalse(compile._is_auto_excluded('premium/mevoco'))
+
+    def test_ee_state_never_uses_premium_fields(self):
+        spec = compile._compile_worktree_spec('/repo/zsvirt', '/repo/zsvirt-ee',
+                                             compile.RemoteDockerCompileConfig(image='builder', docker_host='tcp://build:2375', platform='', workdir='/work', container_name='auto', m2_volume='auto'))
+        self.assertIsNone(spec.premium_root)
+        self.assertEqual('/repo/zsvirt-ee', spec.ee_root)
+        record = worktree_container._default_record(spec)
+        self.assertEqual('', record.premium_root)
+        self.assertEqual('/repo/zsvirt-ee', record.ee_root)
+        runner = FakeRunner()
+        store = FakeWorktreeContainerStore()
+        rc, handle = worktree_container.ensure_worktree_container(runner, spec, state_store=store)
+        self.assertEqual(0, rc)
+        self.assertEqual('/work/zstack/premium', handle.work_premium)
+        self.assertEqual('/work/zstack/zsvirt-ee', handle.work_ee)
+        self.assertNotEqual(worktree_container.worktree_key_for_spec(spec),
+                            worktree_container.worktree_key_for_spec(replace(spec, ee_root='/repo/other-ee')))
+
+        obj = SimpleNamespace(premium_root='/old/premium', last_premium_modules='["old"]', save=Mock())
+        manager = Mock()
+        manager.get_or_create.return_value = (obj, False)
+        manager.filter.return_value.first.return_value = obj
+        with patch.object(compile.ZsvCompileState, 'objects', manager):
+            db = compile.DjangoCompileDeployStateStore()
+            selection = compile.CompileDeploySelection(['premium/mevoco'], ['zvf'], [])
+            db.save_selection('key', spec.zstack_root, spec.ee_root, selection)
+            self.assertEqual(selection, db.load_selection('key'))
+        self.assertEqual('/old/premium', obj.premium_root)
+        self.assertEqual('["old"]', obj.last_premium_modules)
+        self.assertEqual(spec.ee_root, obj.ee_root)
+        self.assertNotIn('premium_root', obj.save.call_args.kwargs['update_fields'])

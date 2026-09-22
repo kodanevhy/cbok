@@ -63,9 +63,10 @@ class WorktreePullRequest:
 @dataclass(frozen=True)
 class WorktreeContainerSpec:
     zstack_root: str
-    premium_root: str | None
     docker_host: str
     image: str
+    premium_root: str | None = None
+    ee_root: str | None = None
     platform: str = ""
     workdir: str = DEFAULT_WORKDIR
     container_name: str = "auto"
@@ -91,6 +92,8 @@ class WorktreeContainerRecord:
     pr_refs: tuple[WorktreePullRequest, ...] = ()
     zstack_head: str = ""
     premium_head: str = ""
+    ee_root: str = ""
+    ee_head: str = ""
     full_compile_done: bool = False
     full_compile_started_at: datetime.datetime | None = None
     full_compile_finished_at: datetime.datetime | None = None
@@ -107,6 +110,7 @@ class WorktreeContainerHandle:
     work_zstack: str
     work_premium: str
     full_compile_ran: bool
+    work_ee: str = ""
 
 
 class DjangoWorktreeContainerStore:
@@ -124,6 +128,7 @@ class DjangoWorktreeContainerStore:
             for field in (
                     "zstack_root",
                     "premium_root",
+                    "ee_root",
                     "docker_host",
                     "image",
                     "platform",
@@ -191,7 +196,7 @@ def worktree_key_for_spec(spec: WorktreeContainerSpec) -> str:
         (spec.m2_volume or DEFAULT_M2_VOLUME).strip(),
     ]
     if spec.build_profile == "ee":
-        parts.append("zsvirt-ee-v1")
+        parts.extend(["zsvirt-ee-v2", os.path.realpath(spec.ee_root) if spec.ee_root else ""])
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
@@ -416,11 +421,11 @@ def _stream_source_to_upload_dir(
         container_name: str,
         upload_dir: str,
         *,
-        exclude_premium: bool = False,
+        exclude_external: bool = False,
         external_dir: str = "premium",
 ) -> int:
-    premium_excludes = f"--exclude {external_dir} --exclude ./{external_dir} " if exclude_premium else ""
-    excludes = SOURCE_EXCLUDES + " " + premium_excludes
+    external_excludes = f"--exclude {external_dir} --exclude ./{external_dir} " if exclude_external else ""
+    excludes = SOURCE_EXCLUDES + " " + external_excludes
     inner = f"rm -rf {shlex.quote(upload_dir)} && mkdir -p {shlex.quote(upload_dir)} && tar -xzf - -C {shlex.quote(upload_dir)}"
     script = (
         "tar_extra_opts=''; "
@@ -436,7 +441,8 @@ def _stream_source_to_upload_dir(
 def sync_sources_to_container(runner, spec: WorktreeContainerSpec, container_name: str) -> int:
     work_zstack = f"{spec.workdir}/zstack"
     external_dir = "zsvirt-ee" if spec.build_profile == "ee" else "premium"
-    work_premium = f"{work_zstack}/{external_dir}"
+    work_external = f"{work_zstack}/{external_dir}"
+    external_root = spec.ee_root if spec.build_profile == "ee" else spec.premium_root
     upload_root = "/tmp/cbok-zsv-src"
     rc = _stream_source_to_upload_dir(
         runner,
@@ -444,37 +450,37 @@ def sync_sources_to_container(runner, spec: WorktreeContainerSpec, container_nam
         spec.zstack_root,
         container_name,
         f"{upload_root}/zstack",
-        exclude_premium=True,
+        exclude_external=True,
         external_dir=external_dir,
     )
     if rc != 0:
         return rc
-    premium_sync = ""
-    if spec.premium_root:
+    external_sync = ""
+    if external_root:
         rc = _stream_source_to_upload_dir(
             runner,
             spec,
-            spec.premium_root,
+            external_root,
             container_name,
-            f"{upload_root}/premium",
+            f"{upload_root}/{external_dir}",
         )
         if rc != 0:
             return rc
-        premium_sync = f"""
-	if [ -L {shlex.quote(work_premium)} ]; then
-	  rm -f {shlex.quote(work_premium)}
+        external_sync = f"""
+	if [ -L {shlex.quote(work_external)} ]; then
+	  rm -f {shlex.quote(work_external)}
 	fi
-	if [ -e {shlex.quote(work_premium)} ] && [ ! -d {shlex.quote(work_premium)} ]; then
-	  rm -f {shlex.quote(work_premium)}
+	if [ -e {shlex.quote(work_external)} ] && [ ! -d {shlex.quote(work_external)} ]; then
+	  rm -f {shlex.quote(work_external)}
 	fi
-	mkdir -p {shlex.quote(work_premium)}
-	rsync -a --delete {RSYNC_EXCLUDES} {upload_root}/premium/ {shlex.quote(work_premium)}/
+	mkdir -p {shlex.quote(work_external)}
+	rsync -a --delete {RSYNC_EXCLUDES} {upload_root}/{external_dir}/ {shlex.quote(work_external)}/
 	"""
     sync_script = f"""
 	set -euo pipefail
 	mkdir -p {shlex.quote(work_zstack)}
 	rsync -a --delete {RSYNC_EXCLUDES} --exclude {external_dir} --exclude ./{external_dir} {upload_root}/zstack/ {shlex.quote(work_zstack)}/
-	{premium_sync}
+	{external_sync}
 	"""
     rc = docker_shell(
         runner,
@@ -525,6 +531,8 @@ def _default_record(spec: WorktreeContainerSpec) -> WorktreeContainerRecord:
         pr_refs=tuple(spec.pr_refs or ()),
         zstack_head=_git_head(identity_zstack_root),
         premium_head=_git_head(identity_premium_root),
+        ee_root=os.path.realpath(spec.ee_root) if spec.ee_root else "",
+        ee_head=_git_head(spec.ee_root),
     )
 
 
@@ -538,6 +546,7 @@ def ensure_worktree_container(
     spec = WorktreeContainerSpec(
         zstack_root=os.path.realpath(spec.zstack_root),
         premium_root=os.path.realpath(spec.premium_root) if spec.premium_root else None,
+        ee_root=os.path.realpath(spec.ee_root) if spec.ee_root else None,
         docker_host=normalize_docker_host(spec.docker_host),
         image=spec.image,
         platform=spec.platform or "",
@@ -555,12 +564,13 @@ def ensure_worktree_container(
     container_owner = store.find_by_container_name(defaults.container_name)
     if container_owner and container_owner.worktree_key != defaults.worktree_key:
         LOG.error(
-            "Docker container %s is already bound to another worktree: %s (zstack: %s, premium: %s). "
+            "Docker container %s is already bound to another worktree: %s (zstack: %s, premium: %s, ee: %s). "
             "Remove stale worktree container state or use a different worktree path.",
             defaults.container_name,
             container_owner.worktree_key,
             container_owner.zstack_root,
             container_owner.premium_root,
+            container_owner.ee_root,
         )
         return 1, None
 
@@ -569,6 +579,7 @@ def ensure_worktree_container(
     spec = WorktreeContainerSpec(
         zstack_root=spec.zstack_root,
         premium_root=spec.premium_root,
+        ee_root=spec.ee_root,
         docker_host=spec.docker_host,
         image=spec.image,
         platform=spec.platform,
@@ -599,8 +610,9 @@ def ensure_worktree_container(
     full_compile_ran = False
     record.zstack_head = defaults.zstack_head
     record.premium_head = defaults.premium_head
+    record.ee_head = defaults.ee_head
     record.last_used_at = _now()
-    store.save(record, update_fields=["zstack_head", "premium_head", "last_used_at"])
+    store.save(record, update_fields=["zstack_head", "premium_head", "ee_head", "last_used_at"])
 
     if require_full_compile and not record.full_compile_done:
         full_compile_ran = True
@@ -648,7 +660,8 @@ def ensure_worktree_container(
         docker_host=spec.docker_host,
         workdir=spec.workdir,
         work_zstack=f"{spec.workdir}/zstack",
-        work_premium=f"{spec.workdir}/zstack/" + ("zsvirt-ee" if spec.build_profile == "ee" else "premium"),
+        work_premium=f"{spec.workdir}/zstack/premium",
+        work_ee=f"{spec.workdir}/zstack/zsvirt-ee",
         full_compile_ran=full_compile_ran,
     )
     return 0, handle

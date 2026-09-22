@@ -209,7 +209,7 @@ def _compile_worktree_spec(
 ) -> WorktreeContainerSpec:
     return WorktreeContainerSpec(
         zstack_root=zstack_root,
-        premium_root=ee_root,
+        ee_root=ee_root,
         build_profile="ee",
         docker_host=_normalize_docker_host(remote.docker_host),
         image=remote.image,
@@ -404,14 +404,13 @@ class InMemoryCompileDeployStateStore:
 
 
 class DjangoCompileDeployStateStore:
-    # Existing DB columns store the secondary checkout; EE builds use distinct keys.
     def load_selection(self, worktree_key: str) -> CompileDeploySelection:
         obj = ZsvCompileState.objects.filter(worktree_key=worktree_key).first()
         if not obj:
             return CompileDeploySelection([], [], [])
         return CompileDeploySelection(
             _decode_list(obj.last_main_modules),
-            _decode_list(obj.last_premium_modules),
+            _decode_list(obj.last_ee_modules),
             _decode_web_classes(obj.last_web_classes),
         )
 
@@ -426,20 +425,20 @@ class DjangoCompileDeployStateStore:
             worktree_key=worktree_key,
             defaults={
                 "zstack_root": zstack_root,
-                "premium_root": ee_root or "",
+                "ee_root": ee_root or "",
             },
         )
         obj.zstack_root = zstack_root
-        obj.premium_root = ee_root or ""
+        obj.ee_root = ee_root or ""
         obj.last_main_modules = _encode_list(selection.main_modules)
-        obj.last_premium_modules = _encode_list(selection.ee_modules)
+        obj.last_ee_modules = _encode_list(selection.ee_modules)
         obj.last_web_classes = _encode_web_classes(selection.web_classes)
         obj.last_deployed_at = timezone.now()
         obj.save(update_fields=[
             "zstack_root",
-            "premium_root",
+            "ee_root",
             "last_main_modules",
-            "last_premium_modules",
+            "last_ee_modules",
             "last_web_classes",
             "last_deployed_at",
         ])
@@ -483,8 +482,8 @@ def module_for_changed_path(
 def modules_from_changed_paths(
     zstack_root: str,
     main_paths: list[str],
-    ee_paths: list[str],
-    ee_root: str | None = None,
+    external_paths: list[str],
+    external_root: str | None = None,
     excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> tuple[list[str], list[str]]:
     main: list[str] = []
@@ -493,14 +492,14 @@ def modules_from_changed_paths(
         if module:
             main.append(module)
 
-    ee: list[str] = []
-    ee_root = ee_root or os.path.join(zstack_root, "zsvirt-ee")
-    for path in ee_paths:
-        module = module_for_changed_path(ee_root, path, excluded_modules)
+    external: list[str] = []
+    external_root = external_root or os.path.join(zstack_root, "zsvirt-ee")
+    for path in external_paths:
+        module = module_for_changed_path(external_root, path, excluded_modules)
         if module:
-            ee.append(module)
+            external.append(module)
 
-    return _dedupe(main), _dedupe(ee)
+    return _dedupe(main), _dedupe(external)
 
 
 def _remote_base_ref_fetch_spec(repo_root: str, base_ref: str) -> tuple[str, str, str] | None:
@@ -793,24 +792,24 @@ def _modules_implementing_interfaces(
 
 def infer_interface_implementation_modules(
     zstack_root: str,
-    ee_root: str | None,
+    external_root: str | None,
     main_paths: list[str],
-    ee_paths: list[str],
+    external_paths: list[str],
     excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> tuple[list[str], list[str]]:
     interfaces = _java_interfaces_from_changed_paths(zstack_root, main_paths)
-    if ee_root and os.path.isdir(ee_root):
-        interfaces.extend(_java_interfaces_from_changed_paths(ee_root, ee_paths))
+    if external_root and os.path.isdir(external_root):
+        interfaces.extend(_java_interfaces_from_changed_paths(external_root, external_paths))
     interfaces = _dedupe(interfaces)
     if not interfaces:
         return [], []
 
     excluded_from_main: list[str] = []
-    if ee_root and os.path.isdir(ee_root):
+    if external_root and os.path.isdir(external_root):
         main_root = Path(zstack_root).resolve()
-        ee_path = Path(ee_root).resolve()
-        if _is_under(ee_path, main_root):
-            excluded_from_main.append(str(ee_path))
+        external_path = Path(external_root).resolve()
+        if _is_under(external_path, main_root):
+            excluded_from_main.append(str(external_path))
 
     main = _modules_implementing_interfaces(
         zstack_root,
@@ -818,53 +817,53 @@ def infer_interface_implementation_modules(
         excluded_from_main,
         excluded_modules,
     )
-    ee: list[str] = []
-    if ee_root and os.path.isdir(ee_root):
-        ee = _modules_implementing_interfaces(
-            ee_root,
+    external: list[str] = []
+    if external_root and os.path.isdir(external_root):
+        external = _modules_implementing_interfaces(
+            external_root,
             interfaces,
             excluded_modules=excluded_modules,
         )
-    return _dedupe(main), _dedupe(ee)
+    return _dedupe(main), _dedupe(external)
 
 
 def auto_detect_modules(
     zstack_root: str,
-    ee_root: str | None = None,
+    external_root: str | None = None,
     excluded_modules: Collection[str] = DEPLOY_AUTO_EXCLUDED_MODULES,
 ) -> tuple[list[str], list[str]]:
-    ee_root = ee_root or os.path.join(zstack_root, "zsvirt-ee")
+    external_root = external_root or os.path.join(zstack_root, "zsvirt-ee")
     main_worktree_paths = changed_paths_from_worktree(zstack_root)
-    ee_worktree_paths: list[str] = []
-    if os.path.isdir(ee_root):
-        ee_worktree_paths = changed_paths_from_worktree(ee_root)
-    main, ee = modules_from_changed_paths(
+    external_worktree_paths: list[str] = []
+    if os.path.isdir(external_root):
+        external_worktree_paths = changed_paths_from_worktree(external_root)
+    main, external = modules_from_changed_paths(
         zstack_root,
         main_worktree_paths,
-        ee_worktree_paths,
-        ee_root,
+        external_worktree_paths,
+        external_root,
         excluded_modules,
     )
 
     main_paths = changed_paths_from_head_commit(zstack_root)
-    ee_paths: list[str] = []
-    if os.path.isdir(ee_root):
-        ee_paths = changed_paths_from_head_commit(ee_root)
-    head_main, head_ee = modules_from_changed_paths(
+    external_paths: list[str] = []
+    if os.path.isdir(external_root):
+        external_paths = changed_paths_from_head_commit(external_root)
+    head_main, head_external = modules_from_changed_paths(
         zstack_root,
         main_paths,
-        ee_paths,
-        ee_root,
+        external_paths,
+        external_root,
         excluded_modules,
     )
-    inferred_main, inferred_ee = infer_interface_implementation_modules(
+    inferred_main, inferred_external = infer_interface_implementation_modules(
         zstack_root,
-        ee_root,
+        external_root,
         _dedupe(main_worktree_paths + main_paths),
-        _dedupe(ee_worktree_paths + ee_paths),
+        _dedupe(external_worktree_paths + external_paths),
         excluded_modules,
     )
-    return _dedupe(main + head_main + inferred_main), _dedupe(ee + head_ee + inferred_ee)
+    return _dedupe(main + head_main + inferred_main), _dedupe(external + head_external + inferred_external)
 
 
 def _normalize_ee_module(module: str) -> str:
@@ -874,11 +873,11 @@ def _normalize_ee_module(module: str) -> str:
     return module.strip("/")
 
 
-def maven_build_plan(main_mods: list[str], prem_mods: list[str], *, profile: str = "ee") -> MavenBuildPlan:
+def maven_build_plan(main_mods: list[str], external_mods: list[str], *, profile: str = "ee") -> MavenBuildPlan:
     if profile == "premium":
-        modules = list(main_mods) + ["premium/" + m.removeprefix("premium/") for m in prem_mods]
-        return MavenBuildPlan(_dedupe(modules), ["premium"] if prem_mods else [])
-    ee = [_normalize_ee_module(m) for m in prem_mods]
+        modules = list(main_mods) + ["premium/" + m.removeprefix("premium/") for m in external_mods]
+        return MavenBuildPlan(_dedupe(modules), ["premium"] if external_mods else [])
+    ee = [_normalize_ee_module(m) for m in external_mods]
     ee = [m for m in ee if m]
     modules = list(main_mods)
     modules.extend(f"zsvirt-ee/{m}" for m in ee)
@@ -945,7 +944,7 @@ def _artifact_jars(module_dir: Path) -> list[str]:
 def collect_built_jars(
     zstack_root: str,
     main_mods: list[str],
-    prem_mods: list[str],
+    external_mods: list[str],
     ee_root: str | None = None,
 ) -> list[str]:
     root = Path(zstack_root)
@@ -953,7 +952,7 @@ def collect_built_jars(
     for m in main_mods:
         jars.extend(_artifact_jars(root / m))
     pr = Path(ee_root) if ee_root else root / "zsvirt-ee"
-    for m in prem_mods:
+    for m in external_mods:
         jars.extend(_artifact_jars(pr / m))
     by_base: dict[str, str] = {}
     for j in jars:
@@ -1133,7 +1132,7 @@ def run_mvn_in_remote_docker(
         return rc or 1
 
     work_zstack = handle.work_zstack
-    work_ee = handle.work_premium
+    work_ee = handle.work_ee
     out_root = "/tmp/cbok-zsv-out"
     sync_targets = _docker_sync_target_lines(plan, work_zstack, work_ee, out_root)
     compile_line = "" if handle.full_compile_ran else mvn_inner
@@ -1329,7 +1328,7 @@ def run_compile_flow(
     if not validate_changed_paths_base_ref(ee_real_root):
         return 1
 
-    user_main, user_prem = auto_detect_modules(root, ee_real_root)
+    user_main, user_ee = auto_detect_modules(root, ee_real_root)
     try:
         web_classes_files = _dedupe_web_classes_files(
             collect_explicit_web_classes_files(root, ee_real_root, extra_web_classes) +
@@ -1348,7 +1347,7 @@ def run_compile_flow(
             previous_selection = state_store.load_selection(worktree_key)
             current_selection = current_compile_deploy_selection(
                 user_main,
-                user_prem,
+                user_ee,
                 web_classes_files,
                 root,
                 ee_real_root,
@@ -1360,17 +1359,17 @@ def run_compile_flow(
                 ee_real_root,
             )
             user_main = merged_selection.main_modules
-            user_prem = merged_selection.ee_modules
+            user_ee = merged_selection.ee_modules
         except CompileDeployStateError as exc:
             LOG.error("%s", exc)
             return 1
-    if not user_main and not user_prem and not web_classes_files:
+    if not user_main and not user_ee and not web_classes_files:
         LOG.error("No changed Maven modules or deployable web classes found from current HEAD commit.")
         return 1
 
     grouped = {
         "main": list(user_main),
-        "ee": list(user_prem),
+        "ee": list(user_ee),
     }
     plan = maven_build_plan(grouped["main"], grouped["ee"])
     head_line, full_hash = git_summary(root)

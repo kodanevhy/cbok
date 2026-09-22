@@ -62,6 +62,7 @@ class DjangoPruneContainerStore:
             ZsvCompileState.objects.filter(
                 zstack_root=record.zstack_root,
                 premium_root=record.premium_root or "",
+                ee_root=record.ee_root or "",
             ).delete()
 
 
@@ -79,7 +80,9 @@ def _print_container_record(record) -> None:
     print(f"  zstack: {record.zstack_root}")
     print(f"  zstack branch: {_branch_label(record.zstack_root)}")
     print(f"  premium: {record.premium_root or '-'}")
+    print(f"  ee: {record.ee_root or '-'}")
     print(f"  premium branch: {_branch_label(record.premium_root)}")
+    print(f"  ee branch: {_branch_label(record.ee_root)}")
     print(f"  docker: {normalize_docker_host(record.docker_host) or 'local'}")
     print(f"  m2 volume: {record.m2_volume or '-'}")
     pr_refs = getattr(record, "pr_refs", []) or []
@@ -160,6 +163,7 @@ def _print_delete_target(record) -> None:
     print(f"DELETE {record.container_name}")
     print(f"  zstack: {record.zstack_root}")
     print(f"  premium: {record.premium_root or '-'}")
+    print(f"  ee: {record.ee_root or '-'}")
     print(f"  docker: {normalize_docker_host(record.docker_host) or 'local'}")
     print(f"  m2 volume: {record.m2_volume or '-'}")
 

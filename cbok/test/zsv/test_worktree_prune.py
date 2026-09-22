@@ -24,6 +24,7 @@ class FakeRecord:
     container_name: str
     m2_volume: str
     pr_refs: tuple[FakePrRef, ...] = ()
+    ee_root: str = ""
 
 
 class FakeRunner:
