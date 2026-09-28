@@ -503,8 +503,17 @@ _zsv_extract_schema_from_war() {
   mkdir -p "$sql_dir"
   entries="${workdir}/zsv-schema-entries.txt"
   unzip -Z -1 "$war_path" \
-    | awk -v prefix="WEB-INF/classes/db/zsv/V${target_version}__" \
-        'index($0, prefix) == 1 && $0 ~ /\.sql$/ && substr($0, length(prefix) + 1) !~ /\//' \
+    | awk -v version="$target_version" '
+        $0 ~ /\.sql$/ {
+          for (i = 1; i <= 2; i++) {
+            dir = i == 1 ? "zsv" : "ee"
+            prefix = "WEB-INF/classes/db/" dir "/V" version "__"
+            if (index($0, prefix) == 1 && substr($0, length(prefix) + 1) !~ /\//) {
+              print
+            }
+          }
+        }
+      ' \
         > "$entries"
   if ! entry=$(_zsv_expect_one_line "$entries" "ZSV schema SQL for ${target_version}"); then
     return 1
