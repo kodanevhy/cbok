@@ -126,13 +126,16 @@ def _print_iso(tracker, iso, state, needs_upgrade):
     upgraded_iso_modified = _fmt(state.last_upgraded_iso_modified_at)
     upgraded_at = _fmt(state.last_upgraded_at)
 
-    print(f"Name:         {iso.name}")
-    print(f"Upgrade type: {tracker.upgrade_type}")
-    print(f"DB:           {upgraded_iso_modified}")
-    print(f"URL:          {latest_iso_modified}")
-    print(f"Last sync at: {upgraded_at}")
+    rows = [
+        ("Name", iso.name),
+        ("Upgrade type", tracker.upgrade_type),
+        ("DB", upgraded_iso_modified),
+        ("URL", latest_iso_modified),
+        ("Last sync at", upgraded_at),
+    ]
     if needs_upgrade:
-        print(f"---\n{_upgrade_command(tracker)}")
+        rows.append(("Upgrade command", _upgrade_command(tracker)))
+    output.print_list(rows, ("Field", "Value"))
 
 
 def _log_zsv_base_ref():
