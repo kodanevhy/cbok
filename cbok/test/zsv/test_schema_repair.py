@@ -1,8 +1,10 @@
+import os
 import subprocess
 import sys
 import tempfile
 import types
 import unittest
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 import requests
@@ -855,6 +857,41 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertNotIn("ERRNO: 1 ;<", output)
         self.assertEqual(False, runner.commands[0][1]["log_failed_status"])
 
+    def test_war_schema_extract_supports_legacy_and_ee_paths(self):
+        for schema_dirs, expected_returncode in (
+                (("zsv",), 0),
+                (("ee",), 0),
+                (("zsv", "ee"), 1)):
+            with self.subTest(schema_dirs=schema_dirs), tempfile.TemporaryDirectory() as td:
+                workdir = Path(td)
+                war = workdir / "zstack.war"
+                sql_dir = workdir / "sql"
+                with zipfile.ZipFile(war, "w") as archive:
+                    for schema_dir in schema_dirs:
+                        archive.writestr(
+                            f"WEB-INF/classes/db/{schema_dir}/V5.2.0__schema.sql",
+                            "SELECT 1;\n")
+                env = dict(os.environ, WAR_PATH=str(war), SQL_DIR=str(sql_dir),
+                           WORK_DIR=str(workdir))
+                result = subprocess.run(
+                    ["bash", "-lc", "source scriptlet/bootstrap.sh; "
+                     "_zsv_extract_schema_from_war \"$WAR_PATH\" \"$SQL_DIR\" "
+                     "artifact \"$WORK_DIR\" 5.2.0"],
+                    cwd=Path(__file__).resolve().parents[3], env=env,
+                    capture_output=True, text=True)
+
+                self.assertEqual(expected_returncode, result.returncode, result.stderr)
+                schema_file = sql_dir / "V5.2.0__schema.sql"
+                if expected_returncode == 0:
+                    self.assertEqual("SELECT 1;\n", schema_file.read_text())
+                    self.assertEqual(
+                        f"artifact!WEB-INF/classes/db/{schema_dirs[0]}/"
+                        "V5.2.0__schema.sql\n",
+                        Path(str(schema_file) + ".source").read_text())
+                else:
+                    self.assertIn("expected exactly one ZSV schema SQL", result.stderr)
+                    self.assertFalse(schema_file.exists())
+
     def test_scriptlet_keeps_only_schema_precheck_helpers(self):
         scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")
 
@@ -863,7 +900,8 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertIn("zsv_schema_precheck_artifact()", scriptlet)
         self.assertIn("_zsv_extract_schema_from_bin()", scriptlet)
         self.assertIn("_zsv_extract_schema_from_iso()", scriptlet)
-        self.assertIn("WEB-INF/classes/db/zsv/", scriptlet)
+        self.assertIn('dir = i == 1 ? "zsv" : "ee"', scriptlet)
+        self.assertIn('prefix = "WEB-INF/classes/db/" dir "/V" version "__"', scriptlet)
         self.assertIn("expected exactly one", scriptlet)
         self.assertIn("ZSV schema version from artifact", scriptlet)
         self.assertIn("ZSV schema SQL for", scriptlet)

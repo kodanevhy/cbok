@@ -6,6 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+from cbok.bbx.zsv import schema_repair
 from cbok.bbx.zsv.service import ZsvHostDiscoveryError
 from cbok.cmd import bbx, foundation, zsv
 
@@ -131,6 +132,37 @@ class CommandFatalOutputTest(unittest.TestCase):
                 "Upgrade command was not completed: upgrade.iso",
                 code=7,
             )
+
+    def test_zsv_upgrade_reports_schema_artifact_precheck_failure(self):
+        command = zsv.ZSphereCommands()
+        runner = mock.Mock()
+        tracker = zsv.ZSphereTracker(
+            name="env",
+            upgrade_url="http://example.invalid/upgrade.iso",
+            primary_node="node",
+            runner=runner,
+        )
+        tracker.discovered_nodes = True
+        iso = SimpleNamespace(
+            name="upgrade.iso",
+            download_url="http://example.invalid/upgrade.iso",
+            modified_at=None,
+            size="",
+        )
+
+        with mock.patch.object(command, "_tracker", return_value=tracker), \
+                mock.patch.object(tracker, "resolve_upgrade_nodes"), \
+                mock.patch.object(tracker, "check", return_value=(iso, object(), True, True)), \
+                mock.patch.object(schema_repair, "run_schema_mismatch_precheck_for_artifact",
+                                  return_value=7):
+            self.assert_failure(
+                lambda: command.upgrade(name="env", upgrade_url=iso.download_url,
+                                        primary_node="node"),
+                "ZSV schema artifact precheck failed.",
+                code=7,
+            )
+
+        runner.run_command.assert_not_called()
 
 
 if __name__ == "__main__":
