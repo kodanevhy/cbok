@@ -58,15 +58,40 @@ class ZsvStatusOutputTest(unittest.TestCase):
         self.assertIn("zsv_nodes_status 192.0.2.10 192.0.2.11",
                       runner.run_command.call_args.args[0][2])
 
-    def test_status_does_not_print_partial_output_on_shell_failure(self):
-        result, rows, text, _ = self.run_status(
-            "== ZSphere node 192.0.2.10 ==\nhostname: mn-1\n",
-            returncode=255,
-        )
+    def test_status_reports_shell_failures_without_partial_table(self):
+        for stage, ensure_code, status_code in (
+                ("ensure_remote_scriptlet", 255, 0),
+                ("zsv_nodes_status", 0, 23)):
+            with self.subTest(stage=stage):
+                command = zsv.ZSphereCommands()
+                command.p_runner = mock.Mock()
+                command.p_runner.run_command.return_value = subprocess.CompletedProcess(
+                    args=[], returncode=status_code,
+                    stdout="== ZSphere node 192.0.2.10 ==\nhostname: mn-1\n", stderr="")
+                ensure_result = subprocess.CompletedProcess(
+                    args=[], returncode=ensure_code, stdout="", stderr="")
+                stdout = io.StringIO()
+                stderr = io.StringIO()
 
-        self.assertEqual(255, result)
-        self.assertEqual([], rows)
-        self.assertEqual("", text)
+                with mock.patch.object(command, "ensure_remote_scriptlet",
+                                       return_value=ensure_result), \
+                        mock.patch.object(zsv, "discover_management_nodes",
+                                          return_value=["192.0.2.10"]) as discover, \
+                        mock.patch.object(zsv.output, "LOG") as log, \
+                        contextlib.redirect_stdout(stdout), \
+                        contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as failure:
+                        command.status(primary_node="192.0.2.10")
+
+                exit_code = ensure_code or status_code
+                message = f"Shell command failed (exit code {exit_code})."
+                self.assertEqual(exit_code, failure.exception.code)
+                self.assertEqual(message + "\n", stderr.getvalue())
+                self.assertEqual("", stdout.getvalue())
+                log.error.assert_called_once_with("%s", message, exc_info=False)
+                if ensure_code:
+                    discover.assert_not_called()
+                    command.p_runner.run_command.assert_not_called()
 
     def test_status_rejects_empty_success_output(self):
         stderr = io.StringIO()

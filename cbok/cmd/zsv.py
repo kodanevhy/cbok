@@ -184,8 +184,10 @@ class ZSphereCommands(base.BaseCommand):
         if not primary_node:
             output.fail("status requires --primary-node.")
         result = self.ensure_remote_scriptlet(primary_node)
-        if getattr(result, "returncode", 0) != 0:
-            return getattr(result, "returncode", 1) or 1
+        ensure_returncode = getattr(result, "returncode", 0)
+        if ensure_returncode != 0:
+            output.fail(f"Shell command failed (exit code {ensure_returncode}).",
+                        exit_code=ensure_returncode or 1)
         nodes = discover_management_nodes(primary_node, self.p_runner)
         if not nodes:
             LOG.warning(
@@ -201,7 +203,8 @@ class ZSphereCommands(base.BaseCommand):
             f"source scriptlet/bootstrap.sh; zsv_nodes_status {nodes_arg}",
         ])
         if result.returncode != 0:
-            return result.returncode
+            output.fail(f"Shell command failed (exit code {result.returncode}).",
+                        exit_code=result.returncode or 1)
         rows = _status_rows(result.stdout)
         if not rows:
             output.fail("No ZSphere node status data returned.")
