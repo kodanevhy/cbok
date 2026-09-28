@@ -423,7 +423,7 @@ def scriptlet_stage_agent_archive(
         shlex.quote(remote_archive),
         shlex.quote(staging_dir),
     )
-    result = runner.run_command(_bash_scriptlet(expr), cmd_purge_output=False)
+    result = runner.run_command(_bash_scriptlet(expr))
     return getattr(result, "returncode", 1) or 0
 
 
@@ -450,7 +450,7 @@ def scriptlet_apply_agent_staging(
         shlex.quote(address),
         shlex.quote(script),
     )
-    result = runner.run_command(_bash_scriptlet(expr), cmd_purge_output=False)
+    result = runner.run_command(_bash_scriptlet(expr))
     return getattr(result, "returncode", 1) or 0
 
 

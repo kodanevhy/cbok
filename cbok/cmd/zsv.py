@@ -182,7 +182,7 @@ class ZSphereCommands(base.BaseCommand):
         result = self.p_runner.run_command([
             "bash", "-lc",
             f"source scriptlet/bootstrap.sh; zsv_nodes_status {nodes_arg}",
-        ], cmd_purge_output=True)
+        ])
         return result.returncode
 
     @args.action_description("Restart ZSphere management node")
@@ -201,7 +201,7 @@ class ZSphereCommands(base.BaseCommand):
             "bash", "-lc",
             "source scriptlet/bootstrap.sh; "
             f"zsv_restart_mn {shlex.quote(address)}",
-        ], cmd_purge_output=False)
+        ])
         return getattr(result, "returncode", 1) or 0
 
     @args.action_description("Install local SSH public keys on all ZSphere nodes")
@@ -260,7 +260,7 @@ class ZSphereCommands(base.BaseCommand):
                     "bash", "-lc",
                     "source scriptlet/bootstrap.sh; "
                     f"zsv_authorize_public_keys {shlex.quote(node)} {shlex.quote(key_file)}",
-                ], cmd_purge_output=False)
+                ])
                 if getattr(result, "returncode", 0) != 0:
                     return getattr(result, "returncode", 1) or 1
 

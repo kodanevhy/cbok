@@ -96,7 +96,6 @@ class DefaultCommands(BaseCommand):
     def _force_abort_source_checkout(self):
         self._git(
             "rebase", "--abort",
-            cmd_purge_output=False,
             log_output=False,
             log_failed_status=False,
         )

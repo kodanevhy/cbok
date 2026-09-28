@@ -106,7 +106,7 @@ def discover_management_nodes(address, runner):
         "bash", "-lc",
         "source scriptlet/bootstrap.sh; "
         f"zsv_discover_management_nodes {shlex.quote(address)}",
-    ], cmd_purge_output=False)
+    ])
     if getattr(result, "returncode", 1) != 0:
         return []
     return _dedupe([
@@ -121,7 +121,7 @@ def discover_healthy_kvm_host_nodes(address, runner):
         "bash", "-lc",
         "source scriptlet/bootstrap.sh; "
         f"zsv_discover_healthy_kvm_hosts_from_primary {shlex.quote(address)}",
-    ], cmd_purge_output=False)
+    ])
     if getattr(result, "returncode", 1) != 0:
         details = (getattr(result, "stderr", "") or getattr(result, "stdout", "") or "").strip()
         raise ZsvHostDiscoveryError(details or f"failed to discover healthy KVM hosts from {address}")
@@ -140,7 +140,7 @@ def discover_ceph_primary_storage_nodes(address, runner):
         "bash", "-lc",
         "source scriptlet/bootstrap.sh; "
         f"zsv_discover_ceph_primary_storage_nodes {shlex.quote(address)}",
-    ], cmd_purge_output=False)
+    ])
     if getattr(result, "returncode", 1) != 0:
         return []
     return _dedupe([
@@ -155,7 +155,7 @@ def discover_zbs_primary_storage_nodes(address, runner):
         "bash", "-lc",
         "source scriptlet/bootstrap.sh; "
         f"zsv_discover_zbs_primary_storage_nodes {shlex.quote(address)}",
-    ], cmd_purge_output=False)
+    ])
     if getattr(result, "returncode", 1) != 0:
         return []
     return _dedupe([
@@ -170,7 +170,7 @@ def discover_imagestore_backup_storage_nodes(address, runner):
         "bash", "-lc",
         "source scriptlet/bootstrap.sh; "
         f"zsv_discover_imagestore_bs_nodes_from_primary {shlex.quote(address)}",
-    ], cmd_purge_output=False)
+    ])
     if getattr(result, "returncode", 1) != 0:
         return []
     return _dedupe([
@@ -372,7 +372,7 @@ class ZSphereTracker:
         result = self.runner.run_command([
             "bash", "-lc",
             f"source scriptlet/bootstrap.sh; zsv_nodes_status {nodes}",
-        ], cmd_purge_output=True)
+        ])
         return result.returncode
 
     def upgrade(self, command):
@@ -407,7 +407,7 @@ class ZSphereTracker:
             f"{shlex.quote(self._iso_modified_arg(iso))} "
             f"{shlex.quote(iso.size or '')} "
             f"{shlex.quote(self.upgrade_type)}",
-        ], cmd_purge_output=True)
+        ])
         if result.returncode != 0:
             return result.returncode, iso, state
 
@@ -415,7 +415,7 @@ class ZSphereTracker:
             "bash", "-lc",
             "source scriptlet/bootstrap.sh; "
             f"zsv_ensure_ui_started {shlex.quote(self.primary_node)}",
-        ], cmd_purge_output=True)
+        ])
         if result.returncode != 0:
             return result.returncode, iso, state
 
@@ -425,7 +425,7 @@ class ZSphereTracker:
             f"zsv_wait_resources_ready {shlex.quote(self.primary_node)} "
             f"{UPGRADE_HEALTH_TIMEOUT_SECONDS} "
             f"{UPGRADE_HEALTH_POLL_INTERVAL_SECONDS}",
-        ], cmd_purge_output=True)
+        ])
         if result.returncode == 0:
             self.record_successful_upgrade(state, iso)
         return result.returncode, iso, state

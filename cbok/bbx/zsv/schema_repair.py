@@ -66,13 +66,12 @@ def _bash_scriptlet(expr: str) -> list[str]:
 
 
 def _run_scriptlet(runner, expr: str):
-    return runner.run_command(_bash_scriptlet(expr), cmd_purge_output=False)
+    return runner.run_command(_bash_scriptlet(expr))
 
 
 def _run_scriptlet_quiet(runner, expr: str):
     return runner.run_command(
         _bash_scriptlet(expr),
-        cmd_purge_output=False,
         log_output=False,
         log_failed_status=False,
     )

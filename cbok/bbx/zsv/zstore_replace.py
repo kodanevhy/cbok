@@ -16,11 +16,8 @@ DEFAULT_IMAGE = "golang:1.18-bullseye"
 REMOTE_BIN_DIR = "/usr/local/zstack/imagestore/bin"
 
 
-def _run(runner, command: str, *, purge_output: bool = False):
-    return runner.run_command(
-        ["bash", "-lc", command],
-        cmd_purge_output=purge_output,
-    )
+def _run(runner, command: str):
+    return runner.run_command(["bash", "-lc", command])
 
 
 def _sha256(path: Path) -> str:
@@ -109,7 +106,7 @@ rm -rf "$stage"
         shlex.quote(f"root@{node}"),
         shlex.quote(remote_script),
     ])
-    return _run(runner, command, purge_output=True).returncode
+    return _run(runner, command).returncode
 
 
 def run_zstore_replace_flow(zstore_root: str, nodes: list[str], runner, image: str = DEFAULT_IMAGE) -> int:

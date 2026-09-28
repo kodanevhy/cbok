@@ -126,7 +126,7 @@ class DefaultCommandsTest(unittest.TestCase):
             runner.kwargs[0]["log_output"],
         )
         self.assertEqual(
-            {"cmd_purge_output": False, "log_output": False, "log_failed_status": False},
+            {"log_output": False, "log_failed_status": False},
             runner.kwargs[1],
         )
 

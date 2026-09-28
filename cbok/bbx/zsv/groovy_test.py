@@ -360,11 +360,11 @@ def _returncode(result) -> int:
 
 
 def _run(runner, cmd: list[str], **kwargs) -> int:
-    return _returncode(runner.run_command(cmd, cmd_purge_output=False, **kwargs))
+    return _returncode(runner.run_command(cmd, **kwargs))
 
 
 def _capture(runner, cmd: list[str]) -> tuple[int, str]:
-    result = runner.run_command(cmd, cmd_purge_output=False)
+    result = runner.run_command(cmd)
     return _returncode(result), (getattr(result, "stdout", "") or "").strip()
 
 
@@ -858,7 +858,6 @@ def _docker_shell_capture(runner, docker_host: str, args: list[str]):
     command = "docker " + " ".join(shlex.quote(arg) for arg in args)
     return runner.run_command(
         ["bash", "-lc", _docker_env_prefix(docker_host) + command],
-        cmd_purge_output=False,
     )
 
 

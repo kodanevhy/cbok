@@ -265,7 +265,7 @@ def _now() -> datetime.datetime:
 
 
 def _run_shell(runner, script: str) -> int:
-    result = runner.run_command(["bash", "-lc", script], cmd_purge_output=False)
+    result = runner.run_command(["bash", "-lc", script])
     return getattr(result, "returncode", 1) or 0
 
 
@@ -285,7 +285,6 @@ def docker_shell_capture(runner, docker_host: str, args: list[str]):
     command = "docker " + " ".join(shlex.quote(arg) for arg in args)
     return runner.run_command(
         ["bash", "-lc", docker_env_prefix(docker_host) + command],
-        cmd_purge_output=False,
     )
 
 

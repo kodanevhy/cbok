@@ -41,7 +41,7 @@ class ZsvRestartMnTest(unittest.TestCase):
             ["bash", "-lc", "source scriptlet/bootstrap.sh; zsv_restart_mn 172.26.213.50"],
             cmd,
         )
-        self.assertFalse(kwargs["cmd_purge_output"])
+        self.assertEqual({}, kwargs)
 
     def test_zsv_restart_mn_scriptlet_restarts_node_and_prints_status(self):
         script = """
