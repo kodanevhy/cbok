@@ -8,6 +8,7 @@ from oslo_utils import strutils
 
 from cbok.cmd import args
 from cbok.cmd import base
+from cbok.cmd import output
 from cbok.bbx import proxy_bypass
 from cbok import exception
 from cbok import settings
@@ -275,9 +276,10 @@ class ProxyCommands(base.BaseCommand):
             LOG.error("%s", e)
             return 1
 
-        print(f"Updated proxy bypass domains on {service}:")
-        for domain in domains:
-            print(domain)
+        output.print_list(
+            ((service, domain) for domain in domains),
+            ("Service", "Domain"),
+        )
         return 0
 
     @args.action_description("Deploy shadowsocks5 server (and local client on macOS)")
