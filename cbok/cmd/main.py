@@ -107,13 +107,6 @@ def setup_logging_level(debug=False):
         handler.setLevel(level)
 
 
-def _exit_with_status(return_code):
-    if return_code:
-        print("Command failed (exit code %s); check the log for details." % return_code,
-              file=sys.stderr)
-    sys.exit(return_code)
-
-
 def main():
     _ensure_source_branch_is_master()
     _resolve_and_reexec_venv()
@@ -129,6 +122,7 @@ def main():
     from cbok.cmd import foundation
     from cbok.cmd import zsv
     from cbok.cmd.base import BaseCommand
+    from cbok.cmd.output import fail
     from cbok import utils as cbok_utils
 
     LOG = logging.getLogger(__name__)
@@ -197,20 +191,14 @@ def main():
                 if addr:
                     ensure_result = func.__self__.ensure_remote_scriptlet(addr)
                     if getattr(ensure_result, "returncode", 0) != 0:
-                        _exit_with_status(getattr(ensure_result, "returncode", 1) or 1)
+                        sys.exit(getattr(ensure_result, "returncode", 1) or 1)
             return_code = func(**kwargs)
-            _exit_with_status(return_code)
+            sys.exit(return_code)
     except subprocess.SubprocessError as exc:
-        LOG.exception("Command failed")
         if isinstance(exc, subprocess.CalledProcessError):
-            print("Shell command failed (exit code %s); check the log for details."
-                  % exc.returncode, file=sys.stderr)
-            return_code = exc.returncode or 1
+            fail("Shell command failed (exit code %s); check the log for details."
+                 % exc.returncode, exit_code=exc.returncode or 1, exc_info=True)
         else:
-            print("Shell command failed; check the log for details.", file=sys.stderr)
-            return_code = 1
-        sys.exit(return_code)
+            fail("Shell command failed; check the log for details.", exc_info=True)
     except Exception as exc:
-        LOG.exception("Command failed")
-        print(str(exc) or "Command failed", file=sys.stderr)
-        sys.exit(1)
+        fail(str(exc) or "Command failed", exc_info=True)
