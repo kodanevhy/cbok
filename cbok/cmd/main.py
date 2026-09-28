@@ -98,16 +98,20 @@ def _ensure_source_branch_is_master(project_root=None, runner=subprocess.run, st
         sys.exit(1)
 
 
-def setup_logging_level(debug=False, file_only=False):
+def setup_logging_level(debug=False):
     root = logging.getLogger()
-    level = logging.DEBUG if debug or file_only else logging.INFO
-    root.setLevel(level)
+    root.setLevel(logging.DEBUG)
 
     for handler in root.handlers:
-        if file_only and not debug and handler.name != "file":
-            handler.setLevel(logging.CRITICAL + 1)
-        else:
-            handler.setLevel(level)
+        level = logging.DEBUG if debug or handler.name == "file" else logging.CRITICAL + 1
+        handler.setLevel(level)
+
+
+def _exit_with_status(return_code):
+    if return_code:
+        print("Command failed (exit code %s); check the log for details." % return_code,
+              file=sys.stderr)
+    sys.exit(return_code)
 
 
 def main():
@@ -178,8 +182,7 @@ def main():
 
     args = parser.parse_args()
 
-    is_bypass = args.subcommand == "proxy" and args.command == "bypass"
-    setup_logging_level(args.debug, file_only=is_bypass)
+    setup_logging_level(args.debug)
     LOG.info("Starting CBoK CLI")
 
     try:
@@ -194,11 +197,20 @@ def main():
                 if addr:
                     ensure_result = func.__self__.ensure_remote_scriptlet(addr)
                     if getattr(ensure_result, "returncode", 0) != 0:
-                        sys.exit(getattr(ensure_result, "returncode", 1) or 1)
+                        _exit_with_status(getattr(ensure_result, "returncode", 1) or 1)
             return_code = func(**kwargs)
-            sys.exit(return_code)
+            _exit_with_status(return_code)
+    except subprocess.SubprocessError as exc:
+        LOG.exception("Command failed")
+        if isinstance(exc, subprocess.CalledProcessError):
+            print("Shell command failed (exit code %s); check the log for details."
+                  % exc.returncode, file=sys.stderr)
+            return_code = exc.returncode or 1
+        else:
+            print("Shell command failed; check the log for details.", file=sys.stderr)
+            return_code = 1
+        sys.exit(return_code)
     except Exception as exc:
         LOG.exception("Command failed")
-        if is_bypass:
-            print(str(exc) or "Command failed", file=sys.stderr)
+        print(str(exc) or "Command failed", file=sys.stderr)
         sys.exit(1)
