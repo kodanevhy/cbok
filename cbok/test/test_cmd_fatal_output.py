@@ -133,6 +133,50 @@ class CommandFatalOutputTest(unittest.TestCase):
                 code=7,
             )
 
+    def test_zsv_upgrade_bad_url(self):
+        command = zsv.ZSphereCommands()
+        with mock.patch.object(zsv.ZSphereTracker, "resolve_upgrade_nodes",
+                               side_effect=AssertionError("unexpected remote discovery")):
+            self.assert_failure(
+                lambda: command.upgrade(
+                    name="env", upgrade_url="http:http://example.invalid/upgrade.bin",
+                    primary_node="node"),
+                "upgrade_url must be an absolute HTTP(S) URL with a host.",
+            )
+
+    def test_zsv_check_bad_url(self):
+        command = zsv.ZSphereCommands()
+        state = SimpleNamespace(
+            name="env", iso_url="http:http://example.invalid/upgrade.bin")
+        with mock.patch.object(zsv, "_latest_upgrade_state", return_value=state), \
+                mock.patch.object(zsv.ZSphereTracker, "check",
+                                  side_effect=AssertionError("unexpected metadata probe")):
+            self.assert_failure(
+                lambda: command.check(primary_node="node"),
+                "upgrade_url must be an absolute HTTP(S) URL with a host.",
+            )
+
+    def test_zsv_upgrade_already_current(self):
+        command = zsv.ZSphereCommands()
+        runner = mock.Mock()
+        tracker = zsv.ZSphereTracker(
+            name="env", upgrade_url="http://example.invalid/upgrade.bin",
+            primary_node="node", runner=runner,
+        )
+        iso = SimpleNamespace(name="upgrade.bin")
+        with mock.patch.object(command, "_tracker", return_value=tracker), \
+                mock.patch.object(tracker, "resolve_upgrade_nodes"), \
+                mock.patch.object(tracker, "check",
+                                  return_value=(iso, object(), False, False)):
+            self.assert_failure(
+                lambda: command.upgrade(
+                    name="env", upgrade_url="http://example.invalid/upgrade.bin",
+                    primary_node="node"),
+                "Already up to date: upgrade.bin.",
+            )
+
+        runner.run_command.assert_not_called()
+
     def test_zsv_precheck_error(self):
         command = zsv.ZSphereCommands()
         runner = mock.Mock()

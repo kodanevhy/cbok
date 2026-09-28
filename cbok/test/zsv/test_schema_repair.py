@@ -111,6 +111,20 @@ class SchemaRepairTest(unittest.TestCase):
                 runner=FakeRunner(),
             )
 
+    def test_tracker_rejects_bad_url(self):
+        for url in (
+                "http:http://example.invalid/upgrade.bin",
+                "http:///upgrade.bin",
+                "http://example.invalid:bad/upgrade.bin",
+                "http://bad host/upgrade.bin",
+                "ftp://example.invalid/upgrade.bin"):
+            with self.subTest(url=url), self.assertRaisesRegex(
+                    ValueError, r"absolute HTTP\(S\) URL with a host"):
+                ZSphereTracker(
+                    name="test-env", upgrade_url=url,
+                    primary_node="172.26.213.50", runner=FakeRunner(),
+                )
+
     def test_tracker_rejects_upgrade_url_type_mismatch(self):
         with self.assertRaisesRegex(ValueError, "does not match upgrade_type"):
             ZSphereTracker(

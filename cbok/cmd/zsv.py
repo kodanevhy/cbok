@@ -25,6 +25,7 @@ from cbok.bbx.zsv.service import discover_healthy_kvm_host_nodes
 from cbok.bbx.zsv.service import discover_imagestore_backup_storage_nodes
 from cbok.bbx.zsv.service import discover_management_nodes
 from cbok.bbx.zsv.service import discover_zbs_primary_storage_nodes
+from cbok.bbx.zsv.service import ZsvAlreadyUpToDateError
 from cbok.bbx.zsv.service import ZsvHostDiscoveryError
 from cbok.bbx.zsv.schema_repair import ZsvSchemaChecksumMismatchError
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
@@ -150,12 +151,15 @@ class ZSphereCommands(base.BaseCommand):
             upgrade_url=None,
             primary_node=None,
     ):
-        return ZSphereTracker(
-            name=name,
-            upgrade_url=upgrade_url,
-            primary_node=primary_node,
-            runner=self.p_runner,
-        )
+        try:
+            return ZSphereTracker(
+                name=name,
+                upgrade_url=upgrade_url,
+                primary_node=primary_node,
+                runner=self.p_runner,
+            )
+        except ValueError as exc:
+            output.fail(str(exc))
 
     @args.action_description("Check whether ZSphere needs upgrade")
     @args.args(
@@ -328,6 +332,8 @@ class ZSphereCommands(base.BaseCommand):
             returncode, iso, state = tracker.upgrade(self)
         except ZsvSchemaChecksumMismatchError as exc:
             output.fail(str(exc), exit_code=exc.returncode or 1)
+        except ZsvAlreadyUpToDateError as exc:
+            output.fail(str(exc))
         if returncode == 0:
             LOG.info("Upgrade command finished: %s", iso.name)
         else:
