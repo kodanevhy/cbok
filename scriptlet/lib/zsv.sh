@@ -601,17 +601,9 @@ import sys
 import zlib
 
 checksum = 0
-first = True
 with open(sys.argv[1], "rb") as f:
-    for line in f:
-        if line.endswith(b"\n"):
-            line = line[:-1]
-        if line.endswith(b"\r"):
-            line = line[:-1]
-        if first and line.startswith(b"\xef\xbb\xbf"):
-            line = line[3:]
-        first = False
-        checksum = zlib.crc32(line, checksum) & 0xffffffff
+    for chunk in iter(lambda: f.read(1024 * 1024), b""):
+        checksum = zlib.crc32(chunk, checksum) & 0xffffffff
 if checksum >= 0x80000000:
     checksum -= 0x100000000
 print(checksum)

@@ -6,6 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
+from cbok.bbx.zsv import schema_repair
 from cbok.bbx.zsv.service import ZsvHostDiscoveryError
 from cbok.cmd import bbx, foundation, zsv
 
@@ -131,6 +132,82 @@ class CommandFatalOutputTest(unittest.TestCase):
                 "Upgrade command was not completed: upgrade.iso",
                 code=7,
             )
+
+    def test_zsv_precheck_error(self):
+        command = zsv.ZSphereCommands()
+        runner = mock.Mock()
+        tracker = zsv.ZSphereTracker(
+            name="env", upgrade_url="http://example.invalid/upgrade.iso",
+            primary_node="node", runner=runner,
+        )
+        tracker.discovered_nodes = True
+        iso = SimpleNamespace(name="upgrade.iso", download_url="http://example.invalid/upgrade.iso",
+                              modified_at=None, size="")
+        runner.run_command.return_value = subprocess.CompletedProcess(
+            ["precheck"], 1,
+            "__CBOK_ZSV_SCHEMA_PRECHECK__\n"
+            "primary_node=node\n"
+            "sql_source=upgrade.iso!WEB-INF/classes/db/ee/V5.2.0__schema.sql\n"
+            "script=V5.2.0__schema.sql\n"
+            "version=5.2.0\n"
+            "version_rank=170\n"
+            "applied_checksum=1097995333\n"
+            "resolved_checksum=-1071519265\n", "",
+        )
+        message = schema_repair.format_manual_repair_hint(
+            address="node",
+            migration=schema_repair.AppliedMigration(
+                version="5.2.0", version_rank=170, checksum=1097995333,
+                script="V5.2.0__schema.sql"),
+            mismatch=schema_repair.ChecksumMismatch(
+                version="5.2.0", applied_checksum=1097995333,
+                resolved_checksum=-1071519265),
+            db_file="upgrade.iso!WEB-INF/classes/db/ee/V5.2.0__schema.sql",
+        )
+
+        with mock.patch.object(command, "_tracker", return_value=tracker), \
+                mock.patch.object(tracker, "resolve_upgrade_nodes"), \
+                mock.patch.object(tracker, "check", return_value=(iso, object(), True, True)):
+            self.assert_failure(
+                lambda: command.upgrade(name="env", upgrade_url=iso.download_url,
+                                        primary_node="node"),
+                message,
+            )
+
+        self.assertEqual(1, runner.run_command.call_count)
+
+    def test_zsv_no_log_reread(self):
+        command = zsv.ZSphereCommands()
+        runner = mock.Mock()
+        tracker = zsv.ZSphereTracker(
+            name="env", upgrade_url="http://example.invalid/upgrade.iso",
+            primary_node="node", runner=runner,
+        )
+        tracker.discovered_nodes = True
+        iso = SimpleNamespace(name="upgrade.iso", download_url="http://example.invalid/upgrade.iso",
+                              modified_at=None, size="")
+        runner.run_command.side_effect = [
+            subprocess.CompletedProcess(["precheck"], 0, "", ""),
+            subprocess.CompletedProcess(
+                ["upgrade"], 7,
+                "Reason: failed to upgrade database\n"
+                "The detailed installation log could be found in "
+                "/tmp/zstack_installation-2026-09-28-16:59:01.log\n", "",
+            ),
+        ]
+        with mock.patch.object(command, "_tracker", return_value=tracker), \
+                mock.patch.object(tracker, "resolve_upgrade_nodes"), \
+                mock.patch.object(tracker, "check", return_value=(iso, object(), True, True)), \
+                mock.patch("subprocess.Popen",
+                           side_effect=AssertionError("unexpected installer log read")):
+            self.assert_failure(
+                lambda: command.upgrade(name="env", upgrade_url=iso.download_url,
+                                        primary_node="node"),
+                "Upgrade command was not completed: upgrade.iso",
+                code=7,
+            )
+
+        self.assertEqual(2, runner.run_command.call_count)
 
 
 if __name__ == "__main__":
