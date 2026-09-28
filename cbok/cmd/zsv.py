@@ -2,6 +2,7 @@ import getpass
 import logging
 import os
 from pathlib import Path
+import re
 import shlex
 import tempfile
 
@@ -39,6 +40,25 @@ from cbok.cmd import output
 
 
 LOG = logging.getLogger(__name__)
+_STATUS_NODE_HEADER = re.compile(r"== ZSphere node (.+) ==")
+_STATUS_ANSI_COLOR = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _status_rows(status_output):
+    rows = []
+    node = None
+    for raw_line in (status_output or "").splitlines():
+        line = _STATUS_ANSI_COLOR.sub("", raw_line).strip()
+        match = _STATUS_NODE_HEADER.fullmatch(line)
+        if match:
+            node = match.group(1)
+            continue
+        if not node or line.startswith("+"):
+            continue
+        field, separator, value = line.partition(":")
+        if separator and field.strip():
+            rows.append((node, field.strip(), value.strip()))
+    return rows
 
 
 def _conf_get(section: str, option: str, default: str) -> str:
@@ -180,7 +200,13 @@ class ZSphereCommands(base.BaseCommand):
             "bash", "-lc",
             f"source scriptlet/bootstrap.sh; zsv_nodes_status {nodes_arg}",
         ])
-        return result.returncode
+        if result.returncode != 0:
+            return result.returncode
+        rows = _status_rows(result.stdout)
+        if not rows:
+            output.fail("No ZSphere node status data returned.")
+        output.print_list(rows, ("Node", "Field", "Value"))
+        return 0
 
     @args.action_description("Restart ZSphere management node")
     @args.args(
