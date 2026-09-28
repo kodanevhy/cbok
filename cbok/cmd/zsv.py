@@ -26,7 +26,6 @@ from cbok.bbx.zsv.service import discover_imagestore_backup_storage_nodes
 from cbok.bbx.zsv.service import discover_management_nodes
 from cbok.bbx.zsv.service import discover_zbs_primary_storage_nodes
 from cbok.bbx.zsv.service import ZsvHostDiscoveryError
-from cbok.bbx.zsv.service import ZsvSchemaArtifactPrecheckError
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
 from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
 from cbok.bbx.zsv.compile import run_compile_flow
@@ -321,10 +320,7 @@ class ZSphereCommands(base.BaseCommand):
             upgrade_url=upgrade_url,
             primary_node=primary_node,
         )
-        try:
-            returncode, iso, state = tracker.upgrade(self)
-        except ZsvSchemaArtifactPrecheckError as exc:
-            output.fail(str(exc), exit_code=exc.returncode or 1)
+        returncode, iso, state = tracker.upgrade(self)
         if returncode == 0:
             LOG.info("Upgrade command finished: %s", iso.name)
         else:

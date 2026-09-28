@@ -30,12 +30,6 @@ HTTP_HEADERS = {
 }
 
 
-class ZsvSchemaArtifactPrecheckError(Exception):
-    def __init__(self, returncode):
-        self.returncode = returncode
-        super().__init__("ZSV schema artifact precheck failed.")
-
-
 @dataclass
 class IsoInfo:
     name: str
@@ -403,7 +397,7 @@ class ZSphereTracker:
             runner=self.runner,
         )
         if schema_precheck_rc != 0:
-            raise ZsvSchemaArtifactPrecheckError(schema_precheck_rc)
+            return schema_precheck_rc, iso, state
 
         result = self.runner.run_command([
             "bash", "-lc",
