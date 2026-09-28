@@ -18,6 +18,12 @@ MANUAL_REPAIR_SKILL = "cbok-zsv-upgrade-db-repair"
 ARTIFACT_PRECHECK_MARKER = "__CBOK_ZSV_SCHEMA_PRECHECK__"
 
 
+class ZsvSchemaChecksumMismatchError(Exception):
+    def __init__(self, message: str, returncode: int = 1):
+        self.returncode = returncode
+        super().__init__(message)
+
+
 @dataclass(frozen=True)
 class AppliedMigration:
     version: str
@@ -197,28 +203,37 @@ def run_schema_mismatch_precheck_for_artifact(
 
     output = result.stdout or result.stderr or ""
     fields = _parse_artifact_precheck_report(output)
-    if not fields:
+    try:
+        version = fields["version"]
+        script = fields["script"]
+        version_rank = int(fields["version_rank"])
+        applied_checksum = int(fields["applied_checksum"])
+        resolved_checksum = int(fields["resolved_checksum"])
+    except (KeyError, ValueError):
+        LOG.error("ZSV schema artifact precheck failed.\n%s", output.strip())
+        return returncode
+    if not re.fullmatch(r"\d+(?:\.\d+)+", version) or not (
+            script.startswith(f"V{version}__") and script.endswith(".sql")):
         LOG.error("ZSV schema artifact precheck failed.\n%s", output.strip())
         return returncode
 
     migration = AppliedMigration(
-        version=fields.get("version", ""),
-        version_rank=int(fields.get("version_rank") or 0),
-        checksum=int(fields.get("applied_checksum") or 0),
-        script=fields.get("script", ""),
+        version=version,
+        version_rank=version_rank,
+        checksum=applied_checksum,
+        script=script,
     )
     mismatch = ChecksumMismatch(
-        version=fields.get("version", ""),
-        applied_checksum=int(fields.get("applied_checksum") or 0),
-        resolved_checksum=int(fields.get("resolved_checksum") or 0),
+        version=version,
+        applied_checksum=applied_checksum,
+        resolved_checksum=resolved_checksum,
     )
-    LOG.error(format_manual_repair_hint(
+    raise ZsvSchemaChecksumMismatchError(format_manual_repair_hint(
         address=fields.get("primary_node") or address,
         migration=migration,
         mismatch=mismatch,
         db_file=fields.get("sql_source") or fields.get("artifact_path") or artifact_name,
-    ))
-    return 1
+    ), returncode=returncode)
 
 
 def run_schema_mismatch_precheck_for_file(

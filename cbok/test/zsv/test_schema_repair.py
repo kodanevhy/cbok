@@ -817,7 +817,7 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertIn("applied checksum: -152505803", output)
         self.assertIn("resolved checksum: -373519170", output)
 
-    def test_artifact_schema_precheck_reports_mismatch_without_shell_errno_log(self):
+    def test_artifact_mismatch_raises(self):
         class MismatchRunner(FakeRunner):
             def run_command(self, cmd, **kwargs):
                 self.commands.append((cmd, kwargs))
@@ -839,8 +839,8 @@ class SchemaRepairTest(unittest.TestCase):
 
         runner = MismatchRunner()
 
-        with self.assertLogs(schema_repair.LOG, level="ERROR") as logs:
-            rc = schema_repair.run_schema_mismatch_precheck_for_artifact(
+        with self.assertRaises(schema_repair.ZsvSchemaChecksumMismatchError) as raised:
+            schema_repair.run_schema_mismatch_precheck_for_artifact(
                 address="172.26.213.50",
                 artifact_url="http://example.invalid/ZStack-ZSphere-installer.bin",
                 artifact_name="ZStack-ZSphere-installer.bin",
@@ -850,12 +850,47 @@ class SchemaRepairTest(unittest.TestCase):
                 runner=runner,
             )
 
-        output = "\n".join(logs.output)
-        self.assertEqual(1, rc)
+        output = str(raised.exception)
+        self.assertEqual(1, raised.exception.returncode)
         self.assertIn(schema_repair.MANUAL_REPAIR_SKILL, output)
         self.assertIn("SQL source: /var/lib/cbok/zsv-upgrade/ZStack-ZSphere-installer.bin", output)
         self.assertNotIn("ERRNO: 1 ;<", output)
         self.assertEqual(False, runner.commands[0][1]["log_failed_status"])
+
+    def test_partial_precheck_report(self):
+        class PartialRunner(FakeRunner):
+            def run_command(self, cmd, **kwargs):
+                return subprocess.CompletedProcess(
+                    cmd, 255, "__CBOK_ZSV_SCHEMA_PRECHECK__\nprimary_node=node\n", "",
+                )
+
+        with self.assertLogs(schema_repair.LOG, level="ERROR") as logs:
+            rc = schema_repair.run_schema_mismatch_precheck_for_artifact(
+                address="node",
+                artifact_url="http://example.invalid/upgrade.iso",
+                artifact_name="upgrade.iso",
+                upgrade_type="iso",
+                runner=PartialRunner(),
+            )
+
+        self.assertEqual(255, rc)
+        self.assertIn("ZSV schema artifact precheck failed.", "\n".join(logs.output))
+        self.assertNotIn("checksum mismatch detected", "\n".join(logs.output))
+
+    def test_flyway_checksum_raw_bytes(self):
+        with tempfile.TemporaryDirectory() as td:
+            sql_file = Path(td) / "V5.2.0__schema.sql"
+            sql_file.write_bytes(b"\xef\xbb\xbfSELECT 1;\r\nSELECT 2;\n")
+            env = dict(os.environ, SQL_FILE=str(sql_file))
+            result = subprocess.run(
+                ["bash", "-lc", "source scriptlet/bootstrap.sh; "
+                 "_zsv_flyway_checksum \"$SQL_FILE\""],
+                cwd=Path(__file__).resolve().parents[3], env=env,
+                capture_output=True, text=True,
+            )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("-1323145560", result.stdout.strip())
 
     def test_war_schema_extract_uses_only_ee_path(self):
         for schema_dirs, expected_source in (
