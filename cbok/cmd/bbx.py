@@ -111,7 +111,7 @@ class BinCommands(base.BaseCommand):
             abs_path = result.stdout.strip()
             print(f"{binary}: {abs_path}")
         else:
-            LOG.error(result.stderr)
+            output.fail(f"Failed to locate binary: {binary}")
 
     @args.action_description("Override the binary to use")
     @args.args(
@@ -148,8 +148,7 @@ class OpenStackCommands(base.BaseCommand):
 
         def _check_ipv4(_addr):
             if not cbok_utils.is_ipv4(_addr):
-                print(f"Not an allowed IPv4 address: {_addr}")
-                sys.exit(1)
+                output.fail(f"Not an allowed IPv4 address: {_addr}")
 
         if floating_ip:
             _check_ipv4(floating_ip)
@@ -160,7 +159,7 @@ class OpenStackCommands(base.BaseCommand):
         is_clean = input(f"Override WARNING: is {floating_ip} "
                          f"free and purely clean? (y/n): ")
         if not strutils.bool_from_string(is_clean):
-            sys.exit(1)
+            output.fail("OpenStack deployment cancelled.")
 
         hostname = "controller"
 
@@ -192,31 +191,26 @@ class ProxyCommands(base.BaseCommand):
         """Read proxy server address (vps_server) from cbok.conf [proxy]."""
         conf = settings.CONF
         if not conf.has_section("proxy"):
-            LOG.error("Missing [proxy] in cbok.conf.")
-            sys.exit(1)
+            output.fail("Missing [proxy] in cbok.conf.")
         try:
             address = conf.get("proxy", "vps_server").strip()
         except configparser.NoOptionError:
-            LOG.error("cbok.conf [proxy] needs vps_server.")
-            sys.exit(1)
+            output.fail("cbok.conf [proxy] needs vps_server.")
         if not address:
-            LOG.error("cbok.conf [proxy] vps_server is empty.")
-            sys.exit(1)
+            output.fail("cbok.conf [proxy] vps_server is empty.")
         return address
 
     def _deploy_env(self):
         """Build env with [proxy] from cbok.conf for deploy (no config file)."""
         conf = settings.CONF
         if not conf.has_section("proxy"):
-            LOG.error("Missing [proxy] in cbok.conf; cannot deploy.")
-            sys.exit(1)
+            output.fail("Missing [proxy] in cbok.conf; cannot deploy.")
         try:
             cipher = conf.get("proxy", "cipher")
             password = conf.get("proxy", "password")
             port = conf.get("proxy", "port")
         except (configparser.NoSectionError, configparser.NoOptionError) as e:
-            LOG.error("cbok.conf [proxy] needs cipher, password, port: %s", e)
-            sys.exit(1)
+            output.fail(f"cbok.conf [proxy] needs cipher, password, port: {e}")
         env = os.environ.copy()
         env["CBOK_SS5_CIPHER"] = cipher
         env["CBOK_SS5_PASSWORD"] = password
@@ -227,8 +221,7 @@ class ProxyCommands(base.BaseCommand):
         """Read client config from cbok.conf [proxy]. Returns dict with ss_uri, localport for client_mac.sh env."""
         conf = settings.CONF
         if not conf.has_section("proxy"):
-            LOG.error("Missing [proxy] in cbok.conf.")
-            sys.exit(1)
+            output.fail("Missing [proxy] in cbok.conf.")
         try:
             cipher = conf.get("proxy", "cipher")
             password = conf.get("proxy", "password")
@@ -236,8 +229,7 @@ class ProxyCommands(base.BaseCommand):
             vps_server = conf.get("proxy", "vps_server")
             localport = conf.get("proxy", "localport", fallback="1080")
         except (configparser.NoSectionError, configparser.NoOptionError) as e:
-            LOG.error("cbok.conf [proxy] needs cipher, password, port, vps_server: %s", e)
-            sys.exit(1)
+            output.fail(f"cbok.conf [proxy] needs cipher, password, port, vps_server: {e}")
         import urllib.parse
         password_enc = urllib.parse.quote(password, safe="")
         ss_uri = f"ss://{cipher}:{password_enc}@{vps_server}:{port}"
@@ -290,7 +282,7 @@ class ProxyCommands(base.BaseCommand):
             env=self._deploy_env(),
         )
         if result.returncode != 0:
-            sys.exit(1)
+            output.fail("Shell command failed.", exit_code=result.returncode or 1)
         if sys.platform == "darwin":
             self._run_client_mac("deploy", env=self._client_env())
         else:
@@ -339,8 +331,7 @@ class ProxyCommands(base.BaseCommand):
             self._run_proxy_script("delete", self._read_proxy_address())
         else:
             if sys.platform != "darwin":
-                LOG.warning("Client delete is only supported on macOS.")
-                return
+                output.fail("Client delete is only supported on macOS.")
             self._run_client_mac("delete")
 
     @args.action_description("Show status of server and/or local client")

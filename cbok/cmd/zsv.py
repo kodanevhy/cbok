@@ -35,6 +35,7 @@ from cbok.bbx.zsv.worktree_prune import prune_worktree_containers
 from cbok.bbx.zsv.zstore_replace import run_zstore_replace_flow
 from cbok.cmd import args
 from cbok.cmd import base
+from cbok.cmd import output
 
 
 LOG = logging.getLogger(__name__)
@@ -139,14 +140,11 @@ class ZSphereCommands(base.BaseCommand):
     def check(self, primary_node=None):
         """Check whether ZSphere needs upgrade"""
         if not primary_node:
-            LOG.error("check requires --primary-node.")
-            return 1
+            output.fail("check requires --primary-node.")
         state = _latest_upgrade_state(primary_node=primary_node)
         if not state:
-            LOG.error(
-                "No tracked ZSphere upgrade record found for primary node %s.",
-                primary_node)
-            return 1
+            output.fail(
+                f"No tracked ZSphere upgrade record found for primary node {primary_node}.")
 
         tracker = self._tracker(
             name=state.name,
@@ -164,8 +162,7 @@ class ZSphereCommands(base.BaseCommand):
     def status(self, primary_node=None):
         """Show status of tracked ZSphere nodes"""
         if not primary_node:
-            LOG.error("status requires --primary-node.")
-            return 1
+            output.fail("status requires --primary-node.")
         result = self.ensure_remote_scriptlet(primary_node)
         if getattr(result, "returncode", 0) != 0:
             return getattr(result, "returncode", 1) or 1
@@ -192,8 +189,7 @@ class ZSphereCommands(base.BaseCommand):
     def restart_mn(self, address=None):
         """Restart ZSphere management node"""
         if not address:
-            LOG.error("restart_mn requires --address.")
-            return 1
+            output.fail("restart_mn requires --address.")
         result = self.ensure_remote_scriptlet(address)
         if getattr(result, "returncode", 0) != 0:
             return getattr(result, "returncode", 1) or 1
@@ -214,19 +210,16 @@ class ZSphereCommands(base.BaseCommand):
     def install_ssh_key(self, primary_node=None, password=None):
         """Install local SSH public keys on all ZSphere nodes"""
         if not primary_node:
-            LOG.error("install_ssh_key requires --primary-node.")
-            return 1
+            output.fail("install_ssh_key requires --primary-node.")
 
         keys = _local_public_keys()
         if not keys:
-            LOG.error("No local public keys found under ~/.ssh/*.pub.")
-            return 1
+            output.fail("No local public keys found under ~/.ssh/*.pub.")
 
         if password is None:
             password = getpass.getpass("Root password for all ZSphere nodes: ")
         if not password:
-            LOG.error("Password is required.")
-            return 1
+            output.fail("Password is required.")
 
         old_sshpass = os.environ.get("SSHPASS")
         os.environ["SSHPASS"] = password
@@ -302,7 +295,8 @@ class ZSphereCommands(base.BaseCommand):
         if returncode == 0:
             LOG.info("Upgrade command finished: %s", iso.name)
         else:
-            LOG.error("Upgrade command was not completed: %s", iso.name)
+            output.fail(f"Upgrade command was not completed: {iso.name}",
+                        exit_code=returncode or 1)
         return returncode
 
     @args.action_description(
@@ -345,9 +339,7 @@ class ZSphereCommands(base.BaseCommand):
         deploy = not no_deploy
         if deploy:
             if not address:
-                LOG.error(
-                    "Deploy requires --address (or use --no-deploy).")
-                return 1
+                output.fail("Deploy requires --address (or use --no-deploy).")
             res = self.ensure_remote_scriptlet(address)
             if getattr(res, "returncode", 0) != 0:
                 return getattr(res, "returncode", 1) or 1
@@ -483,11 +475,9 @@ class ZSphereCommands(base.BaseCommand):
         """
         _log_zsv_base_ref()
         if not primary_node:
-            LOG.error("replace_agent requires --primary-node.")
-            return 1
+            output.fail("replace_agent requires --primary-node.")
         if not utility_root:
-            LOG.error("replace_agent requires --utility-root.")
-            return 1
+            output.fail("replace_agent requires --utility-root.")
         discovered = discover_management_nodes(primary_node, self.p_runner)
         ceph_nodes = discover_ceph_primary_storage_nodes(primary_node, self.p_runner)
         zbs_nodes = discover_zbs_primary_storage_nodes(primary_node, self.p_runner)
@@ -534,13 +524,11 @@ class ZSphereCommands(base.BaseCommand):
         """Build and replace zstore and zstcli on healthy KVM hosts and ImageStore backup storage nodes"""
         _log_zsv_base_ref()
         if not primary_node or not zstore_root:
-            LOG.error("replace_zstore requires --primary-node and --zstore-root.")
-            return 1
+            output.fail("replace_zstore requires --primary-node and --zstore-root.")
         try:
             nodes = discover_healthy_kvm_host_nodes(primary_node, self.p_runner)
-        except ZsvHostDiscoveryError as exc:
-            LOG.error("%s", exc)
-            return 1
+        except ZsvHostDiscoveryError:
+            output.fail("Failed to discover healthy KVM hosts.", exc_info=True)
         bs_nodes = discover_imagestore_backup_storage_nodes(primary_node, self.p_runner)
         for node in bs_nodes:
             if node not in nodes:
