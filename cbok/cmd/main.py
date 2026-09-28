@@ -1,3 +1,4 @@
+import logging
 import os
 import subprocess
 import sys
@@ -97,6 +98,18 @@ def _ensure_source_branch_is_master(project_root=None, runner=subprocess.run, st
         sys.exit(1)
 
 
+def setup_logging_level(debug=False, file_only=False):
+    root = logging.getLogger()
+    level = logging.DEBUG if debug or file_only else logging.INFO
+    root.setLevel(level)
+
+    for handler in root.handlers:
+        if file_only and not debug and handler.name != "file":
+            handler.setLevel(logging.CRITICAL + 1)
+        else:
+            handler.setLevel(level)
+
+
 def main():
     _ensure_source_branch_is_master()
     _resolve_and_reexec_venv()
@@ -105,7 +118,6 @@ def main():
     django.setup()
 
     import argparse
-    import logging
 
     from cbok import __version__
     from cbok.cmd import base
@@ -125,13 +137,6 @@ def main():
         "proxy": bbx.ProxyCommands,
         "zsv": zsv.ZSphereCommands,
     }
-
-    def setup_logging_level(debug=False):
-        root = logging.getLogger()
-        root.setLevel(logging.DEBUG if debug else logging.INFO)
-
-        for handler in root.handlers:
-            handler.setLevel(logging.DEBUG if debug else logging.INFO)
 
     # NOTE: means all we used file path in shell scripts are relative
     # to CBoK home
@@ -173,7 +178,8 @@ def main():
 
     args = parser.parse_args()
 
-    setup_logging_level(args.debug)
+    is_bypass = args.subcommand == "proxy" and args.command == "bypass"
+    setup_logging_level(args.debug, file_only=is_bypass)
     LOG.info("Starting CBoK CLI")
 
     try:
@@ -191,6 +197,8 @@ def main():
                         sys.exit(getattr(ensure_result, "returncode", 1) or 1)
             return_code = func(**kwargs)
             sys.exit(return_code)
-    except Exception:
+    except Exception as exc:
         LOG.exception("Command failed")
+        if is_bypass:
+            print(str(exc) or "Command failed", file=sys.stderr)
         sys.exit(1)

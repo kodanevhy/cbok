@@ -263,8 +263,7 @@ class ProxyCommands(base.BaseCommand):
     def bypass(self):
         """Apply macOS system proxy bypass domains from cbok.conf [proxy]."""
         if sys.platform != "darwin":
-            LOG.error("proxy bypass is only supported on macOS.")
-            return 1
+            output.fail("proxy bypass is only supported on macOS.")
 
         try:
             domains = proxy_bypass.read_bypass_domains(settings.CONF)
@@ -273,8 +272,7 @@ class ProxyCommands(base.BaseCommand):
                 runner=self.p_runner,
             )
         except proxy_bypass.ProxyBypassError as e:
-            LOG.error("%s", e)
-            return 1
+            output.fail(str(e))
 
         output.print_list(
             ((service, domain) for domain in domains),

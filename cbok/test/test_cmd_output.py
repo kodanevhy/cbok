@@ -1,6 +1,7 @@
 import contextlib
 import io
 import unittest
+from unittest import mock
 
 from cbok.cmd import output
 
@@ -26,6 +27,17 @@ class CommandOutputTest(unittest.TestCase):
             output.print_list([(None,)], ("Value",))
 
         self.assertIn("| -", stream.getvalue())
+
+    def test_fail_logs_and_prints_plain_error_then_exits(self):
+        stderr = io.StringIO()
+        with mock.patch.object(output, "LOG") as log:
+            with contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as exited:
+                    output.fail("bypass failed")
+
+        self.assertEqual(1, exited.exception.code)
+        log.error.assert_called_once_with("%s", "bypass failed")
+        self.assertEqual("bypass failed\n", stderr.getvalue())
 
 
 if __name__ == "__main__":
