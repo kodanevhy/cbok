@@ -185,7 +185,6 @@ class ProxyCommands(base.BaseCommand):
             self.server_executor,
             args=[action, address],
             env=env,
-            cmd_purge_output = action == "status",
         )
 
     def _read_proxy_address(self):
@@ -257,7 +256,6 @@ class ProxyCommands(base.BaseCommand):
             self._client_mac_executor,
             args=[action],
             env=env,
-            cmd_purge_output = action == "status",
         )
 
     @args.action_description("Apply macOS system proxy bypass domains from cbok.conf")

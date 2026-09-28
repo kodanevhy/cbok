@@ -853,7 +853,6 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertIn(schema_repair.MANUAL_REPAIR_SKILL, output)
         self.assertIn("SQL source: /var/lib/cbok/zsv-upgrade/ZStack-ZSphere-installer.bin", output)
         self.assertNotIn("ERRNO: 1 ;<", output)
-        self.assertEqual(False, runner.commands[0][1]["cmd_purge_output"])
         self.assertEqual(False, runner.commands[0][1]["log_failed_status"])
 
     def test_scriptlet_keeps_only_schema_precheck_helpers(self):

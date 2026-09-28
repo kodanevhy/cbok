@@ -982,7 +982,7 @@ def _remote_classes_from_lib(remote_lib: str) -> str:
 
 
 def _run_shell(runner, script: str) -> int:
-    r = runner.run_command(["bash", "-lc", script], cmd_purge_output=False)
+    r = runner.run_command(["bash", "-lc", script])
     return getattr(r, "returncode", 1) or 0
 
 
@@ -1222,7 +1222,6 @@ def scriptlet_ensure_backup(address: str, remote_lib: str, runner) -> int:
     lib = shlex.quote(remote_lib)
     r = runner.run_command(
         _bash_scriptlet(f"zsv_tomcat_lib_ensure_backup {a} {lib}"),
-        cmd_purge_output=False,
     )
     return getattr(r, "returncode", 1) or 0
 
@@ -1234,7 +1233,6 @@ def scriptlet_scp_jars(address: str, remote_staging: str, local_jars: list[str],
     parts.extend(shlex.quote(j) for j in local_jars)
     r = runner.run_command(
         _bash_scriptlet(" ".join(parts)),
-        cmd_purge_output=False,
     )
     return getattr(r, "returncode", 1) or 0
 
@@ -1245,7 +1243,6 @@ def scriptlet_install_jars(address: str, remote_staging: str, remote_lib: str, r
     lib = shlex.quote(remote_lib)
     r = runner.run_command(
         _bash_scriptlet(f"zsv_remote_install_jars_from_staging {a} {st} {lib}"),
-        cmd_purge_output=False,
     )
     return getattr(r, "returncode", 1) or 0
 
@@ -1258,7 +1255,6 @@ def scriptlet_scp_web_classes_archive(address: str, remote_archive: str, local_a
     local = shlex.quote(local_archive)
     r = runner.run_command(
         _bash_scriptlet(f"zsv_scp_web_classes_archive_to_remote {a} {remote} {local}"),
-        cmd_purge_output=False,
     )
     return getattr(r, "returncode", 1) or 0
 
@@ -1269,7 +1265,6 @@ def scriptlet_install_web_classes_archive(address: str, remote_archive: str, rem
     classes = shlex.quote(remote_classes)
     r = runner.run_command(
         _bash_scriptlet(f"zsv_remote_install_web_classes_archive {a} {remote} {classes}"),
-        cmd_purge_output=False,
     )
     return getattr(r, "returncode", 1) or 0
 
