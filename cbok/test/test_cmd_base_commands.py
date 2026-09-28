@@ -1,3 +1,5 @@
+import contextlib
+import io
 import subprocess
 import tempfile
 import unittest
@@ -76,10 +78,13 @@ class DefaultCommandsTest(unittest.TestCase):
         ])
         command.p_runner = runner
 
-        with self.assertLogs("cbok.cmd.base", level="ERROR") as logs:
-            result = command.rebase()
+        stderr = io.StringIO()
+        with self.assertLogs("cbok.cmd.output", level="ERROR") as logs:
+            with contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as exited:
+                    command.rebase()
 
-        self.assertEqual(1, result)
+        self.assertEqual(1, exited.exception.code)
         self.assertEqual(
             [["git", "-C", "/repo/cbok", "status", "--porcelain"]],
             runner.commands,
@@ -87,9 +92,32 @@ class DefaultCommandsTest(unittest.TestCase):
         self.assertEqual(False, runner.kwargs[0]["log_output"])
         message = "\n".join(logs.output)
         self.assertIn("Unexpected dirty CBoK source checkout before rebase", message)
+        self.assertIn("Unexpected dirty CBoK source checkout before rebase", stderr.getvalue())
         self.assertNotIn("cbok/cmd/zsv.py", message)
         self.assertNotIn("scratch.py", message)
         self.assertNotIn("Please commit your changes", message)
+
+    def test_rebase_status_failure_has_plain_error(self):
+        command = DefaultCommands(project_root="/repo/cbok")
+        runner = FakeRunner(responses=[{"returncode": 5}])
+        command.p_runner = runner
+        stderr = io.StringIO()
+
+        with self.assertLogs("cbok.cmd.output", level="ERROR") as logs:
+            with contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as exited:
+                    command.rebase()
+
+        self.assertEqual(1, exited.exception.code)
+        self.assertEqual(
+            "Unexpected error while checking CBoK source checkout before rebase.\n",
+            stderr.getvalue(),
+        )
+        self.assertIn("Unexpected error while checking", "\n".join(logs.output))
+        self.assertEqual(
+            [["git", "-C", "/repo/cbok", "status", "--porcelain"]],
+            runner.commands,
+        )
 
     def test_rebase_force_abort_discards_changes_before_rebase(self):
         command = DefaultCommands(project_root="/repo/cbok")
@@ -199,16 +227,20 @@ class DefaultCommandsTest(unittest.TestCase):
         command.p_runner = runner
 
         with mock.patch("builtins.input", return_value="no") as prompt:
-            with self.assertLogs("cbok.cmd.base", level="ERROR") as logs:
-                result = command.rebase(force_abort=True)
+            stderr = io.StringIO()
+            with self.assertLogs("cbok.cmd.output", level="ERROR") as logs:
+                with contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as exited:
+                        command.rebase(force_abort=True)
 
-        self.assertEqual(1, result)
+        self.assertEqual(1, exited.exception.code)
         self.assertEqual(
             [["git", "-C", "/repo/cbok", "status", "--porcelain"]],
             runner.commands,
         )
         self.assertEqual(base.FORCE_ABORT_PROMPT, prompt.call_args[0][0])
         self.assertIn("Force abort cancelled", "\n".join(logs.output))
+        self.assertIn("Force abort cancelled", stderr.getvalue())
 
     def test_rebase_force_abort_stops_when_confirmation_is_unavailable(self):
         command = DefaultCommands(project_root="/repo/cbok")
@@ -218,15 +250,19 @@ class DefaultCommandsTest(unittest.TestCase):
         command.p_runner = runner
 
         with mock.patch("builtins.input", side_effect=EOFError):
-            with self.assertLogs("cbok.cmd.base", level="ERROR") as logs:
-                result = command.rebase(force_abort=True)
+            stderr = io.StringIO()
+            with self.assertLogs("cbok.cmd.output", level="ERROR") as logs:
+                with contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as exited:
+                        command.rebase(force_abort=True)
 
-        self.assertEqual(1, result)
+        self.assertEqual(1, exited.exception.code)
         self.assertEqual(
             [["git", "-C", "/repo/cbok", "status", "--porcelain"]],
             runner.commands,
         )
         self.assertIn("Force abort requires interactive confirmation", "\n".join(logs.output))
+        self.assertIn("Force abort requires interactive confirmation", stderr.getvalue())
 
     def test_rebase_force_abort_stops_when_reset_fails(self):
         command = DefaultCommands(project_root="/repo/cbok")

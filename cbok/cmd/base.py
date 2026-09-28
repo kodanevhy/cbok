@@ -4,6 +4,7 @@ import shlex
 
 from cbok import utils as cbok_utils
 from cbok.cmd import args
+from cbok.cmd import output
 
 
 LOG = logging.getLogger(__name__)
@@ -45,11 +46,10 @@ class DefaultCommands(BaseCommand):
             **kwargs,
         )
 
-    def _source_checkout_is_dirty(self) -> bool | None:
+    def _source_checkout_is_dirty(self) -> bool:
         result = self._git("status", "--porcelain", log_output=False)
         if result.returncode != 0:
-            LOG.error("Unexpected error while checking CBoK source checkout before rebase.")
-            return None
+            output.fail("Unexpected error while checking CBoK source checkout before rebase.")
         return bool((result.stdout or "").strip())
 
     def _git_admin_dir(self):
@@ -76,22 +76,17 @@ class DefaultCommands(BaseCommand):
             for name in ("rebase-merge", "rebase-apply")
         )
 
-    def _force_abort_needed(self) -> bool | None:
+    def _force_abort_needed(self) -> bool:
         dirty = self._source_checkout_is_dirty()
-        if dirty is None:
-            return None
         return dirty or self._rebase_in_progress()
 
-    def _confirm_force_abort(self) -> bool:
+    def _confirm_force_abort(self) -> None:
         try:
             answer = input(FORCE_ABORT_PROMPT)
         except EOFError:
-            LOG.error("Force abort requires interactive confirmation.")
-            return False
+            output.fail("Force abort requires interactive confirmation.")
         if answer.strip() != "yes":
-            LOG.error("Force abort cancelled; confirmation was not yes.")
-            return False
-        return True
+            output.fail("Force abort cancelled; confirmation was not yes.")
 
     def _force_abort_source_checkout(self):
         self._git(
@@ -120,11 +115,8 @@ class DefaultCommands(BaseCommand):
         """Checkout CBoK source master and rebase it from origin/master."""
         if force_abort:
             force_needed = self._force_abort_needed()
-            if force_needed is None:
-                return 1
             if force_needed:
-                if not self._confirm_force_abort():
-                    return 1
+                self._confirm_force_abort()
                 force_result = self._force_abort_source_checkout()
                 if force_result != 0:
                     return force_result
@@ -132,19 +124,14 @@ class DefaultCommands(BaseCommand):
                 LOG.info("No need abort.")
         else:
             dirty = self._source_checkout_is_dirty()
-            if dirty is None:
-                return 1
             if dirty:
-                LOG.error(
+                output.fail(
                     "Unexpected dirty CBoK source checkout before rebase.\n"
-                    "source: %s\n"
+                    f"source: {self.project_root}\n"
                     "cbok rebase expects the editable source checkout to be a clean master baseline.\n"
-                    "Inspect it with: git -C %s status --short\n"
-                    "Use cbok rebase --force-abort only if local changes can be discarded.",
-                    self.project_root,
-                    self.project_root,
+                    f"Inspect it with: git -C {self.project_root} status --short\n"
+                    "Use cbok rebase --force-abort only if local changes can be discarded."
                 )
-                return 1
 
         for git_args in (
             ["checkout", "master"],

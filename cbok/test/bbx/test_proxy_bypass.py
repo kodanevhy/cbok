@@ -180,16 +180,19 @@ class ProxyCommandsBypassTest(unittest.TestCase):
         command.p_runner = FakeRunner()
         original_conf = bbx.settings.CONF
         bbx.settings.CONF = _conf()
+        stderr = io.StringIO()
         try:
             with mock.patch.object(bbx.sys, "platform", "darwin"):
-                with self.assertLogs("cbok.cmd.bbx", level="ERROR") as logs:
-                    result = command.bypass()
+                with contextlib.redirect_stderr(stderr):
+                    with self.assertRaises(SystemExit) as exited:
+                        command.bypass()
         finally:
             bbx.settings.CONF = original_conf
 
-        self.assertEqual(1, result)
+        self.assertEqual(1, exited.exception.code)
         self.assertEqual([], command.p_runner.commands)
-        self.assertIn("bypass_domains", "\n".join(logs.output))
+        self.assertIn("bypass_domains", stderr.getvalue())
+        self.assertNotIn("[ERROR]", stderr.getvalue())
 
     def test_proxy_bypass_command_does_not_accept_service_override(self):
         self.assertNotIn(
@@ -201,10 +204,12 @@ class ProxyCommandsBypassTest(unittest.TestCase):
     def test_proxy_bypass_command_is_macos_only(self):
         command = bbx.ProxyCommands()
         command.p_runner = FakeRunner()
+        stderr = io.StringIO()
         with mock.patch.object(bbx.sys, "platform", "linux"):
-            with self.assertLogs("cbok.cmd.bbx", level="ERROR") as logs:
-                result = command.bypass()
+            with contextlib.redirect_stderr(stderr):
+                with self.assertRaises(SystemExit) as exited:
+                    command.bypass()
 
-        self.assertEqual(1, result)
+        self.assertEqual(1, exited.exception.code)
         self.assertEqual([], command.p_runner.commands)
-        self.assertIn("only supported on macOS", "\n".join(logs.output))
+        self.assertIn("only supported on macOS", stderr.getvalue())

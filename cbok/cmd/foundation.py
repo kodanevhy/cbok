@@ -1,11 +1,11 @@
 import logging
 import os
-import sys
 
 from oslo_utils import strutils
 
 from cbok.cmd import args
 from cbok.cmd import base
+from cbok.cmd import output
 from cbok import settings
 from cbok import utils as cbok_utils
 
@@ -33,10 +33,9 @@ class FoundationCommands(base.BaseCommand):
                 address = stashed_address
         except FileNotFoundError:
             if not address_arg:
-                LOG.error("No CBoK found in foundation/address, if you "
-                        "confirm that cluster is ready, please use --address and "
-                        "its success will be reflaged")
-                sys.exit(1)
+                output.fail("No CBoK found in foundation/address, if you "
+                            "confirm that cluster is ready, please use --address and "
+                            "its success will be reflaged")
 
         if address_arg:
             address = address_arg
@@ -45,8 +44,7 @@ class FoundationCommands(base.BaseCommand):
             ["bash", "-c", f"source {self.executor}; is_ready {address}"]
         )
         if "Not deployed" in result.stdout:
-            LOG.error(f"Not a CBoK target: {address}")
-            sys.exit(1)
+            output.fail(f"Not a CBoK target: {address}")
 
         if address != stashed_address:
             LOG.info(f"Regenerate the CBoK success flag: {address}")
@@ -69,8 +67,7 @@ class FoundationCommands(base.BaseCommand):
             ["bash", "-c", f"source {self.executor}; is_ready {address}"]
         )
         if result.returncode == 0 and "Already deployed" in result.stdout:
-            LOG.error("CBoK is already ready")
-            sys.exit(1)
+            output.fail("CBoK is already ready")
 
         LOG.info("Detected clean host, starting deploy CBoK base")
 
@@ -89,7 +86,7 @@ class FoundationCommands(base.BaseCommand):
              f"{address} {resource_target} foundation/base"]
         )
         if result.returncode != 0:
-            sys.exit(1)
+            output.fail("Shell command failed.", exit_code=result.returncode or 1)
         else:
             LOG.info("Resource copied")
 
@@ -97,7 +94,7 @@ class FoundationCommands(base.BaseCommand):
         result = self.p_runner.run_command(
             ["bash", "-c", f"source {self.executor}; execute {address} {mgmt_eth}"])
         if result.returncode != 0:
-            sys.exit(1)
+            output.fail("Shell command failed.", exit_code=result.returncode or 1)
 
         with open("foundation/address", "w+") as f:
             f.write(address)
@@ -123,16 +120,14 @@ class FoundationCommands(base.BaseCommand):
     def apply(self, service=None, address=None, rebuild_base=False, dev=False):
         """Apply service"""
         if rebuild_base and service != "cbok":
-            LOG.error("--rebuild-base only used for cbok service")
-            sys.exit(1)
+            output.fail("--rebuild-base only used for cbok service")
 
         address = self._check_and_reflag_success(address)
         # This command executes remote bash that sources scriptlet.
         self.ensure_remote_scriptlet(address)
 
         if not os.path.isdir(os.path.join("foundation", service)):
-            LOG.error(f"No such service: {service}")
-            sys.exit(1)
+            output.fail(f"No such service: {service}")
 
         LOG.info(f"Applying {service} to {address}")
 
@@ -152,7 +147,7 @@ class FoundationCommands(base.BaseCommand):
                 f.write(address)
 
         if result.returncode != 0:
-            sys.exit(1)
+            output.fail("Shell command failed.", exit_code=result.returncode or 1)
         elif result.returncode == 0 and "APPLY SUCCESS" in result.stdout:
             LOG.info("Success")
 
@@ -172,8 +167,7 @@ class FoundationCommands(base.BaseCommand):
         self.ensure_remote_scriptlet(address)
 
         if not os.path.isdir(os.path.join("foundation", service)):
-            LOG.error(f"No such service: {service}")
-            sys.exit(1)
+            output.fail(f"No such service: {service}")
 
         LOG.info(f"Removing {service} from {address}")
 
@@ -182,6 +176,6 @@ class FoundationCommands(base.BaseCommand):
         )
 
         if result.returncode != 0:
-            sys.exit(1)
+            output.fail("Shell command failed.", exit_code=result.returncode or 1)
         elif result.returncode == 0 and "REMOVE SUCCESS" in result.stdout:
             LOG.info("Success")

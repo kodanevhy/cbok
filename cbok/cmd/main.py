@@ -1,3 +1,4 @@
+import logging
 import os
 import subprocess
 import sys
@@ -97,6 +98,15 @@ def _ensure_source_branch_is_master(project_root=None, runner=subprocess.run, st
         sys.exit(1)
 
 
+def setup_logging_level(debug=False):
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    for handler in root.handlers:
+        level = logging.DEBUG if debug or handler.name == "file" else logging.CRITICAL + 1
+        handler.setLevel(level)
+
+
 def main():
     _ensure_source_branch_is_master()
     _resolve_and_reexec_venv()
@@ -105,7 +115,6 @@ def main():
     django.setup()
 
     import argparse
-    import logging
 
     from cbok import __version__
     from cbok.cmd import base
@@ -113,6 +122,7 @@ def main():
     from cbok.cmd import foundation
     from cbok.cmd import zsv
     from cbok.cmd.base import BaseCommand
+    from cbok.cmd.output import fail
     from cbok import utils as cbok_utils
 
     LOG = logging.getLogger(__name__)
@@ -125,13 +135,6 @@ def main():
         "proxy": bbx.ProxyCommands,
         "zsv": zsv.ZSphereCommands,
     }
-
-    def setup_logging_level(debug=False):
-        root = logging.getLogger()
-        root.setLevel(logging.DEBUG if debug else logging.INFO)
-
-        for handler in root.handlers:
-            handler.setLevel(logging.DEBUG if debug else logging.INFO)
 
     # NOTE: means all we used file path in shell scripts are relative
     # to CBoK home
@@ -191,6 +194,11 @@ def main():
                         sys.exit(getattr(ensure_result, "returncode", 1) or 1)
             return_code = func(**kwargs)
             sys.exit(return_code)
-    except Exception:
-        LOG.exception("Command failed")
-        sys.exit(1)
+    except subprocess.SubprocessError as exc:
+        if isinstance(exc, subprocess.CalledProcessError):
+            fail("Shell command failed (exit code %s)."
+                 % exc.returncode, exit_code=exc.returncode or 1, exc_info=True)
+        else:
+            fail("Shell command failed.", exc_info=True)
+    except Exception as exc:
+        fail(str(exc) or "Command failed", exc_info=True)
