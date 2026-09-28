@@ -15,7 +15,8 @@
 - CLI 入口在 `cbok/cmd/main.py`，命令按类别挂到 `CATEGORIES`；新增类别时创建/扩展 `cbok/cmd/<category>.py` 中的 `*Commands` 类，并注册到 `CATEGORIES`。
 - 新增命令使用 `BaseCommand` 子类的公开方法实现；方法名就是命令名，避免下划线开头，避免和 `BaseCommand` 公开方法重名。
 - 每个命令必须有清晰 docstring，参数用 `@args.args(...)` 声明，命令说明用 `@args.action_description(...)` 保持帮助信息可读。
-- 命令方法应返回进程退出码：成功返回 `0`，可恢复/用户输入类错误返回非 0；避免在深层 helper 中随意 `sys.exit()`，除非已有同类代码模式要求。
+- 命令方法成功时返回 `0`；仅透传底层失败状态且无需新增错误文案时，可返回非 0。除统一的 `fail` 外，不要在深层 helper 中自行退出进程。
+- `cbok/cmd/*` 中所有需要向用户显示的异常退出消息，统一调用 `cbok.cmd.output.fail(message)`，由它同时写入 `LOG.error`、向 stderr 输出纯文本并以状态码 `1` 退出；不得单独使用 `print`、`exit`/`sys.exit`、`LOG.xxx` 或其组合来实现异常退出消息。
 - 用户输入、路径、远端地址等进入 shell 前必须正确引用；Python 拼 shell 字符串时使用 `shlex.quote`，能用参数列表时优先用参数列表。
 - 复杂流程放到领域模块或 `scriptlet` 中，`cbok/cmd/*` 只负责参数解析、日志、调用编排和返回码映射。
 - 远端命令、部署命令、会修改环境状态的命令应有前置校验、明确日志和失败返回码，避免静默部分成功。
