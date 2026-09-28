@@ -64,26 +64,21 @@ class BinCommands(base.BaseCommand):
         return (go_path, version if version else "not found")
 
     def usage(self):
-        """Detail the binary files in the local directory"""
-        try:
-            current_python = shutil.which("python")
-            python_versions = self._find_all_pythons()
-            go_path, go_version = self._find_go()
+        """Show Python and Go executables available on PATH."""
+        current_python = shutil.which("python")
+        python_versions = self._find_all_pythons()
+        go_path, go_version = self._find_go()
 
-            print("Python versions found:")
-            if python_versions:
-                for path, version in sorted(python_versions.items(), key=lambda x: x[0]):
-                    prefix = "-> " if path == current_python else "   "
-                    print(f"{prefix}{path}: {version}")
-            else:
-                print("No Python found")
-
-            print("\nGo version:")
-            prefix = "-> " if go_path == shutil.which("go") else "   "
-            print(f"{prefix}{go_path}: {go_version}")
-
-        except Exception as e:
-            raise e
+        rows = [
+            ("Python", path, version, "Yes" if path == current_python else "No")
+            for path, version in sorted(python_versions.items())
+        ]
+        if not rows:
+            rows.append(("Python", None, "Not found", "No"))
+        rows.append(("Go", go_path, go_version if go_path else "Not found",
+                     "Yes" if go_path else "No"))
+        output.print_list(rows, ("Runtime", "Path", "Version", "Default"))
+        return 0
 
     @args.action_description("Get the absolute path of that binary")
     @args.args(
