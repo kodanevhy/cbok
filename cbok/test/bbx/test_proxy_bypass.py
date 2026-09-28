@@ -1,5 +1,7 @@
+import contextlib
 import configparser
 import inspect
+import io
 import subprocess
 import unittest
 from unittest import mock
@@ -146,14 +148,21 @@ class ProxyCommandsBypassTest(unittest.TestCase):
         ])
         original_conf = bbx.settings.CONF
         bbx.settings.CONF = _conf("*.local, localhost, *.zstack.io")
+        stdout = io.StringIO()
         try:
             with mock.patch.object(bbx.sys, "platform", "darwin"):
-                with mock.patch("builtins.print"):
+                with contextlib.redirect_stdout(stdout):
                     result = command.bypass()
         finally:
             bbx.settings.CONF = original_conf
 
         self.assertEqual(0, result)
+        self.assertIn("| Service", stdout.getvalue())
+        self.assertIn("| Domain", stdout.getvalue())
+        self.assertIn("| Office Wi-Fi | *.local", stdout.getvalue())
+        self.assertIn("| Office Wi-Fi | localhost", stdout.getvalue())
+        self.assertIn("| Office Wi-Fi | *.zstack.io", stdout.getvalue())
+        self.assertNotIn("Updated proxy bypass domains", stdout.getvalue())
         self.assertEqual(
             [
                 "/usr/sbin/networksetup",
