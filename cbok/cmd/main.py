@@ -196,9 +196,9 @@ def main():
             sys.exit(return_code)
     except subprocess.SubprocessError as exc:
         if isinstance(exc, subprocess.CalledProcessError):
-            fail("Shell command failed (exit code %s); check the log for details."
+            fail("Shell command failed (exit code %s)."
                  % exc.returncode, exit_code=exc.returncode or 1, exc_info=True)
         else:
-            fail("Shell command failed; check the log for details.", exc_info=True)
+            fail("Shell command failed.", exc_info=True)
     except Exception as exc:
         fail(str(exc) or "Command failed", exc_info=True)

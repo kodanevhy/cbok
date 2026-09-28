@@ -95,10 +95,21 @@ class CommandLoggingTest(unittest.TestCase):
         code, stderr, log = self.run_cli(fail)
 
         self.assertEqual(9, code)
-        self.assertIn("Shell command failed (exit code 9)", stderr)
+        self.assertEqual("Shell command failed (exit code 9).\n", stderr)
         self.assertNotIn("private-host", stderr)
         self.assertNotIn("private remote output", stderr)
         self.assertIn("CalledProcessError", log)
+
+    def test_subprocess_error_without_exit_code_has_plain_message(self):
+        def fail():
+            raise subprocess.SubprocessError("private shell output")
+
+        code, stderr, log = self.run_cli(fail)
+
+        self.assertEqual(1, code)
+        self.assertEqual("Shell command failed.\n", stderr)
+        self.assertNotIn("private shell output", stderr)
+        self.assertIn("private shell output", log)
 
 
 if __name__ == "__main__":
