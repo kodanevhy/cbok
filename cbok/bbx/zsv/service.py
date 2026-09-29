@@ -118,6 +118,12 @@ class ZsvArtifactMetadataError(RuntimeError):
     pass
 
 
+class ZsvSshConnectionError(RuntimeError):
+    def __init__(self, message, returncode):
+        super().__init__(message)
+        self.returncode = returncode
+
+
 def discover_management_nodes(address, runner):
     result = runner.run_command([
         "bash", "-lc",
@@ -407,6 +413,18 @@ class ZSphereTracker:
         if not self.discovered_nodes:
             result = command.ensure_remote_scriptlet(self.primary_node)
             if getattr(result, "returncode", 0) != 0:
+                if result.returncode == 255:
+                    output = "\n".join(filter(None, (
+                        getattr(result, "stdout", ""), getattr(result, "stderr", ""))))
+                    match = re.search(
+                        r"(?m)^ssh: connect to host \S+ port \d+: ([^\r\n]+)$",
+                        output,
+                    )
+                    if match:
+                        reason = match.group(1).strip().rstrip(".")
+                        raise ZsvSshConnectionError(
+                            f"SSH connection to primary node {self.primary_node} "
+                            f"failed: {reason}.", result.returncode)
                 return result.returncode, iso, state
 
         schema_precheck_rc = schema_repair.run_schema_mismatch_precheck_for_artifact(
