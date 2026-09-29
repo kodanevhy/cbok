@@ -1,12 +1,15 @@
 import configparser
 import contextlib
+from datetime import datetime, timezone
 import io
 import subprocess
 import unittest
 from types import SimpleNamespace
 from unittest import mock
+import requests
 
 from cbok.bbx.zsv import schema_repair
+from cbok.bbx.zsv import service as zsv_service
 from cbok.bbx.zsv.service import ZsvHostDiscoveryError
 from cbok.cmd import bbx, foundation, zsv
 
@@ -176,6 +179,55 @@ class CommandFatalOutputTest(unittest.TestCase):
             )
 
         runner.run_command.assert_not_called()
+
+    def test_zsv_upgrade_404(self):
+        url = "http://example.invalid/upgrade.bin"
+        command = zsv.ZSphereCommands()
+        tracker = zsv.ZSphereTracker(
+            name="env", upgrade_url=url, primary_node="node", runner=mock.Mock(),
+        )
+        modified_at = datetime(2026, 9, 28, tzinfo=timezone.utc)
+        state = SimpleNamespace(
+            latest_iso_name="upgrade.iso", latest_iso_modified_at=modified_at,
+            last_upgraded_iso_name="upgrade.iso",
+            last_upgraded_iso_modified_at=modified_at,
+            save=mock.Mock(),
+        )
+        response = requests.Response()
+        response.status_code = 404
+        response.url = url
+
+        with mock.patch.object(command, "_tracker", return_value=tracker), \
+                mock.patch.object(tracker, "get_state", return_value=state), \
+                mock.patch.object(tracker, "resolve_upgrade_nodes") as discover, \
+                mock.patch.object(zsv_service.requests, "head", return_value=response):
+            self.assert_failure(
+                lambda: command.upgrade(name="env", upgrade_url=url, primary_node="node"),
+                "Unable to check upgrade package metadata (HTTP 404): upgrade.bin.",
+            )
+        discover.assert_not_called()
+
+    def test_zsv_check_404(self):
+        url = "http://example.invalid/upgrade.bin"
+        state = SimpleNamespace(
+            name="env", iso_url=url,
+            latest_iso_name="upgrade.iso", latest_iso_modified_at=None,
+            last_upgraded_iso_name="upgrade.iso",
+            last_upgraded_iso_modified_at=datetime(2026, 9, 28, tzinfo=timezone.utc),
+            last_upgraded_at=None,
+            save=mock.Mock(),
+        )
+        response = requests.Response()
+        response.status_code = 404
+        response.url = url
+
+        with mock.patch.object(zsv, "_latest_upgrade_state", return_value=state), \
+                mock.patch.object(zsv.ZSphereTracker, "get_state", return_value=state), \
+                mock.patch.object(zsv_service.requests, "head", return_value=response):
+            self.assert_failure(
+                lambda: zsv.ZSphereCommands().check(primary_node="node"),
+                "Unable to check upgrade package metadata (HTTP 404): upgrade.bin.",
+            )
 
     def test_zsv_precheck_error(self):
         command = zsv.ZSphereCommands()

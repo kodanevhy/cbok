@@ -26,6 +26,7 @@ from cbok.bbx.zsv.service import discover_imagestore_backup_storage_nodes
 from cbok.bbx.zsv.service import discover_management_nodes
 from cbok.bbx.zsv.service import discover_zbs_primary_storage_nodes
 from cbok.bbx.zsv.service import ZsvAlreadyUpToDateError
+from cbok.bbx.zsv.service import ZsvArtifactMetadataError
 from cbok.bbx.zsv.service import ZsvHostDiscoveryError
 from cbok.bbx.zsv.schema_repair import ZsvSchemaChecksumMismatchError
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
@@ -179,7 +180,10 @@ class ZSphereCommands(base.BaseCommand):
             upgrade_url=state.iso_url,
             primary_node=primary_node,
         )
-        iso, state, needs_upgrade, _new_iso_detected = tracker.check()
+        try:
+            iso, state, needs_upgrade, _new_iso_detected = tracker.check()
+        except ZsvArtifactMetadataError as exc:
+            output.fail(str(exc))
         _print_iso(tracker, iso, state, needs_upgrade)
         return 0
 
@@ -332,7 +336,7 @@ class ZSphereCommands(base.BaseCommand):
             returncode, iso, state = tracker.upgrade(self)
         except ZsvSchemaChecksumMismatchError as exc:
             output.fail(str(exc), exit_code=exc.returncode or 1)
-        except ZsvAlreadyUpToDateError as exc:
+        except (ZsvAlreadyUpToDateError, ZsvArtifactMetadataError) as exc:
             output.fail(str(exc))
         if returncode == 0:
             LOG.info("Upgrade command finished: %s", iso.name)
