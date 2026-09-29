@@ -136,6 +136,33 @@ class CommandFatalOutputTest(unittest.TestCase):
                 code=7,
             )
 
+    def test_zsv_upgrade_ssh_error(self):
+        command = zsv.ZSphereCommands()
+        tracker = zsv.ZSphereTracker(
+            name="env", upgrade_url="http://example.invalid/upgrade.bin",
+            primary_node="node", runner=mock.Mock(),
+        )
+        tracker.check = mock.Mock(return_value=(
+            SimpleNamespace(name="upgrade.bin"), object(), True, True))
+        failure = subprocess.CompletedProcess(
+            ["ssh"], 255,
+            "ssh: connect to host node port 22: Network is unreachable\n"
+            "private remote output", "",
+        )
+
+        with mock.patch.object(command, "_tracker", return_value=tracker), \
+                mock.patch.object(tracker, "resolve_upgrade_nodes"), \
+                mock.patch.object(command, "ensure_remote_scriptlet",
+                                  return_value=failure):
+            self.assert_failure(
+                lambda: command.upgrade(
+                    name="env", upgrade_url=tracker.upgrade_url,
+                    primary_node="node"),
+                "SSH connection to primary node node failed: Network is unreachable.",
+                code=255,
+            )
+        tracker.runner.run_command.assert_not_called()
+
     def test_zsv_upgrade_bad_url(self):
         command = zsv.ZSphereCommands()
         with mock.patch.object(zsv.ZSphereTracker, "resolve_upgrade_nodes",

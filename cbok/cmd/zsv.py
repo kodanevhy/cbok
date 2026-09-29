@@ -28,6 +28,7 @@ from cbok.bbx.zsv.service import discover_zbs_primary_storage_nodes
 from cbok.bbx.zsv.service import ZsvAlreadyUpToDateError
 from cbok.bbx.zsv.service import ZsvArtifactMetadataError
 from cbok.bbx.zsv.service import ZsvHostDiscoveryError
+from cbok.bbx.zsv.service import ZsvSshConnectionError
 from cbok.bbx.zsv.schema_repair import ZsvSchemaChecksumMismatchError
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
 from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
@@ -338,6 +339,8 @@ class ZSphereCommands(base.BaseCommand):
             output.fail(str(exc), exit_code=exc.returncode or 1)
         except (ZsvAlreadyUpToDateError, ZsvArtifactMetadataError) as exc:
             output.fail(str(exc))
+        except ZsvSshConnectionError as exc:
+            output.fail(str(exc), exit_code=exc.returncode)
         if returncode == 0:
             LOG.info("Upgrade command finished: %s", iso.name)
         else:
