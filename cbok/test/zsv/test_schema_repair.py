@@ -7,6 +7,7 @@ import unittest
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 import requests
 
 from cbok.bbx.zsv import schema_repair
@@ -89,7 +90,10 @@ class SchemaRepairTest(unittest.TestCase):
         original_head = zsv_service.requests.head
         zsv_service.requests.head = lambda *args, **kwargs: SimpleNamespace(
             url=bin_url,
-            headers={"Content-Length": "123"},
+            headers={
+                "Content-Length": "123",
+                "Last-Modified": "Mon, 28 Sep 2026 11:35:39 GMT",
+            },
             raise_for_status=lambda: None,
         )
 
@@ -155,7 +159,7 @@ class SchemaRepairTest(unittest.TestCase):
 
         self.assertEqual("iso", tracker.upgrade_type)
 
-    def test_fetch_exact_artifact_tolerates_local_metadata_probe_failure(self):
+    def test_fetch_exact_artifact_reports_http_404(self):
         bin_url = "http://example.invalid/ZStack-ZSphere-installer.bin"
         tracker = ZSphereTracker(
             name="test-env",
@@ -163,19 +167,54 @@ class SchemaRepairTest(unittest.TestCase):
             primary_node="172.26.213.50",
             runner=FakeRunner(),
         )
-        original_head = zsv_service.requests.head
-        zsv_service.requests.head = lambda *args, **kwargs: (_ for _ in ()).throw(
-            requests.HTTPError("metadata probe failed")
+        response = requests.Response()
+        response.status_code = 404
+        response.url = bin_url
+
+        with mock.patch.object(zsv_service.requests, "head", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 404"):
+                tracker.fetch_latest_iso()
+
+    def test_fetch_exact_artifact_requires_modified_time(self):
+        bin_url = "http://example.invalid/ZStack-ZSphere-installer.bin"
+        tracker = ZSphereTracker(
+            name="test-env", upgrade_url=bin_url,
+            primary_node="172.26.213.50", runner=FakeRunner(),
+        )
+        response = requests.Response()
+        response.status_code = 200
+        response.url = bin_url
+
+        with mock.patch.object(zsv_service.requests, "head", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "Last-Modified"):
+                tracker.fetch_latest_iso()
+
+    def test_fetch_exact_artifact_reports_network_error(self):
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+            primary_node="172.26.213.50", runner=FakeRunner(),
         )
 
-        try:
-            artifact = tracker.fetch_latest_iso()
-        finally:
-            zsv_service.requests.head = original_head
+        with mock.patch.object(zsv_service.requests, "head",
+                               side_effect=requests.ConnectionError("proxy unavailable")):
+            with self.assertRaisesRegex(RuntimeError, "Unable to check upgrade package metadata"):
+                tracker.fetch_latest_iso()
 
-        self.assertEqual("ZStack-ZSphere-installer.bin", artifact.name)
-        self.assertEqual(bin_url, artifact.download_url)
-        self.assertEqual("", artifact.size)
+    def test_fetch_exact_artifact_rejects_invalid_modified_time(self):
+        tracker = ZSphereTracker(
+            name="test-env",
+            upgrade_url="http://example.invalid/ZStack-ZSphere-installer.bin",
+            primary_node="172.26.213.50", runner=FakeRunner(),
+        )
+        response = requests.Response()
+        response.status_code = 200
+        response.url = tracker.upgrade_url
+        response.headers["Last-Modified"] = "invalid"
+
+        with mock.patch.object(zsv_service.requests, "head", return_value=response):
+            with self.assertRaisesRegex(RuntimeError, "invalid Last-Modified"):
+                tracker.fetch_latest_iso()
 
     def test_scriptlet_discovers_nodes_from_hostvo_with_default_env_mysql_password(self):
         scriptlet = Path("scriptlet/lib/zsv.sh").read_text(encoding="utf-8")

@@ -114,6 +114,10 @@ class ZsvAlreadyUpToDateError(RuntimeError):
     pass
 
 
+class ZsvArtifactMetadataError(RuntimeError):
+    pass
+
+
 def discover_management_nodes(address, runner):
     result = runner.run_command([
         "bash", "-lc",
@@ -253,23 +257,29 @@ class ZSphereTracker:
         return self._fetch_exact_artifact(self.upgrade_url)
 
     def _fetch_exact_artifact(self, artifact_url):
+        artifact_name = _artifact_name_from_url(artifact_url)
         try:
             response = requests.head(
                 artifact_url, allow_redirects=True, timeout=20, headers=HTTP_HEADERS)
             response.raise_for_status()
         except requests.RequestException as exc:
-            LOG.warning(
-                "Unable to probe upgrade package metadata locally, remote node will download it directly: %s",
-                exc,
-            )
-            return IsoInfo(
-                name=_artifact_name_from_url(artifact_url),
-                download_url=artifact_url,
-            )
-        modified_at = None
-        if response.headers.get("Last-Modified"):
-            modified_at = _aware(parsedate_to_datetime(
-                response.headers["Last-Modified"]))
+            LOG.warning("Unable to check upgrade package metadata: %s", exc)
+            error_response = getattr(exc, "response", None)
+            status = (f" (HTTP {error_response.status_code})"
+                      if error_response is not None else "")
+            raise ZsvArtifactMetadataError(
+                f"Unable to check upgrade package metadata{status}: {artifact_name}.") from exc
+        last_modified = response.headers.get("Last-Modified")
+        if not last_modified:
+            raise ZsvArtifactMetadataError(
+                f"Unable to check upgrade package metadata (missing Last-Modified): "
+                f"{artifact_name}.")
+        try:
+            modified_at = _aware(parsedate_to_datetime(last_modified))
+        except (TypeError, ValueError) as exc:
+            raise ZsvArtifactMetadataError(
+                f"Unable to check upgrade package metadata (invalid Last-Modified): "
+                f"{artifact_name}.") from exc
         return IsoInfo(
             name=_artifact_name_from_url(response.url or artifact_url),
             download_url=response.url or artifact_url,
@@ -389,10 +399,10 @@ class ZSphereTracker:
         return result.returncode
 
     def upgrade(self, command):
-        self.resolve_upgrade_nodes()
         iso, state, needs_upgrade, _new_iso_detected = self.check(persist_state=False)
         if not needs_upgrade:
             raise ZsvAlreadyUpToDateError(f"Already up to date: {iso.name}.")
+        self.resolve_upgrade_nodes()
 
         if not self.discovered_nodes:
             result = command.ensure_remote_scriptlet(self.primary_node)
