@@ -72,6 +72,15 @@ def _artifact_type_from_url(url):
 
 
 def _require_artifact_url(url):
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        raise ValueError("upgrade_url must be an absolute HTTP(S) URL with a host.") from None
+    if (parsed.scheme not in ("http", "https") or not hostname
+            or port == 0 or any(char.isspace() for char in parsed.netloc)):
+        raise ValueError("upgrade_url must be an absolute HTTP(S) URL with a host.")
     artifact_type = _artifact_type_from_url(url)
     if not artifact_type:
         raise ValueError("upgrade_url must be an exact .iso or .bin file URL")
@@ -98,6 +107,10 @@ def _is_node_address(value):
 
 
 class ZsvHostDiscoveryError(RuntimeError):
+    pass
+
+
+class ZsvAlreadyUpToDateError(RuntimeError):
     pass
 
 
@@ -379,8 +392,7 @@ class ZSphereTracker:
         self.resolve_upgrade_nodes()
         iso, state, needs_upgrade, _new_iso_detected = self.check(persist_state=False)
         if not needs_upgrade:
-            LOG.error("Already up to date, interrupted before running upgrade")
-            return 1, iso, state
+            raise ZsvAlreadyUpToDateError(f"Already up to date: {iso.name}.")
 
         if not self.discovered_nodes:
             result = command.ensure_remote_scriptlet(self.primary_node)
