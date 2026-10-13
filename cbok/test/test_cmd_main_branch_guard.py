@@ -66,9 +66,9 @@ class SourceBranchGuardTest(unittest.TestCase):
 
         self.assertEqual("", err.getvalue())
 
-    def test_rebase_command_is_allowed_to_fix_non_master_source_branch(self):
+    def test_upgrade_command_is_allowed_to_fix_non_master_source_branch(self):
         def runner(*_args, **_kwargs):
-            self.fail("rebase must bypass source branch guard")
+            self.fail("upgrade must bypass source branch guard")
 
         err = io.StringIO()
 
@@ -76,14 +76,14 @@ class SourceBranchGuardTest(unittest.TestCase):
             project_root="/repo/cbok",
             runner=runner,
             stderr=err,
-            argv=["rebase"],
+            argv=["upgrade"],
         )
 
         self.assertEqual("", err.getvalue())
 
-    def test_debug_rebase_command_is_allowed_to_fix_non_master_source_branch(self):
+    def test_debug_upgrade_command_is_allowed_to_fix_non_master_source_branch(self):
         def runner(*_args, **_kwargs):
-            self.fail("debug rebase must bypass source branch guard")
+            self.fail("debug upgrade must bypass source branch guard")
 
         err = io.StringIO()
 
@@ -91,12 +91,12 @@ class SourceBranchGuardTest(unittest.TestCase):
             project_root="/repo/cbok",
             runner=runner,
             stderr=err,
-            argv=["--debug", "rebase"],
+            argv=["--debug", "upgrade"],
         )
 
         self.assertEqual("", err.getvalue())
 
-    def test_non_master_source_branch_exits_with_rebase_command(self):
+    def test_non_master_source_branch_exits_with_upgrade_command(self):
         def runner(*_args, **_kwargs):
             return self.completed(stdout="codex/feature-work\n")
 
@@ -113,13 +113,14 @@ class SourceBranchGuardTest(unittest.TestCase):
         message = err.getvalue()
         self.assertIn("codex/feature-work", message)
         self.assertIn("expected branch: master", message)
-        self.assertIn("cbok rebase", message)
+        self.assertIn("cbok upgrade", message)
+        self.assertNotIn("cbok rebase", message)
         self.assertNotIn("cd /repo/cbok", message)
         self.assertNotIn("git status --short --branch", message)
         self.assertNotIn("git checkout master", message)
         self.assertNotIn("git fetch origin", message)
         self.assertNotIn("git rebase origin/master", message)
-        self.assertIn("Remember to rebase", message)
+        self.assertIn("Remember to upgrade", message)
 
 
 if __name__ == "__main__":

@@ -49,7 +49,7 @@ class DefaultCommands(BaseCommand):
     def _source_checkout_is_dirty(self) -> bool:
         result = self._git("status", "--porcelain", log_output=False)
         if result.returncode != 0:
-            output.fail("Unexpected error while checking CBoK source checkout before rebase.")
+            output.fail("Unexpected error while checking CBoK source checkout before upgrade.")
         return bool((result.stdout or "").strip())
 
     def _git_admin_dir(self):
@@ -103,16 +103,16 @@ class DefaultCommands(BaseCommand):
                 return result.returncode or 1
         return 0
 
-    @args.action_description("Checkout CBoK source master and rebase origin/master")
+    @args.action_description("Upgrade CBoK source checkout to origin/master")
     @args.args(
         "--force-abort",
         action="store_true",
         help=(
             "Prompt for confirmation, then abort any in-progress rebase and "
-            "discard local CBoK source changes before rebasing master"),
+            "discard local CBoK source changes before upgrading master"),
     )
-    def rebase(self, force_abort=False):
-        """Checkout CBoK source master and rebase it from origin/master."""
+    def upgrade(self, force_abort=False):
+        """Upgrade CBoK source checkout to origin/master."""
         if force_abort:
             force_needed = self._force_abort_needed()
             if force_needed:
@@ -126,11 +126,11 @@ class DefaultCommands(BaseCommand):
             dirty = self._source_checkout_is_dirty()
             if dirty:
                 output.fail(
-                    "Unexpected dirty CBoK source checkout before rebase.\n"
+                    "Unexpected dirty CBoK source checkout before upgrade.\n"
                     f"source: {self.project_root}\n"
-                    "cbok rebase expects the editable source checkout to be a clean master baseline.\n"
+                    "cbok upgrade expects the editable source checkout to be a clean master baseline.\n"
                     f"Inspect it with: git -C {self.project_root} status --short\n"
-                    "Use cbok rebase --force-abort only if local changes can be discarded."
+                    "Use cbok upgrade --force-abort only if local changes can be discarded."
                 )
 
         for git_args in (
