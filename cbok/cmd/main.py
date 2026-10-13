@@ -56,15 +56,15 @@ def _resolve_and_reexec_venv():
     sys.exit(1)
 
 
-def _is_source_branch_fix_command(argv=None):
+def _is_source_upgrade_command(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     while argv and argv[0] == "--debug":
         argv.pop(0)
-    return bool(argv) and argv[0] == "rebase"
+    return bool(argv) and argv[0] == "upgrade"
 
 
 def _ensure_source_branch_is_master(project_root=None, runner=subprocess.run, stderr=sys.stderr, argv=None):
-    if _is_source_branch_fix_command(argv):
+    if _is_source_upgrade_command(argv):
         return
 
     project_root = os.path.realpath(project_root or _project_root())
@@ -86,10 +86,10 @@ def _ensure_source_branch_is_master(project_root=None, runner=subprocess.run, st
             "current branch: %s\n"
             "expected branch: master\n"
             "\n"
-            "Run this command to checkout master and rebase it:\n"
-            "  cbok rebase\n"
+            "Run this command to upgrade the CBoK source checkout:\n"
+            "  cbok upgrade\n"
             "\n"
-            "Remember to rebase before running cbok again.\n"
+            "Remember to upgrade before running cbok again.\n"
             % (project_root, current)
         )
         detail = (result.stderr or "").strip()

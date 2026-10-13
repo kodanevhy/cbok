@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from cbok import utils
 from cbok.cmd import base
 from cbok.cmd.base import DefaultCommands
 
@@ -33,12 +34,23 @@ class FakeRunner:
 
 
 class DefaultCommandsTest(unittest.TestCase):
-    def test_rebase_checks_out_master_fetches_origin_and_rebases(self):
+    def test_default_command_catalog_exposes_upgrade_not_rebase(self):
+        groups = utils.discover_command_groups(
+            {"default": DefaultCommands},
+            base.BaseCommand,
+        )
+
+        command_names = [name for _cat, _obj, commands in groups for name, _method in commands]
+
+        self.assertIn("upgrade", command_names)
+        self.assertNotIn("rebase", command_names)
+
+    def test_upgrade_checks_out_master_fetches_origin_and_rebases(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner()
         command.p_runner = runner
 
-        result = command.rebase()
+        result = command.upgrade()
 
         self.assertEqual(0, result)
         self.assertEqual(
@@ -52,7 +64,7 @@ class DefaultCommandsTest(unittest.TestCase):
         )
         self.assertEqual(False, runner.kwargs[0]["log_output"])
 
-    def test_rebase_stops_on_first_failed_git_command(self):
+    def test_upgrade_stops_on_first_failed_git_command(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner(responses=[
             {"stdout": ""},
@@ -60,7 +72,7 @@ class DefaultCommandsTest(unittest.TestCase):
         ])
         command.p_runner = runner
 
-        result = command.rebase()
+        result = command.upgrade()
 
         self.assertEqual(1, result)
         self.assertEqual(
@@ -71,7 +83,7 @@ class DefaultCommandsTest(unittest.TestCase):
             runner.commands,
         )
 
-    def test_rebase_reports_unexpected_dirty_checkout_before_checkout(self):
+    def test_upgrade_reports_unexpected_dirty_checkout_before_checkout(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner(responses=[
             {"stdout": " M cbok/cmd/zsv.py\n?? scratch.py\n"},
@@ -82,7 +94,7 @@ class DefaultCommandsTest(unittest.TestCase):
         with self.assertLogs("cbok.cmd.output", level="ERROR") as logs:
             with contextlib.redirect_stderr(stderr):
                 with self.assertRaises(SystemExit) as exited:
-                    command.rebase()
+                    command.upgrade()
 
         self.assertEqual(1, exited.exception.code)
         self.assertEqual(
@@ -91,13 +103,13 @@ class DefaultCommandsTest(unittest.TestCase):
         )
         self.assertEqual(False, runner.kwargs[0]["log_output"])
         message = "\n".join(logs.output)
-        self.assertIn("Unexpected dirty CBoK source checkout before rebase", message)
-        self.assertIn("Unexpected dirty CBoK source checkout before rebase", stderr.getvalue())
+        self.assertIn("Unexpected dirty CBoK source checkout before upgrade", message)
+        self.assertIn("Unexpected dirty CBoK source checkout before upgrade", stderr.getvalue())
         self.assertNotIn("cbok/cmd/zsv.py", message)
         self.assertNotIn("scratch.py", message)
         self.assertNotIn("Please commit your changes", message)
 
-    def test_rebase_status_failure_has_plain_error(self):
+    def test_upgrade_status_failure_has_plain_error(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner(responses=[{"returncode": 5}])
         command.p_runner = runner
@@ -106,11 +118,11 @@ class DefaultCommandsTest(unittest.TestCase):
         with self.assertLogs("cbok.cmd.output", level="ERROR") as logs:
             with contextlib.redirect_stderr(stderr):
                 with self.assertRaises(SystemExit) as exited:
-                    command.rebase()
+                    command.upgrade()
 
         self.assertEqual(1, exited.exception.code)
         self.assertEqual(
-            "Unexpected error while checking CBoK source checkout before rebase.\n",
+            "Unexpected error while checking CBoK source checkout before upgrade.\n",
             stderr.getvalue(),
         )
         self.assertIn("Unexpected error while checking", "\n".join(logs.output))
@@ -119,7 +131,7 @@ class DefaultCommandsTest(unittest.TestCase):
             runner.commands,
         )
 
-    def test_rebase_force_abort_discards_changes_before_rebase(self):
+    def test_upgrade_force_abort_discards_changes_before_rebase(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner(responses=[
             {"stdout": " M cbok/cmd/base.py\n"},
@@ -133,7 +145,7 @@ class DefaultCommandsTest(unittest.TestCase):
         command.p_runner = runner
 
         with mock.patch("builtins.input", return_value="yes") as prompt:
-            result = command.rebase(force_abort=True)
+            result = command.upgrade(force_abort=True)
 
         self.assertEqual(0, result)
         self.assertEqual(base.FORCE_ABORT_PROMPT, prompt.call_args[0][0])
@@ -158,7 +170,7 @@ class DefaultCommandsTest(unittest.TestCase):
             runner.kwargs[1],
         )
 
-    def test_rebase_force_abort_skips_prompt_when_clean_and_not_rebasing(self):
+    def test_upgrade_force_abort_skips_prompt_when_clean_and_not_rebasing(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner(responses=[
             {"stdout": ""},
@@ -170,7 +182,7 @@ class DefaultCommandsTest(unittest.TestCase):
 
         with mock.patch("builtins.input") as prompt:
             with self.assertLogs("cbok.cmd.base", level="INFO") as logs:
-                result = command.rebase(force_abort=True)
+                result = command.upgrade(force_abort=True)
 
         self.assertEqual(0, result)
         prompt.assert_not_called()
@@ -185,7 +197,7 @@ class DefaultCommandsTest(unittest.TestCase):
             runner.commands,
         )
 
-    def test_rebase_force_abort_prompts_when_rebase_state_exists_even_if_clean(self):
+    def test_upgrade_force_abort_prompts_when_rebase_state_exists_even_if_clean(self):
         with tempfile.TemporaryDirectory() as td:
             git_dir = Path(td, ".git")
             Path(git_dir, "rebase-merge").mkdir(parents=True)
@@ -202,7 +214,7 @@ class DefaultCommandsTest(unittest.TestCase):
             command.p_runner = runner
 
             with mock.patch("builtins.input", return_value="yes") as prompt:
-                result = command.rebase(force_abort=True)
+                result = command.upgrade(force_abort=True)
 
         self.assertEqual(0, result)
         self.assertEqual(base.FORCE_ABORT_PROMPT, prompt.call_args[0][0])
@@ -219,7 +231,7 @@ class DefaultCommandsTest(unittest.TestCase):
             runner.commands,
         )
 
-    def test_rebase_force_abort_stops_when_user_declines(self):
+    def test_upgrade_force_abort_stops_when_user_declines(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner(responses=[
             {"stdout": " M cbok/cmd/base.py\n"},
@@ -231,7 +243,7 @@ class DefaultCommandsTest(unittest.TestCase):
             with self.assertLogs("cbok.cmd.output", level="ERROR") as logs:
                 with contextlib.redirect_stderr(stderr):
                     with self.assertRaises(SystemExit) as exited:
-                        command.rebase(force_abort=True)
+                        command.upgrade(force_abort=True)
 
         self.assertEqual(1, exited.exception.code)
         self.assertEqual(
@@ -242,7 +254,7 @@ class DefaultCommandsTest(unittest.TestCase):
         self.assertIn("Force abort cancelled", "\n".join(logs.output))
         self.assertIn("Force abort cancelled", stderr.getvalue())
 
-    def test_rebase_force_abort_stops_when_confirmation_is_unavailable(self):
+    def test_upgrade_force_abort_stops_when_confirmation_is_unavailable(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner(responses=[
             {"stdout": " M cbok/cmd/base.py\n"},
@@ -254,7 +266,7 @@ class DefaultCommandsTest(unittest.TestCase):
             with self.assertLogs("cbok.cmd.output", level="ERROR") as logs:
                 with contextlib.redirect_stderr(stderr):
                     with self.assertRaises(SystemExit) as exited:
-                        command.rebase(force_abort=True)
+                        command.upgrade(force_abort=True)
 
         self.assertEqual(1, exited.exception.code)
         self.assertEqual(
@@ -264,7 +276,7 @@ class DefaultCommandsTest(unittest.TestCase):
         self.assertIn("Force abort requires interactive confirmation", "\n".join(logs.output))
         self.assertIn("Force abort requires interactive confirmation", stderr.getvalue())
 
-    def test_rebase_force_abort_stops_when_reset_fails(self):
+    def test_upgrade_force_abort_stops_when_reset_fails(self):
         command = DefaultCommands(project_root="/repo/cbok")
         runner = FakeRunner(responses=[
             {"stdout": " M cbok/cmd/base.py\n"},
@@ -274,7 +286,7 @@ class DefaultCommandsTest(unittest.TestCase):
         command.p_runner = runner
 
         with mock.patch("builtins.input", return_value="yes"):
-            result = command.rebase(force_abort=True)
+            result = command.upgrade(force_abort=True)
 
         self.assertEqual(2, result)
         self.assertEqual(
