@@ -19,6 +19,7 @@ Configure the remote daemon and build image in `[zsv_compile]`:
 ```ini
 [zsv]
 base_ref = origin/feature-zsv-5.1.0-encryption
+sync_repos = zsvirt,zsvirt-ee,zsvirt-utility,zstack-distro,zstack-store,hyper-converged-bootstrap,devops-scripts,pr_system
 
 [zsv_compile]
 remote_docker_host = tcp://172.26.50.70:2375
@@ -59,6 +60,24 @@ Behavior:
   source worktree.
 - Uses `[zsv] base_ref` as the shared upstream base for incremental compile
   changed-path detection.
+
+## Upstream repository sync
+
+Run `cbok zsv sync_repos` after selecting an editor and company with
+`cbok workspace use`. The command locates
+`<workspace>/<editor>/<company>/zstack-workspace` and fast-forwards the current
+branch of each repository named by `[zsv] sync_repos` to the matching branch
+on that repository's `upstream` remote. It never fetches from `origin`.
+
+All configured repositories are checked and their upstream branches fetched
+before any working tree is updated. Missing repositories or upstream branches,
+uncommitted changes, unfinished Git operations, and local commits or divergence
+stop the command. The command does not reset, clean, or rebase local work. If an
+update fails after validation, earlier updates may already have completed.
+
+Branch, HEAD, and working tree state are rechecked after fetching and before
+each update. Ignored local files that conflict with upstream changes also stop
+the command. Fetching and merging do not recurse into submodules.
 
 ## ZSphere upgrade schema file
 

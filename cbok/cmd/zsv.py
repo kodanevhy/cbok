@@ -9,6 +9,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from cbok import settings
+from cbok import workspace as workspace_service
 from cbok.bbx.models import ZSphereUpgradeState
 from cbok.bbx.zsv.agent_replace import DEFAULT_BACKUP_ROOT
 from cbok.bbx.zsv.agent_replace import DEFAULT_CEPH_PRIMARY_SITE_PACKAGES
@@ -30,6 +31,7 @@ from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
 from cbok.bbx.zsv.compile import run_compile_flow
 from cbok.bbx.zsv import config as zsv_config
 from cbok.bbx.zsv.groovy_test import run_groovy_test_flow
+from cbok.bbx.zsv.repo_sync import sync_repositories
 from cbok.bbx.zsv.worktree_prune import list_worktree_container_prs
 from cbok.bbx.zsv.worktree_prune import prune_worktree_containers
 from cbok.bbx.zsv.zstore_replace import run_zstore_replace_flow
@@ -424,6 +426,18 @@ class ZSphereCommands(base.BaseCommand):
             refresh_deploy_db=refresh_deploy_db,
             runner=self.p_runner,
         )
+
+    @args.action_description("Fast-forward configured ZSV repositories from upstream")
+    def sync_repos(self):
+        """Fast-forward configured ZSV repositories from upstream"""
+        context = workspace_service.current_context(settings.Workspace)
+        zstack_workspace = (
+            Path(context.root) / context.editor / context.company / "zstack-workspace"
+        )
+        results = sync_repositories(zstack_workspace, zsv_config.zsv_sync_repos())
+        for repository, revision in results:
+            LOG.info("Synchronized %s to upstream at %s", repository, revision)
+        return 0
 
     @args.action_description("List reusable ZSV worktree containers and PR/MR links")
     def list_worktree_container_prs(self):
