@@ -3,10 +3,12 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from cbok import settings
 from cbok import workspace
 from cbok.bbx.zsv import config as zsv_config
+from cbok.bbx.zsv import repo_sync
 from cbok.bbx.zsv.repo_sync import RepositorySyncError
 from cbok.bbx.zsv.repo_sync import sync_repositories
 from cbok.cmd.zsv import ZSphereCommands
@@ -21,9 +23,9 @@ def git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def commit_file(root: Path, content: str) -> str:
-    (root / "content.txt").write_text(content, encoding="utf-8")
-    git(root, "add", "content.txt")
+def commit_file(root: Path, content: str, filename: str = "content.txt") -> str:
+    (root / filename).write_text(content, encoding="utf-8")
+    git(root, "add", filename)
     git(
         root,
         "-c",
@@ -186,7 +188,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             git(checkout, "checkout", "-b", "local-only-branch")
             before = git(checkout, "rev-parse", "HEAD").stdout.strip()
 
-            with self.assertRaisesRegex(RepositorySyncError, "fetch upstream.*local-only-branch.*failed"):
+            with self.assertRaisesRegex(RepositorySyncError, "fetch .*upstream.*local-only-branch.*failed"):
                 sync_repositories(root / "zstack-workspace", ("zsvirt",))
 
             self.assertEqual(before, git(checkout, "rev-parse", "HEAD").stdout.strip())
@@ -203,6 +205,117 @@ class ZsvRepoSyncTest(unittest.TestCase):
                 with self.subTest(names=names):
                     with self.assertRaisesRegex(RepositorySyncError, message):
                         sync_repositories(Path(td), names)
+
+    def test_ignored_file_collision_preserves_local_data_and_all_worktree_heads(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            first, first_seed = create_repository(root, "zsvirt")
+            second, second_seed = create_repository(root, "zsvirt-ee")
+            before = [git(repo, "rev-parse", "HEAD").stdout.strip() for repo in (first, second)]
+            (second / ".git/info/exclude").write_text("local.conf\n", encoding="utf-8")
+            (second / "local.conf").write_text("local-only settings", encoding="utf-8")
+            commit_file(first_seed, "upstream change")
+            commit_file(second_seed, "upstream settings", "local.conf")
+            for seed in (first_seed, second_seed):
+                git(seed, "push", "upstream", "main")
+
+            with self.assertRaisesRegex(RepositorySyncError, "ignored.*local.conf"):
+                sync_repositories(root / "zstack-workspace", ("zsvirt", "zsvirt-ee"))
+
+            self.assertEqual("local-only settings", (second / "local.conf").read_text())
+            self.assertEqual(before, [git(repo, "rev-parse", "HEAD").stdout.strip() for repo in (first, second)])
+
+    def test_worktree_changes_during_fetch_are_preserved_and_stop_sync(self):
+        for change in ("branch", "commit", "untracked"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                checkout, seed = create_repository(root, "zsvirt")
+                before = git(checkout, "rev-parse", "HEAD").stdout.strip()
+                commit_file(seed, "upstream change")
+                git(seed, "push", "upstream", "main")
+                run_git = repo_sync._git
+                changed_head = before
+
+                def fetch_then_change(repo_root, *args):
+                    nonlocal changed_head
+                    result = run_git(repo_root, *args)
+                    if args[0] == "fetch":
+                        if change == "branch":
+                            git(checkout, "checkout", "-b", "other")
+                        elif change == "commit":
+                            changed_head = commit_file(checkout, "concurrent local commit")
+                        else:
+                            (checkout / "local.txt").write_text("local work", encoding="utf-8")
+                    return result
+
+                with mock.patch.object(repo_sync, "_git", side_effect=fetch_then_change):
+                    with self.assertRaisesRegex(RepositorySyncError, "changed while preparing|uncommitted|local commits"):
+                        sync_repositories(root / "zstack-workspace", ("zsvirt",))
+
+                self.assertEqual(changed_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
+                if change == "branch":
+                    self.assertEqual("other", git(checkout, "branch", "--show-current").stdout.strip())
+                    self.assertEqual(before, git(checkout, "rev-parse", "main").stdout.strip())
+                elif change == "untracked":
+                    self.assertEqual("local work", (checkout / "local.txt").read_text())
+
+    def test_hidden_untracked_files_still_stop_sync(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            checkout, seed = create_repository(root, "zsvirt")
+            before = git(checkout, "rev-parse", "HEAD").stdout.strip()
+            commit_file(seed, "upstream change")
+            git(seed, "push", "upstream", "main")
+            git(checkout, "config", "status.showUntrackedFiles", "no")
+            (checkout / "local.txt").write_text("local work", encoding="utf-8")
+
+            with self.assertRaisesRegex(RepositorySyncError, "uncommitted"):
+                sync_repositories(root / "zstack-workspace", ("zsvirt",))
+
+            self.assertEqual(before, git(checkout, "rev-parse", "HEAD").stdout.strip())
+
+    def test_clean_index_with_unfinished_sequencer_stops_sync(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            checkout, seed = create_repository(root, "zsvirt")
+            before = git(checkout, "rev-parse", "HEAD").stdout.strip()
+            commit_file(seed, "upstream change")
+            git(seed, "push", "upstream", "main")
+            sequencer = checkout / ".git/sequencer"
+            sequencer.mkdir()
+            (sequencer / "todo").write_text(f"pick {before} initial\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(RepositorySyncError, "unfinished Git operation"):
+                sync_repositories(root / "zstack-workspace", ("zsvirt",))
+
+            self.assertEqual(before, git(checkout, "rev-parse", "HEAD").stdout.strip())
+
+    def test_fetch_does_not_contact_submodule_origin(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            checkout, seed = create_repository(root, "zsvirt")
+            _child_checkout, child_seed = create_repository(root / "child", "utility")
+            child_remote = root / "child/utility-upstream.git"
+            git(seed, "-c", "protocol.file.allow=always", "submodule", "add", str(child_remote), "utility")
+            commit_file(seed, "add submodule")
+            git(seed, "push", "upstream", "main")
+            git(checkout, "fetch", "upstream")
+            git(checkout, "merge", "--ff-only", "upstream/main")
+            git(checkout, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+            git(checkout, "config", "fetch.recurseSubmodules", "true")
+            child = checkout / "utility"
+            before = git(child, "rev-parse", "origin/main").stdout.strip()
+            commit_file(child_seed, "child update")
+            git(child_seed, "push", "upstream", "main")
+            git(seed / "utility", "fetch", "origin")
+            git(seed / "utility", "merge", "--ff-only", "origin/main")
+            git(seed, "add", "utility")
+            target = commit_file(seed, "update gitlink")
+            git(seed, "push", "upstream", "main")
+
+            self.assertEqual([("zsvirt", target)], sync_repositories(root / "zstack-workspace", ("zsvirt",)))
+
+            self.assertEqual(before, git(child, "rev-parse", "origin/main").stdout.strip())
 
     def test_sync_repos_command_uses_active_workspace_context(self):
         with tempfile.TemporaryDirectory() as td:

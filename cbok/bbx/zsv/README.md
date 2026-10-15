@@ -75,6 +75,10 @@ uncommitted changes, unfinished Git operations, and local commits or divergence
 stop the command. The command does not reset, clean, or rebase local work. If an
 update fails after validation, earlier updates may already have completed.
 
+Branch, HEAD, and working tree state are rechecked after fetching and before
+each update. Ignored local files that conflict with upstream changes also stop
+the command. Fetching and merging do not recurse into submodules.
+
 ## ZSphere upgrade schema file
 
 `cbok zsv upgrade` downloads or reuses the exact BIN/ISO package on the primary

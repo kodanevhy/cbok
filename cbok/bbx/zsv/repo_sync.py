@@ -15,6 +15,7 @@ class _Repository:
     name: str
     root: Path
     branch: str
+    head: str
 
 
 @dataclass(frozen=True)
@@ -41,7 +42,7 @@ def _run(repository: str, root: Path, *args: str) -> str:
         detail = _output(result)
         suffix = f": {detail}" if detail else ""
         raise RepositorySyncError(f"{repository}: git {' '.join(args)} failed{suffix}")
-    return (result.stdout or "").strip()
+    return (result.stdout or "").rstrip("\n")
 
 
 def _validate_name(name: str) -> None:
@@ -59,18 +60,19 @@ def _inspect_repository(workspace_root: Path, name: str) -> _Repository:
     if os.path.realpath(git_root) != os.path.realpath(root):
         raise RepositorySyncError(f"{name}: path is not an independent Git repository: {root}")
 
-    for operation in ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"):
+    for operation in ("rebase-merge", "rebase-apply", "sequencer", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"):
         git_path = _run(name, root, "rev-parse", "--git-path", operation)
         if (root / git_path).exists():
             raise RepositorySyncError(f"{name}: unfinished Git operation; finish or abort it before syncing")
 
-    status = _run(name, root, "status", "--porcelain")
+    status = _run(name, root, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none")
     if status:
         raise RepositorySyncError(f"{name}: repository has uncommitted changes")
 
     branch = _run(name, root, "symbolic-ref", "--quiet", "--short", "HEAD")
+    head = _run(name, root, "rev-parse", "HEAD")
     _run(name, root, "remote", "get-url", "upstream")
-    return _Repository(name, root, branch)
+    return _Repository(name, root, branch, head)
 
 
 def _build_plan(repository: _Repository) -> _SyncPlan:
@@ -79,17 +81,40 @@ def _build_plan(repository: _Repository) -> _SyncPlan:
         repository.name,
         repository.root,
         "fetch",
+        "--no-recurse-submodules",
         "upstream",
         f"+refs/heads/{repository.branch}:{remote_ref}",
     )
     target = _run(repository.name, repository.root, "rev-parse", remote_ref)
-    ancestor = _git(repository.root, "merge-base", "--is-ancestor", "HEAD", target)
+    ancestor = _git(repository.root, "merge-base", "--is-ancestor", repository.head, target)
     if ancestor.returncode != 0:
         raise RepositorySyncError(
             f"{repository.name}: current branch has local commits or diverged from "
             f"upstream/{repository.branch}"
         )
     return _SyncPlan(repository, target)
+
+
+def _validate_plan(plan: _SyncPlan) -> None:
+    repository = plan.repository
+    if _inspect_repository(repository.root.parent, repository.name) != repository:
+        raise RepositorySyncError(f"{repository.name}: branch or HEAD changed while preparing synchronization")
+
+    ignored_paths = _run(
+        repository.name, repository.root,
+        "ls-files", "--others", "--ignored", "--exclude-standard", "-z",
+    ).split("\0")
+    changed_paths = _run(
+        repository.name, repository.root,
+        "diff", "--name-only", "--no-renames", "--diff-filter=ACMRT", "-z",
+        repository.head, plan.target, "--",
+    ).split("\0")
+    for ignored in filter(None, ignored_paths):
+        for changed in filter(None, changed_paths):
+            if ignored == changed or ignored.startswith(changed + "/") or changed.startswith(ignored + "/"):
+                raise RepositorySyncError(
+                    f"{repository.name}: ignored local file would be overwritten: {ignored}"
+                )
 
 
 def sync_repositories(
@@ -107,11 +132,17 @@ def sync_repositories(
         for name in repository_names
     ]
     plans = [_build_plan(repository) for repository in repositories]
+    for plan in plans:
+        _validate_plan(plan)
 
     results = []
     for plan in plans:
         repository = plan.repository
-        _run(repository.name, repository.root, "merge", "--ff-only", plan.target)
+        _validate_plan(plan)
+        _run(
+            repository.name, repository.root, "-c", "submodule.recurse=false",
+            "merge", "--ff-only", "--no-overwrite-ignore", plan.target,
+        )
         head = _run(repository.name, repository.root, "rev-parse", "HEAD")
         if head != plan.target:
             raise RepositorySyncError(
