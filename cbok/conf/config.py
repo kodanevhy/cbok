@@ -85,6 +85,12 @@ ZSV = Group(
             "base_ref",
             help="Remote branch used as the shared ZSV base ref",
         ),
+        Option(
+            "sync_repos",
+            default="",
+            required=False,
+            help="Comma-separated project:branch pairs synchronized from their upstream remote",
+        ),
     ]
 )
 
