@@ -19,6 +19,7 @@ Configure the remote daemon and build image in `[zsv_compile]`:
 ```ini
 [zsv]
 base_ref = origin/feature-zsv-5.1.0-encryption
+sync_repos = zsvirt:zsv_5.2.0,zsvirt-ee:zsv_5.2.0,zsvirt-utility:zsv_5.2.0,zstack:5.5.48,premium:5.5.48
 
 [zsv_compile]
 remote_docker_host = tcp://172.26.50.70:2375
@@ -59,6 +60,33 @@ Behavior:
   source worktree.
 - Uses `[zsv] base_ref` as the shared upstream base for incremental compile
   changed-path detection.
+
+## Upstream repository sync
+
+Run `cbok zsv sync_repos` after selecting an editor and company with
+`cbok workspace use`. The command locates
+`<workspace>/<editor>/<company>/zstack-workspace`. Each comma-separated entry in
+`[zsv] sync_repos` must specify `project:branch`; repository names alone are not
+accepted. The command fetches all branches from each repository's `upstream`
+remote, checks out the configured local branch, and fast-forwards it to the
+matching upstream branch. A missing local branch is created from upstream.
+It never fetches from `origin` or pushes to the personal fork.
+After synchronization succeeds, a summary table lists each project, configured
+branch, upstream ref, 12-character commit SHA, and result.
+
+All configured repositories are checked and their upstream branches fetched
+before any working tree is updated. Missing repositories or upstream branches,
+uncommitted changes, unfinished Git operations, a configured branch checked out
+in another worktree, and local commits or divergence on the configured branch
+stop the command. Commits on other development branches are preserved. The
+command does not reset, clean, or rebase local work. If an
+update fails after validation, earlier updates may already have completed.
+
+Branch, HEAD, and working tree state are rechecked after fetching and before
+each update. Ignored local files that conflict with upstream changes also stop
+the command. Fetching, checking out, and merging do not recurse into submodules.
+An initialized submodule stays at its original commit when switching branches;
+that expected gitlink difference is allowed, but local submodule edits are not.
 
 ## ZSphere upgrade schema file
 
