@@ -5,7 +5,7 @@
 key = "admin-email"
 kind = "email"
 enabled = false
-config = { to = [] }
+config = { to = [], timeout = 30 }
 
 [[sources]]
 key = "tencent"

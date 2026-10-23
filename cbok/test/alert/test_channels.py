@@ -83,6 +83,25 @@ class NotificationChannelTests(SimpleTestCase):
                     self.channels.send_notification("email", config, self.message)
         self.assertEqual(mail.outbox, [])
 
+    def test_email_timeout_rejects_unbounded_or_invalid_values(self):
+        for timeout in (None, True, 0, -1, 31, float('inf'), float('nan'), '10'):
+            with self.subTest(timeout=timeout), self.assertRaises(ValueError):
+                self.channels.send_notification(
+                    'email', {'to': ['admin@example.com'], 'timeout': timeout}, self.message)
+        self.assertEqual(mail.outbox, [])
+
+    def test_configured_email_timeout_reaches_actual_smtp_connection(self):
+        timeouts = []
+        def fail_connect(*args, **kwargs):
+            timeouts.append(kwargs.get('timeout'))
+            raise TimeoutError('greeting timed out')
+        with self.settings(EMAIL_BACKEND='django.core.mail.backends.smtp.EmailBackend'), patch(
+                'django.core.mail.backends.smtp.smtplib.SMTP', side_effect=fail_connect):
+            with self.assertRaises(TimeoutError):
+                self.channels.send_notification(
+                    'email', {'to': ['admin@example.com'], 'timeout': 4.5}, self.message)
+        self.assertEqual([4.5], timeouts)
+
     def test_transport_failure_propagates_without_false_success(self):
         with patch("django.core.mail.backends.locmem.EmailBackend.send_messages", side_effect=OSError("transport unavailable")):
             with self.assertRaisesRegex(OSError, "transport unavailable"):

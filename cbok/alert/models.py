@@ -202,6 +202,9 @@ class Incident(models.Model):
     last_seen = models.DateTimeField()
     occurrences = models.PositiveIntegerField(default=1)
     consecutive_count = models.PositiveIntegerField(default=1)
+    # Authorization captured at recovery; a later send acknowledgment cannot
+    # turn an explicit apply-without-notify into a notification.
+    recovery_notify = models.BooleanField(default=False)
     details = models.JSONField(default=list, blank=True)
 
     class Meta:

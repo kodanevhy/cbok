@@ -215,7 +215,7 @@ class MonitoringStateTests(TestCase):
         disabled = models.Source.objects.create(key='disabled', kind='news', adapter='fixture-source', enabled=False)
         section = models.Section.objects.create(source=disabled, key='news', name='Disabled')
         models.DetectorCheck.objects.create(section=section, key='skip', detector='fixture')
-        with patch.object(self.service, 'discover_detectors', wraps=lambda paths=None: importlib.import_module('cbok.alert.monitoring.plugins').discover_detectors([self.root])):
+        with patch.object(self.service, 'discover_detectors', wraps=lambda paths=None, **kwargs: importlib.import_module('cbok.alert.monitoring.plugins').discover_detectors([self.root], **kwargs)):
             results = self.service.run_due_checks()
         self.assertEqual(2, len(results))
         self.assertEqual({'pass', 'unknown'}, {r['status'] for r in results})

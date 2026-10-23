@@ -16,7 +16,7 @@ import uuid
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from cbok.alert.models import (
@@ -142,7 +142,8 @@ def _policy(check, anomaly, strict=True):
 
 
 def _cancel(query):
-    return query.filter(status__in=_PENDING).update(
+    # An external send already in progress retains its acknowledgment rights.
+    return query.filter(status__in=_PENDING).filter(_eligible_lease(timezone.now())).update(
         status='cancelled', lease_token='', lease_until=None,
     )
 
@@ -173,10 +174,11 @@ def _resolve(incident, now, notify, channels):
     incident.status = 'resolved'
     incident.consecutive_count = 0
     incident.last_seen = now
-    incident.save(update_fields=['status', 'consecutive_count', 'last_seen'])
-    _cancel(incident.deliveries.filter(event_kind='alert'))
     policy = _policy(incident.detector_check, incident.anomaly_type, strict=False)
-    if notify and policy['notify'] and policy['recovery']:
+    incident.recovery_notify = notify and policy['notify'] and policy['recovery']
+    incident.save(update_fields=['status', 'consecutive_count', 'last_seen', 'recovery_notify'])
+    _cancel(incident.deliveries.filter(event_kind='alert'))
+    if incident.recovery_notify:
         sent_channel_ids = incident.deliveries.filter(event_kind='alert', status='sent').values_list('channel_id', flat=True)
         _enqueue(incident, 'recovery', channels.filter(pk__in=sent_channel_ids))
 
@@ -286,7 +288,7 @@ def run_check(check_id, apply=False, notify=False, detector_paths=None, catalog_
     config_error = False
     try:
         paths = detector_paths if detector_paths is not None else getattr(settings, 'ALERT_DETECTOR_PATHS', None)
-        spec = discover_detectors(paths).get(check.detector)
+        spec = discover_detectors(paths, strict=False).get(check.detector)
     except (OSError, ValueError, TypeError):
         spec, config_error = None, True
     token = None
@@ -306,13 +308,13 @@ def run_due_checks(now=None, limit=100):
     ids = list(query.order_by('next_run_at', 'pk').values_list('pk', flat=True)[:max(0, limit)])
     catalog = _catalog(None, True)
     try:
-        detectors, config_error = discover_detectors(getattr(settings, 'ALERT_DETECTOR_PATHS', None)), False
+        detectors, config_error = discover_detectors(getattr(settings, 'ALERT_DETECTOR_PATHS', None), strict=False), False
     except (OSError, ValueError, TypeError):
         detectors, config_error = {}, True
     for check_id in ids:
         check = DetectorCheck.objects.select_related('section__source').get(pk=check_id)
         spec = detectors.get(check.detector)
-        token = _claim(check_id, (spec.timeout if spec else 300) + 60, now=now, due=True)
+        token = _claim(check_id, (spec.timeout if spec else 300) + 60, due=True)
         if token is None:
             continue
         try:
@@ -369,6 +371,7 @@ def deliver_pending(limit=100):
     ).filter(_eligible_lease(now))
     ids = list(query.order_by('pk').values_list('pk', flat=True)[:max(0, limit)])
     for delivery_id in ids:
+        now = timezone.now()
         token = uuid.uuid4().hex
         with transaction.atomic():
             claimed = NotificationDelivery.objects.filter(pk=delivery_id, status__in=_PENDING).filter(
@@ -395,19 +398,46 @@ def deliver_pending(limit=100):
         try:
             send_notification(delivery.channel.kind, delivery.channel.config, NotificationMessage(**delivery.payload))
         except Exception:
-            finished = timezone.now()
-            changed = owner.filter(lease_until__gt=finished).update(
-                status='exhausted' if delivery.attempts >= max_attempts else 'failed',
-                last_error='Notification channel failed; delivery was not confirmed',
-                next_attempt_at=finished + timedelta(seconds=min(cap, base * 2 ** (delivery.attempts - 1))),
-                lease_token='', lease_until=None,
-            )
-            summary['failed' if changed else 'skipped'] += 1
+            succeeded = False
         else:
-            finished = timezone.now()
-            changed = owner.filter(lease_until__gt=finished).update(
-                status='sent', sent_at=finished, last_error='', next_attempt_at=None,
-                lease_token='', lease_until=None,
-            )
-            summary['sent' if changed else 'skipped'] += 1
+            succeeded = True
+        finished = timezone.now()
+        with transaction.atomic():
+            # Use the same lock order as _execute: check, then delivery. This
+            # serializes recovery and send acknowledgment without holding a DB
+            # lock over the external send (including on SQLite).
+            DetectorCheck.objects.filter(pk=delivery.incident.detector_check_id).update(revision=F('revision'))
+            current = NotificationDelivery.objects.select_related(
+                'channel', 'incident__anomaly_type', 'incident__detector_check__section__source',
+            ).get(pk=delivery_id)
+            if succeeded:
+                changed = owner.filter(lease_until__gt=finished).update(
+                    status='sent', sent_at=finished, last_error='', next_attempt_at=None,
+                    lease_token='', lease_until=None,
+                )
+                if changed and current.event_kind == 'alert' and current.incident.recovery_notify:
+                    # Reuse current-event checks: no superseded, recurrent,
+                    # disabled or detached channel may acquire a stale recovery.
+                    current.event_kind = 'recovery'
+                    if _delivery_is_current(current):
+                        policy = _policy(current.incident.detector_check, current.incident.anomaly_type, strict=False)
+                        if policy['notify'] and policy['recovery']:
+                            _enqueue(current.incident, 'recovery', [current.channel])
+                outcome = 'sent'
+            elif not _delivery_is_current(current):
+                changed = owner.filter(lease_until__gt=finished).update(
+                    status='cancelled', lease_token='', lease_until=None,
+                    next_attempt_at=None,
+                    last_error='Notification channel failed; delivery was not confirmed',
+                )
+                outcome = 'cancelled'
+            else:
+                changed = owner.filter(lease_until__gt=finished).update(
+                    status='exhausted' if delivery.attempts >= max_attempts else 'failed',
+                    last_error='Notification channel failed; delivery was not confirmed',
+                    next_attempt_at=finished + timedelta(seconds=min(cap, base * 2 ** (delivery.attempts - 1))),
+                    lease_token='', lease_until=None,
+                )
+                outcome = 'failed'
+            summary[outcome if changed else 'skipped'] += 1
     return summary
