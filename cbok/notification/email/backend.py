@@ -27,4 +27,5 @@ class DjangoEmailService(base.BaseEmailService):
         if html_body:
             msg.attach_alternative(html_body, "text/html")
 
-        msg.send(fail_silently=False)
+        if msg.send(fail_silently=False) != 1:
+            raise RuntimeError("Email message was not confirmed delivered")

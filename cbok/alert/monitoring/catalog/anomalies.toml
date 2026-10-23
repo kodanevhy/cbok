@@ -1,0 +1,29 @@
+# Add an anomaly declaration here; the engine has no business-code switch.
+[anomalies.SECTION_CHANGED]
+label = "板块契约变化"
+description = "Required structure or parsing contract no longer holds"
+scope = "contract"
+
+[anomalies.NETWORK_ERROR]
+label = "网络异常"
+scope = "availability"
+indeterminate = true
+
+[anomalies.ACCESS_ERROR]
+label = "访问异常"
+scope = "availability"
+indeterminate = true
+
+[anomalies.EMPTY_RESULT]
+label = "采集结果为空"
+scope = "contract"
+
+[anomalies.CHECK_EXECUTION_ERROR]
+label = "检测脚本执行异常"
+scope = "execution"
+indeterminate = true
+
+[anomalies.CHECK_CONFIG_ERROR]
+label = "检测配置异常"
+scope = "configuration"
+indeterminate = true

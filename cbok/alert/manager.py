@@ -6,7 +6,7 @@ from django import db
 
 from cbok.alert import context
 from cbok.alert.crawler import google
-from cbok.alert import llm
+from cbok.alert.model_profiles import configured_model_client
 from cbok.alert import models
 from cbok.alert import utils as alert_utils
 from cbok import settings
@@ -18,7 +18,7 @@ LOG = logging.getLogger(__name__)
 
 class AlertManager:
     def __init__(self):
-        self.llm_client = llm.Deepseek()
+        self.llm_client = configured_model_client()
         self.context = context.DeriveContext()
         self._init_google_crawler()
         self.email_service = email_service.EmailService()
