@@ -37,3 +37,19 @@ class ZsvConfigTest(unittest.TestCase):
         )
 
         self.assertEqual("", zsv_config.zsv_base_ref())
+
+    def test_sync_repos_reads_trimmed_project_branch_entries(self):
+        zsv_config.settings.CONF = _conf(
+            zsv_values={"sync_repos": "zsvirt:zsv_5.2.0, zsvirt-ee:zsv_5.2.0,premium:5.5.48"},
+        )
+
+        self.assertEqual(
+            ("zsvirt:zsv_5.2.0", "zsvirt-ee:zsv_5.2.0", "premium:5.5.48"),
+            zsv_config.zsv_sync_repos(),
+        )
+
+    def test_missing_sync_repos_does_not_select_repositories_implicitly(self):
+        for conf in (_conf(), _conf(zsv_values={"base_ref": "origin/main"})):
+            with self.subTest(sections=conf.sections()):
+                zsv_config.settings.CONF = conf
+                self.assertEqual((), zsv_config.zsv_sync_repos())

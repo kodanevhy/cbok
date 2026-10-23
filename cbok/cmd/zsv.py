@@ -10,6 +10,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from cbok import settings
+from cbok import utils as cbok_utils
 from cbok.bbx.models import ZSphereUpgradeState
 from cbok.bbx.zsv.agent_replace import DEFAULT_BACKUP_ROOT
 from cbok.bbx.zsv.agent_replace import DEFAULT_CEPH_PRIMARY_SITE_PACKAGES
@@ -35,6 +36,7 @@ from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
 from cbok.bbx.zsv.compile import run_compile_flow
 from cbok.bbx.zsv import config as zsv_config
 from cbok.bbx.zsv.groovy_test import run_groovy_test_flow
+from cbok.bbx.zsv.repo_sync import sync_repositories
 from cbok.bbx.zsv.worktree_prune import list_worktree_container_prs
 from cbok.bbx.zsv.worktree_prune import prune_worktree_containers
 from cbok.bbx.zsv.zstore_replace import run_zstore_replace_flow
@@ -144,6 +146,14 @@ def _print_iso(tracker, iso, state, needs_upgrade):
 def _log_zsv_base_ref():
     base_ref = zsv_config.zsv_base_ref() or "<not configured>"
     LOG.info("ZSV base ref: %s", base_ref)
+
+
+def _print_repo_sync_results(results):
+    rows = [
+        (name, branch, f"upstream/{branch}", revision[:12], "SYNCED")
+        for name, branch, revision in results
+    ]
+    output.print_list(rows, ("Project", "Branch", "Upstream", "Commit", "Result"))
 
 
 class ZSphereCommands(base.BaseCommand):
@@ -465,6 +475,16 @@ class ZSphereCommands(base.BaseCommand):
             refresh_deploy_db=refresh_deploy_db,
             runner=self.p_runner,
         )
+
+    @args.action_description("Check out and fast-forward configured ZSV repository branches from upstream")
+    def sync_repos(self):
+        """Check out and fast-forward configured ZSV repository branches from upstream"""
+        zstack_workspace = cbok_utils.locate_project_path("Cursor", "zs", "zstack-workspace")
+        results = sync_repositories(zstack_workspace, zsv_config.zsv_sync_repos())
+        for repository, branch, revision in results:
+            LOG.info("Synchronized %s:%s to upstream at %s", repository, branch, revision)
+        _print_repo_sync_results(results)
+        return 0
 
     @args.action_description("List reusable ZSV worktree containers and PR/MR links")
     def list_worktree_container_prs(self):
