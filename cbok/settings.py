@@ -185,3 +185,22 @@ if "email" in CONF.sections():
     EMAIL_HOST_PASSWORD = CONF.get("email", "host_password")
     EMAIL_USE_TLS = CONF.getboolean("email", "use_tls", fallback=False)
     EMAIL_FROM = CONF.get("email", "from")
+
+
+# DB records own alert configuration. These settings only opt into the existing
+# development gate and select an explicit model profile / installed plugin roots.
+ALERT_MONITOR_ENABLED = CONF.getboolean("alert", "monitor_enabled", fallback=False)
+ALERT_MODEL_PROFILE = CONF.get("alert", "model_profile", fallback="").strip()
+_alert_plugin_paths = CONF.get("alert", "detector_paths", fallback="").strip()
+ALERT_DETECTOR_PATHS = None
+if _alert_plugin_paths:
+    ALERT_DETECTOR_PATHS = [os.path.join(BASE_DIR, "cbok", "alert", "monitoring", "detectors")]
+    for _alert_path in _alert_plugin_paths.split(","):
+        _alert_path = os.path.expanduser(_alert_path.strip())
+        if not _alert_path:
+            continue
+        if not os.path.isabs(_alert_path):
+            _alert_path = os.path.join(os.path.dirname(CBOK_CONF_PATH), _alert_path)
+        _alert_path = os.path.realpath(_alert_path)
+        if _alert_path not in ALERT_DETECTOR_PATHS:
+            ALERT_DETECTOR_PATHS.append(_alert_path)

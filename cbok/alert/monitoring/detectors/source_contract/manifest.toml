@@ -1,0 +1,6 @@
+name = "source_contract"
+protocol_version = 1
+entrypoint = "check.py"
+timeout = 90
+max_output_bytes = 65536
+description = "Check registered source observations against configured contracts"

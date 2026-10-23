@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives, get_connection
 
 from cbok.notification.email import base
 
@@ -13,6 +13,8 @@ class DjangoEmailService(base.BaseEmailService):
         to: List[str],
         body: Optional[str] = None,
         html_body: Optional[str] = None,
+        *,
+        timeout: Optional[float] = None,
     ) -> None:
         if not body and not html_body:
             raise ValueError("Either body or html_body must be provided")
@@ -22,9 +24,11 @@ class DjangoEmailService(base.BaseEmailService):
             body=body or "",
             from_email=settings.EMAIL_FROM,
             to=to,
+            connection=get_connection(timeout=timeout) if timeout is not None else None,
         )
 
         if html_body:
             msg.attach_alternative(html_body, "text/html")
 
-        msg.send(fail_silently=False)
+        if msg.send(fail_silently=False) != 1:
+            raise RuntimeError("Email message was not confirmed delivered")

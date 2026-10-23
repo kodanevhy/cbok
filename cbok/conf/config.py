@@ -69,6 +69,19 @@ ALERT_ACCOUNT = Group(
     ]
 )
 
+ALERT = Group(
+    name="alert",
+    title="Registered alert monitoring",
+    options=[
+        Option("monitor_enabled", default=False, required=False,
+               help="Enable the 60-second runserver monitor gate (default false)"),
+        Option("model_profile", default="", required=False,
+               help="Explicit database ModelProfile key; empty disables model selection"),
+        Option("detector_paths", default="", required=False,
+               help="Comma-separated extra detector directories, relative to CBOK_CONF"),
+    ],
+)
+
 LLM_API_KEY = Group(
     name="llm_api_key",
     title="LLM api key",
@@ -123,7 +136,7 @@ ZSV_DEPLOY = Group(
     ],
 )
 
-ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT, LLM_API_KEY, ZSV,
+ALL_GROUPS = [DEFAULT, DATABASE, EMAIL, PROXY, ALERT_ACCOUNT, ALERT, LLM_API_KEY, ZSV,
               ZSV_COMPILE, ZSV_DEPLOY]
 
 

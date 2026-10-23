@@ -17,3 +17,14 @@ def derive_and_notify():
 
     if topic and topic.in_progress:
         pass
+
+
+@cbok_utils.periodic_task(interval=60)
+def periodic_monitor():
+    """Run registered checks only when explicitly enabled in settings."""
+    from django.conf import settings
+    if not getattr(settings, 'ALERT_MONITOR_ENABLED', False):
+        return
+    from cbok.alert.monitoring.service import run_due_checks, deliver_pending
+    run_due_checks()
+    deliver_pending()

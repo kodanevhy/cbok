@@ -65,11 +65,11 @@ class BatchProcessor:
                 task_name = f"{task_info['app']}.{task_info['name']}"
                 interval = task_info['interval']
 
-                def run_periodic():
+                def run_periodic(func=task_info['func'], task_name=task_name, interval=interval):
                     import time
                     while True:
                         try:
-                            task_info['func']()
+                            func()
                         except Exception as e:
                             LOG.exception(f"Error in periodic task {task_name}: {e}")
                         time.sleep(interval)
