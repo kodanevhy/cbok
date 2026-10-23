@@ -2,6 +2,17 @@
 
 本文件是 CBoK 仓库的项目级常驻规则，作用域为整个仓库。
 
+## Commit 与 PR 文案
+
+- Commit message、PR 标题和描述默认使用英文，除非用户明确要求其他语言。
+- Commit message 的标题和正文每行均不得超过 72 个字符；正文按语义换行。
+- 标题简明描述实际变更，不在标题中附带 Jira 问题号。
+- 默认只写标题和正文，不自动生成 `Summary`、`Tests`、`Testing` 等模板小节。
+- 需要说明验证情况时，直接写在正文中；只陈述实际执行的检查及结果，不把未执行的验证写成通过。
+- 不添加 `Change-Id:`、`Resolves:`、`Resolved:` 等 footer，也不强制关联 Jira 或 issue。确需引用问题时，在正文中使用真实链接，不编造问题号或链接。
+- Commit message 和 PR 描述必须与最终 diff 一致，不包含无关修改或尚未实现的功能。
+- 创建或更新 PR 后，读回已保存的标题和描述，确认内容及格式正确，再向用户提供 PR 链接；只弹出编辑表单不代表保存成功。
+
 ## Scriptlet 复用
 
 - 新增或修改涉及 shell、远端主机、Kubernetes、Git、proxy、ZSphere、部署/拷贝/备份等流程时，优先复用 `scriptlet/`。
