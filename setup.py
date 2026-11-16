@@ -16,6 +16,7 @@ setup(
     name="CBoK",
     version=_read_version(),
     packages=find_packages(),
+    package_data={"cbok.bbx": ["manifest.json"]},
     entry_points={
         'console_scripts': [
             'cbok=cbok.cmd.main:main',
