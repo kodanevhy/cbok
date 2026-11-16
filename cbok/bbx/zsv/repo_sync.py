@@ -118,9 +118,10 @@ def _inspect_repository(
     if result.returncode not in (0, 1):
         raise RepositorySyncError(f"{name}: failed to inspect local branch {branch}: {_output(result)}")
     head = result.stdout.strip() if result.returncode == 0 else None
-    worktree = _run(name, root, "for-each-ref", "--format=%(worktreepath)", target_ref)
-    if worktree and os.path.realpath(worktree) != os.path.realpath(root):
-        raise RepositorySyncError(f"{name}: configured branch {branch} is checked out in another worktree")
+    if current_branch != target_ref and head is not None:
+        worktree = _run(name, root, "for-each-ref", "--format=%(worktreepath)", target_ref)
+        if worktree:
+            raise RepositorySyncError(f"{name}: configured branch {branch} is checked out in another worktree")
     _run(name, root, "remote", "get-url", "upstream")
     return _Repository(name, root, branch, head, current_branch, current_head)
 

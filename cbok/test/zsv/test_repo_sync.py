@@ -111,6 +111,24 @@ class ZsvRepoSyncTest(unittest.TestCase):
             self.assertEqual(upstream_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual([("zsvirt", "main", upstream_head)], results)
 
+    def test_sync_repositories_fast_forwards_current_submodule_branch_without_worktree_lookup(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            workspace, _seed, child_seed = create_repository_with_submodule(root)
+            submodule = workspace / "utility"
+            git(submodule, "checkout", "main")
+            git(submodule, "remote", "add", "upstream", str(root / "child/utility-upstream.git"))
+            upstream_head = commit_file(child_seed, "upstream update")
+            git(child_seed, "push", "upstream", "main")
+
+            with mock.patch.object(repo_sync, "_git", wraps=repo_sync._git) as run_git:
+                results = sync_repositories(workspace, ("utility:main",))
+
+            self.assertEqual([("utility", "main", upstream_head)], results)
+            self.assertEqual(upstream_head, git(submodule, "rev-parse", "HEAD").stdout.strip())
+            self.assertEqual("main", git(submodule, "branch", "--show-current").stdout.strip())
+            self.assertFalse(any("--format=%(worktreepath)" in call.args for call in run_git.call_args_list))
+
     def test_dirty_repository_prevents_all_worktree_updates(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
