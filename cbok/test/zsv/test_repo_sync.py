@@ -94,22 +94,24 @@ class ZsvRepoSyncTest(unittest.TestCase):
         settings.Workspace = self._original_workspace
         zsv_config.settings.CONF = self._original_conf
 
-    def test_sync_repositories_fast_forwards_from_upstream_without_origin(self):
+    def test_sync_repositories_fast_forwards_from_upstream_without_scanning_ignored_files(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             checkout, seed = create_repository(root, "zsvirt")
+            (checkout / ".git/info/exclude").write_text("build.log\n", encoding="utf-8")
+            (checkout / "build.log").write_text("local build log", encoding="utf-8")
             before = git(checkout, "rev-parse", "HEAD").stdout.strip()
             upstream_head = commit_file(seed, "upstream change")
             git(seed, "push", "upstream", "main")
 
-            results = sync_repositories(
-                root / "zstack-workspace",
-                ("zsvirt:main",),
-            )
+            with mock.patch.object(repo_sync, "_git", wraps=repo_sync._git) as run_git:
+                results = sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertNotEqual(before, upstream_head)
             self.assertEqual(upstream_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual([("zsvirt", "main", upstream_head)], results)
+            self.assertEqual("local build log", (checkout / "build.log").read_text())
+            self.assertFalse(any("--ignored" in call.args for call in run_git.call_args_list))
 
     def test_sync_repositories_fast_forwards_current_submodule_branch_without_worktree_lookup(self):
         with tempfile.TemporaryDirectory() as td:
@@ -245,24 +247,25 @@ class ZsvRepoSyncTest(unittest.TestCase):
                     with self.assertRaisesRegex(RepositorySyncError, message):
                         sync_repositories(Path(td), names)
 
-    def test_ignored_file_collision_preserves_local_data_and_all_worktree_heads(self):
+    def test_fast_forward_refuses_to_overwrite_ignored_files(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             first, first_seed = create_repository(root, "zsvirt")
             second, second_seed = create_repository(root, "zsvirt-ee")
-            before = [git(repo, "rev-parse", "HEAD").stdout.strip() for repo in (first, second)]
+            second_before = git(second, "rev-parse", "HEAD").stdout.strip()
             (second / ".git/info/exclude").write_text("local.conf\n", encoding="utf-8")
             (second / "local.conf").write_text("local-only settings", encoding="utf-8")
-            commit_file(first_seed, "upstream change")
+            first_target = commit_file(first_seed, "upstream change")
             commit_file(second_seed, "upstream settings", "local.conf")
             for seed in (first_seed, second_seed):
                 git(seed, "push", "upstream", "main")
 
-            with self.assertRaisesRegex(RepositorySyncError, "ignored.*local.conf"):
+            with self.assertRaisesRegex(RepositorySyncError, r"(?s)zsvirt-ee: git .*merge .*local\.conf"):
                 sync_repositories(root / "zstack-workspace", ("zsvirt:main", "zsvirt-ee:main"))
 
             self.assertEqual("local-only settings", (second / "local.conf").read_text())
-            self.assertEqual(before, [git(repo, "rev-parse", "HEAD").stdout.strip() for repo in (first, second)])
+            self.assertEqual(first_target, git(first, "rev-parse", "HEAD").stdout.strip())
+            self.assertEqual(second_before, git(second, "rev-parse", "HEAD").stdout.strip())
 
     def test_worktree_changes_during_fetch_are_preserved_and_stop_sync(self):
         for change in ("branch", "commit", "untracked"):
@@ -495,7 +498,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             commit_file(seed, "upstream removed settings")
             git(seed, "push", "upstream", "main")
 
-            with self.assertRaisesRegex(RepositorySyncError, "ignored.*local.conf"):
+            with self.assertRaisesRegex(RepositorySyncError, r"(?s)zsvirt: git checkout .*local\.conf"):
                 sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual(development_head, git(checkout, "rev-parse", "HEAD").stdout.strip())

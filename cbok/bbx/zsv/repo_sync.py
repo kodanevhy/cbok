@@ -148,31 +148,11 @@ def _build_plan(repository: _Repository) -> _SyncPlan:
     return _SyncPlan(repository, target)
 
 
-def _validate_plan(plan: _SyncPlan, submodule_base: str | None = None) -> None:
-    repository = plan.repository
+def _validate_repository(repository: _Repository, submodule_base: str | None = None) -> None:
     if _inspect_repository(
         repository.root.parent, repository.name, repository.branch, submodule_base,
     ) != repository:
         raise RepositorySyncError(f"{repository.name}: branch or HEAD changed while preparing synchronization")
-
-    ignored_paths = _run(
-        repository.name, repository.root,
-        "ls-files", "--others", "--ignored", "--exclude-standard", "-z",
-    ).split("\0")
-    for target in (repository.head, plan.target):
-        if target is None or target == repository.current_head:
-            continue
-        changed_paths = _run(
-            repository.name, repository.root,
-            "diff", "--name-only", "--no-renames", "--diff-filter=ACMRT", "-z",
-            repository.current_head, target, "--",
-        ).split("\0")
-        for ignored in filter(None, ignored_paths):
-            for changed in filter(None, changed_paths):
-                if ignored == changed or ignored.startswith(changed + "/") or changed.startswith(ignored + "/"):
-                    raise RepositorySyncError(
-                        f"{repository.name}: ignored local file would be overwritten: {ignored}"
-                    )
 
 
 def sync_repositories(
@@ -187,12 +167,12 @@ def sync_repositories(
     ]
     plans = [_build_plan(repository) for repository in repositories]
     for plan in plans:
-        _validate_plan(plan)
+        _validate_repository(plan.repository)
 
     results = []
     for plan in plans:
         repository = plan.repository
-        _validate_plan(plan)
+        _validate_repository(repository)
         branch_ref = f"refs/heads/{repository.branch}"
         if repository.current_branch != branch_ref:
             checkout_args = (
@@ -210,7 +190,7 @@ def sync_repositories(
                 current_branch=branch_ref,
                 current_head=repository.head or plan.target,
             )
-            _validate_plan(_SyncPlan(checked_out, plan.target), submodule_base=repository.current_head)
+            _validate_repository(checked_out, submodule_base=repository.current_head)
         _run(
             repository.name, repository.root, "-c", "submodule.recurse=false",
             "merge", "--ff-only", "--no-overwrite-ignore", plan.target,

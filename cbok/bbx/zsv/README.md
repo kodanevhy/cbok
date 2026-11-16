@@ -137,8 +137,8 @@ command does not reset, clean, or rebase local work. If an
 update fails after validation, earlier updates may already have completed.
 
 Branch, HEAD, and working tree state are rechecked after fetching and before
-each update. Ignored local files that conflict with upstream changes also stop
-the command. Fetching, checking out, and merging do not recurse into submodules.
+each update. Git refuses to overwrite ignored local files during checkout or
+fast-forward. Fetching, checking out, and merging do not recurse into submodules.
 An initialized submodule stays at its original commit when switching branches;
 that expected gitlink difference is allowed, but local submodule edits are not.
 
