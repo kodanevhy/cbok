@@ -281,16 +281,15 @@ class UnifiedProcessRunner:
 
 
 def assert_cbok_home():
-    workspace = settings.Workspace
-    cbok_home = os.path.join(workspace, "Cursor", "me", "cbok")
-    if not os.path.exists(cbok_home):
-        print(f"CBoK command required: please re-define workspace root in "
-              f"settings.Workspace, and build source tree first "
-              f"and put CBoK into {os.path.dirname(cbok_home)}:")
-        print(f"*mkdir -p {os.path.dirname(cbok_home)}*")
+    try:
+        cbok_home = os.environ.get("CBOK_HOME") or locate_project_path("me", "cbok")
+    except (OSError, exception.CannotLocateProject):
+        cbok_home = None
+    if not cbok_home or not os.path.isdir(cbok_home):
+        print("cbok: home not found.", file=sys.stderr)
         sys.exit(1)
 
-    return cbok_home
+    return os.path.realpath(cbok_home)
 
 
 def assert_tree(path):
