@@ -10,6 +10,7 @@ from cbok.cmd import args
 from cbok.cmd import base
 from cbok.cmd import output
 from cbok.bbx import proxy_bypass
+from cbok.bbx import exception as bbx_exception
 from cbok import exception
 from cbok import settings
 from cbok import utils as cbok_utils
@@ -258,7 +259,7 @@ class ProxyCommands(base.BaseCommand):
                 domains,
                 runner=self.p_runner,
             )
-        except proxy_bypass.ProxyBypassError as e:
+        except bbx_exception.ProxyBypassError as e:
             output.fail(str(e))
 
         output.print_list(

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from django.apps import apps
 from django.utils import timezone
 
+from cbok import exception
 from cbok.bbx.models import ZsvWorktreeContainerPullRequest
 from cbok.bbx.models import ZsvWorktreeContainerState
 
@@ -239,17 +240,17 @@ def parse_worktree_pr_refs(raw: str | None) -> tuple[WorktreePullRequest, ...]:
         if not text:
             continue
         if "=" not in text:
-            raise ValueError(f"Invalid --pr-url {text!r}: expected <repo>=<url>.")
+            raise exception.InvalidParam(f"Invalid --pr-url {text!r}: expected <repo>=<url>.")
         repo, url = text.split("=", 1)
         repo = repo.strip().lower()
         url = url.strip()
         key = (repo, url)
         if repo not in PR_REPOS:
-            raise ValueError(
+            raise exception.InvalidParam(
                 f"Invalid --pr-url repo {repo!r}: expected one of {', '.join(PR_REPOS)}."
             )
         if not url:
-            raise ValueError(f"Invalid --pr-url {text!r}: URL is empty.")
+            raise exception.InvalidParam(f"Invalid --pr-url {text!r}: URL is empty.")
         if key in seen:
             continue
         seen.add(key)

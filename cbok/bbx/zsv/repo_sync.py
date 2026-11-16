@@ -5,9 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 
-
-class RepositorySyncError(RuntimeError):
-    pass
+from cbok.bbx import exception
 
 
 @dataclass(frozen=True)
@@ -43,18 +41,18 @@ def _run(repository: str, root: Path, *args: str) -> str:
     if result.returncode != 0:
         detail = _output(result)
         suffix = f": {detail}" if detail else ""
-        raise RepositorySyncError(f"{repository}: git {' '.join(args)} failed{suffix}")
+        raise exception.RepositorySyncError(f"{repository}: git {' '.join(args)} failed{suffix}")
     return (result.stdout or "").rstrip("\n")
 
 
 def _validate_name(name: str) -> None:
     if not name or name in {".", ".."} or Path(name).name != name:
-        raise RepositorySyncError(f"invalid sync repository name: {name}")
+        raise exception.RepositorySyncError(f"invalid sync repository name: {name}")
 
 
 def _parse_targets(workspace_root: Path, entries: tuple[str, ...]) -> list[tuple[str, str]]:
     if not entries:
-        raise RepositorySyncError("[zsv] sync_repos is empty")
+        raise exception.RepositorySyncError("[zsv] sync_repos is empty")
 
     targets = []
     names = set()
@@ -62,13 +60,13 @@ def _parse_targets(workspace_root: Path, entries: tuple[str, ...]) -> list[tuple
         name, separator, branch = entry.partition(":")
         name, branch = name.strip(), branch.strip()
         if not separator or not name or not branch:
-            raise RepositorySyncError(f"invalid sync repository entry: {entry}; expected project:branch")
+            raise exception.RepositorySyncError(f"invalid sync repository entry: {entry}; expected project:branch")
         _validate_name(name)
         if name in names:
-            raise RepositorySyncError("[zsv] sync_repos contains duplicate repositories")
+            raise exception.RepositorySyncError("[zsv] sync_repos contains duplicate repositories")
         result = _git(workspace_root, "check-ref-format", "--branch", branch)
         if result.returncode != 0 or result.stdout.strip() != branch:
-            raise RepositorySyncError(f"{name}: invalid sync branch: {branch}")
+            raise exception.RepositorySyncError(f"{name}: invalid sync branch: {branch}")
         names.add(name)
         targets.append((name, branch))
     return targets
@@ -94,34 +92,35 @@ def _inspect_repository(
 ) -> _Repository:
     root = workspace_root / name
     if not root.is_dir():
-        raise RepositorySyncError(f"{name}: repository directory does not exist: {root}")
+        raise exception.RepositorySyncError(f"{name}: repository directory does not exist: {root}")
 
     git_root = _run(name, root, "rev-parse", "--show-toplevel")
     if os.path.realpath(git_root) != os.path.realpath(root):
-        raise RepositorySyncError(f"{name}: path is not an independent Git repository: {root}")
+        raise exception.RepositorySyncError(f"{name}: path is not an independent Git repository: {root}")
 
     for operation in ("rebase-merge", "rebase-apply", "sequencer", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"):
         git_path = _run(name, root, "rev-parse", "--git-path", operation)
         if (root / git_path).exists():
-            raise RepositorySyncError(f"{name}: unfinished Git operation; finish or abort it before syncing")
+            raise exception.RepositorySyncError(f"{name}: unfinished Git operation; finish or abort it before syncing")
 
     status = _run(name, root, "status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=none")
     if status and not (
         submodule_base and _only_expected_submodule_changes(name, root, status, submodule_base)
     ):
-        raise RepositorySyncError(f"{name}: repository has uncommitted changes")
+        raise exception.RepositorySyncError(f"{name}: repository has uncommitted changes")
 
     current_branch = _run(name, root, "symbolic-ref", "--quiet", "HEAD")
     current_head = _run(name, root, "rev-parse", "HEAD")
     target_ref = f"refs/heads/{branch}"
     result = _git(root, "rev-parse", "--verify", "--quiet", target_ref)
     if result.returncode not in (0, 1):
-        raise RepositorySyncError(f"{name}: failed to inspect local branch {branch}: {_output(result)}")
+        raise exception.RepositorySyncError(f"{name}: failed to inspect local branch {branch}: {_output(result)}")
     head = result.stdout.strip() if result.returncode == 0 else None
     if current_branch != target_ref and head is not None:
         worktree = _run(name, root, "for-each-ref", "--format=%(worktreepath)", target_ref)
         if worktree:
-            raise RepositorySyncError(f"{name}: configured branch {branch} is checked out in another worktree")
+            raise exception.RepositorySyncError(
+                f"{name}: configured branch {branch} is checked out in another worktree")
     _run(name, root, "remote", "get-url", "upstream")
     return _Repository(name, root, branch, head, current_branch, current_head)
 
@@ -141,7 +140,7 @@ def _build_plan(repository: _Repository) -> _SyncPlan:
     if repository.head is not None:
         ancestor = _git(repository.root, "merge-base", "--is-ancestor", repository.head, target)
         if ancestor.returncode != 0:
-            raise RepositorySyncError(
+            raise exception.RepositorySyncError(
                 f"{repository.name}: configured branch {repository.branch} has local commits or diverged from "
                 f"upstream/{repository.branch}"
             )
@@ -152,7 +151,8 @@ def _validate_repository(repository: _Repository, submodule_base: str | None = N
     if _inspect_repository(
         repository.root.parent, repository.name, repository.branch, submodule_base,
     ) != repository:
-        raise RepositorySyncError(f"{repository.name}: branch or HEAD changed while preparing synchronization")
+        raise exception.RepositorySyncError(
+            f"{repository.name}: branch or HEAD changed while preparing synchronization")
 
 
 def sync_repositories(
@@ -198,7 +198,7 @@ def sync_repositories(
         head = _run(repository.name, repository.root, "rev-parse", "HEAD")
         branch = _run(repository.name, repository.root, "symbolic-ref", "--quiet", "HEAD")
         if head != plan.target or branch != branch_ref:
-            raise RepositorySyncError(
+            raise exception.RepositorySyncError(
                 f"{repository.name}: HEAD does not match upstream/{repository.branch}"
             )
         results.append((repository.name, repository.branch, plan.target))

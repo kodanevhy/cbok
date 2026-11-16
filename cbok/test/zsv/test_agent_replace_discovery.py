@@ -3,6 +3,7 @@ import shutil
 import tempfile
 import unittest
 
+from cbok.bbx import exception
 from cbok.bbx.zsv import agent_replace
 
 
@@ -47,7 +48,7 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
     def test_rejects_changes_outside_runtime_packages(self):
         self.touch("kvmagent/ansible/kvm.py")
 
-        with self.assertRaises(agent_replace.AgentReplaceError) as ctx:
+        with self.assertRaises(exception.AgentReplaceError) as ctx:
             agent_replace.validate_changed_files(
                 self.repo,
                 ["kvmagent/ansible/kvm.py"],
@@ -70,7 +71,7 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
     def test_rejects_runtime_test_changes(self):
         self.touch("kvmagent/kvmagent/test/test_zbs_storage_plugin.py")
 
-        with self.assertRaises(agent_replace.AgentReplaceError) as ctx:
+        with self.assertRaises(exception.AgentReplaceError) as ctx:
             agent_replace.validate_changed_files(
                 self.repo,
                 ["kvmagent/kvmagent/test/test_zbs_storage_plugin.py"],
@@ -79,7 +80,7 @@ class AgentReplaceDiscoveryTest(unittest.TestCase):
         self.assertIn("ignored test scope", str(ctx.exception))
 
     def test_rejects_deleted_runtime_file(self):
-        with self.assertRaises(agent_replace.AgentReplaceError) as ctx:
+        with self.assertRaises(exception.AgentReplaceError) as ctx:
             agent_replace.validate_changed_files(
                 self.repo,
                 ["kvmagent/kvmagent/plugins/deleted.py"],

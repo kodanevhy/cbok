@@ -1,19 +1,17 @@
 import re
 
+from cbok.bbx import exception
+
 
 NETWORKSETUP = "/usr/sbin/networksetup"
 ROUTE = "/sbin/route"
 
 
-class ProxyBypassError(RuntimeError):
-    pass
-
-
 def read_bypass_domains(conf):
     if not conf.has_section("proxy"):
-        raise ProxyBypassError("Missing [proxy] in cbok.conf.")
+        raise exception.ProxyBypassError("Missing [proxy] in cbok.conf.")
     if not conf.has_option("proxy", "bypass_domains"):
-        raise ProxyBypassError("cbok.conf [proxy] needs bypass_domains.")
+        raise exception.ProxyBypassError("cbok.conf [proxy] needs bypass_domains.")
 
     raw = conf.get("proxy", "bypass_domains")
     domains = []
@@ -24,7 +22,7 @@ def read_bypass_domains(conf):
                 domains.append(domain)
 
     if not domains:
-        raise ProxyBypassError("cbok.conf [proxy] bypass_domains is empty.")
+        raise exception.ProxyBypassError("cbok.conf [proxy] bypass_domains is empty.")
     return domains
 
 
@@ -33,8 +31,8 @@ def _run_checked(runner, cmd, **kwargs):
     if result.returncode != 0:
         detail = (result.stdout or result.stderr or "").strip()
         if detail:
-            raise ProxyBypassError(f"Command failed: {' '.join(cmd)}\n{detail}")
-        raise ProxyBypassError(f"Command failed: {' '.join(cmd)}")
+            raise exception.ProxyBypassError(f"Command failed: {' '.join(cmd)}\n{detail}")
+        raise exception.ProxyBypassError(f"Command failed: {' '.join(cmd)}")
     return result
 
 
@@ -47,7 +45,7 @@ def _current_default_interface(runner):
     for line in result.stdout.splitlines():
         if line.strip().startswith("interface:"):
             return line.split(":", 1)[1].strip()
-    raise ProxyBypassError("Unable to find default route interface.")
+    raise exception.ProxyBypassError("Unable to find default route interface.")
 
 
 def resolve_current_wifi_service(runner=None):
@@ -85,10 +83,10 @@ def resolve_current_wifi_service(runner=None):
         matched_non_wifi = f"{service} ({hardware_port}, {device})"
 
     if matched_non_wifi:
-        raise ProxyBypassError(
+        raise exception.ProxyBypassError(
             f"Current default route service is not a Wi-Fi service: {matched_non_wifi}"
         )
-    raise ProxyBypassError(
+    raise exception.ProxyBypassError(
         f"Unable to map default route interface {interface} to a Wi-Fi network service."
     )
 
@@ -99,7 +97,7 @@ def apply_bypass_domains(domains, runner=None):
     runner = runner or cbok_utils.UnifiedProcessRunner()
     domains = [str(domain).strip() for domain in domains if str(domain).strip()]
     if not domains:
-        raise ProxyBypassError("No proxy bypass domains to apply.")
+        raise exception.ProxyBypassError("No proxy bypass domains to apply.")
 
     service = resolve_current_wifi_service(runner)
     _run_checked(

@@ -33,6 +33,19 @@
 - 远端命令、部署命令、会修改环境状态的命令应有前置校验、明确日志和失败返回码，避免静默部分成功。
 - 新增命令后至少做一次最小验证：`cbok <category> <command> --help` 可用；有实际逻辑的命令补充相应单元测试或可复现的手动验证说明。
 
+## 异常归档
+
+- CBoK 自己定义或主动抛出的业务异常必须在 `exception.py` 中分类归档。
+  跨模块通用的异常放在 `cbok/exception.py`；模块自己的异常放在对应模块的
+  `exception.py`，例如 BBX（含 ZSV）的异常放在 `cbok/bbx/exception.py`。
+- 业务文件只导入异常模块，用限定名引用异常，例如 `from cbok.bbx import exception`
+  和 `exception.RepositorySyncError`，不逐个导入或就地定义异常类。
+- 业务异常以现有的 `CBoKException` 为基类；有合适的业务父类时继承该父类。
+- 含义和处理方式一致时优先复用已有异常；不要为了复用混用不同错误，或改变调用方依赖的异常类型、错误消息或退出码。
+- 非业务错误直接使用能准确表达问题的 Python 内置或第三方异常，不为归档包装。
+  例如打包失败用 `RuntimeError`，文件不存在用 `FileNotFoundError`。
+  Python 协议和第三方接口要求的异常类型保持不变，捕获或重抛外部异常不要求包装。
+
 ## 测试存放规范
 
 - 如果需要新增测试，统一写在 `cbok/test/` 目录下（Python 包路径 `cbok.test`），不要继续分散到各 app 的 `tests.py`。

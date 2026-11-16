@@ -9,8 +9,10 @@ import tempfile
 from django.db.models import Q
 from django.utils import timezone
 
+from cbok import exception as cbok_exception
 from cbok import settings
 from cbok import utils as cbok_utils
+from cbok.bbx import exception
 from cbok.bbx.models import ZSphereUpgradeState
 from cbok.bbx.zsv.agent_replace import DEFAULT_BACKUP_ROOT
 from cbok.bbx.zsv.agent_replace import DEFAULT_CEPH_PRIMARY_SITE_PACKAGES
@@ -26,11 +28,6 @@ from cbok.bbx.zsv.service import discover_healthy_kvm_host_nodes
 from cbok.bbx.zsv.service import discover_imagestore_backup_storage_nodes
 from cbok.bbx.zsv.service import discover_management_nodes
 from cbok.bbx.zsv.service import discover_zbs_primary_storage_nodes
-from cbok.bbx.zsv.service import ZsvAlreadyUpToDateError
-from cbok.bbx.zsv.service import ZsvArtifactMetadataError
-from cbok.bbx.zsv.service import ZsvHostDiscoveryError
-from cbok.bbx.zsv.service import ZsvSshConnectionError
-from cbok.bbx.zsv.schema_repair import ZsvSchemaChecksumMismatchError
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
 from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
 from cbok.bbx.zsv.compile import run_compile_flow
@@ -170,7 +167,7 @@ class ZSphereCommands(base.BaseCommand):
                 primary_node=primary_node,
                 runner=self.p_runner,
             )
-        except ValueError as exc:
+        except cbok_exception.InvalidParam as exc:
             output.fail(str(exc))
 
     @args.action_description("Check whether ZSphere needs upgrade")
@@ -193,7 +190,7 @@ class ZSphereCommands(base.BaseCommand):
         )
         try:
             iso, state, needs_upgrade, _new_iso_detected = tracker.check()
-        except ZsvArtifactMetadataError as exc:
+        except exception.ZsvArtifactMetadataError as exc:
             output.fail(str(exc))
         _print_iso(tracker, iso, state, needs_upgrade)
         return 0
@@ -345,11 +342,11 @@ class ZSphereCommands(base.BaseCommand):
         )
         try:
             returncode, iso, state = tracker.upgrade(self)
-        except ZsvSchemaChecksumMismatchError as exc:
+        except exception.ZsvSchemaChecksumMismatchError as exc:
             output.fail(str(exc), exit_code=exc.returncode or 1)
-        except (ZsvAlreadyUpToDateError, ZsvArtifactMetadataError) as exc:
+        except (exception.ZsvAlreadyUpToDateError, exception.ZsvArtifactMetadataError) as exc:
             output.fail(str(exc))
-        except ZsvSshConnectionError as exc:
+        except exception.ZsvSshConnectionError as exc:
             output.fail(str(exc), exit_code=exc.returncode)
         if returncode == 0:
             LOG.info("Upgrade command finished: %s", iso.name)
@@ -596,7 +593,7 @@ class ZSphereCommands(base.BaseCommand):
             output.fail("replace_zstore requires --primary-node and --zstore-root.")
         try:
             nodes = discover_healthy_kvm_host_nodes(primary_node, self.p_runner)
-        except ZsvHostDiscoveryError:
+        except exception.ZsvHostDiscoveryError:
             output.fail("Failed to discover healthy KVM hosts.", exc_info=True)
         bs_nodes = discover_imagestore_backup_storage_nodes(primary_node, self.p_runner)
         for node in bs_nodes:

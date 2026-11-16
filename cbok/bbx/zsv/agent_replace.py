@@ -15,6 +15,7 @@ from pathlib import Path
 from django.apps import apps
 from django.utils import timezone
 
+from cbok.bbx import exception
 from cbok.bbx.models import ZsvAgentReplaceState
 from cbok.bbx.zsv import base_ref
 
@@ -55,14 +56,10 @@ IGNORED_RUNTIME_ROOTS = (
 )
 
 
-class AgentReplaceError(Exception):
-    pass
-
-
 def run_git(cmd: list[str], cwd: str | None = None) -> str:
     proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     if proc.returncode != 0:
-        raise AgentReplaceError(
+        raise exception.AgentReplaceError(
             "command failed: %s\nreturn code: %s\nstdout: %s\nstderr: %s"
             % (
                 " ".join(cmd),
@@ -144,11 +141,11 @@ def normalize_repo_path(path: str) -> str:
     while normalized.startswith("./"):
         normalized = normalized[2:]
     if not normalized:
-        raise AgentReplaceError("empty changed file path")
+        raise exception.AgentReplaceError("empty changed file path")
     if normalized.startswith("/") or normalized == ".." or normalized.startswith("../") or "/../" in normalized:
-        raise AgentReplaceError("unsafe changed file path: %s" % normalized)
+        raise exception.AgentReplaceError("unsafe changed file path: %s" % normalized)
     if "\n" in normalized or "\r" in normalized:
-        raise AgentReplaceError("unsafe changed file path: %s" % normalized)
+        raise exception.AgentReplaceError("unsafe changed file path: %s" % normalized)
     return normalized
 
 
@@ -161,14 +158,14 @@ def _local_path(repo: str, repo_path: str) -> str:
     root = os.path.abspath(repo)
     local_path = os.path.abspath(os.path.join(root, *repo_path.split("/")))
     if local_path != root and not local_path.startswith(root + os.sep):
-        raise AgentReplaceError("unsafe changed file path: %s" % repo_path)
+        raise exception.AgentReplaceError("unsafe changed file path: %s" % repo_path)
     return local_path
 
 
 def map_changed_file(repo: str, path: str) -> ChangedFile:
     repo_path = normalize_repo_path(path)
     if is_ignored_runtime_path(repo_path):
-        raise AgentReplaceError("changed file is in ignored test scope: %s" % repo_path)
+        raise exception.AgentReplaceError("changed file is in ignored test scope: %s" % repo_path)
     for root, package_name, runtime in ALLOWED_ROOTS:
         if repo_path.startswith(root):
             suffix = repo_path[len(root):]
@@ -176,7 +173,7 @@ def map_changed_file(repo: str, path: str) -> ChangedFile:
                 break
             local_path = _local_path(repo, repo_path)
             if not os.path.isfile(local_path):
-                raise AgentReplaceError("changed file does not exist locally: %s" % repo_path)
+                raise exception.AgentReplaceError("changed file does not exist locally: %s" % repo_path)
             remote_path = "%s/%s" % (package_name, suffix)
             return ChangedFile(
                 repo_path=repo_path,
@@ -186,7 +183,7 @@ def map_changed_file(repo: str, path: str) -> ChangedFile:
                 runtime=runtime,
                 is_python=remote_path.endswith(".py"),
             )
-    raise AgentReplaceError(
+    raise exception.AgentReplaceError(
         "changed file is outside kvmagent/zstacklib/cephprimarystorage/zbsprimarystorage runtime scope: %s" % repo_path
     )
 
@@ -228,9 +225,9 @@ def _decode_paths(value: str) -> list[str]:
     try:
         paths = json.loads(value)
     except ValueError as exc:
-        raise AgentReplaceError("invalid agent replace DB state: %s" % exc)
+        raise exception.AgentReplaceError("invalid agent replace DB state: %s" % exc)
     if not isinstance(paths, list):
-        raise AgentReplaceError("invalid agent replace DB state: paths must be a list")
+        raise exception.AgentReplaceError("invalid agent replace DB state: paths must be a list")
     return _dedupe_paths(paths)
 
 
@@ -265,7 +262,7 @@ class DjangoAgentReplaceStateStore:
 
 def default_agent_replace_state_store():
     if not apps.ready:
-        raise AgentReplaceError("Django app registry is not ready for zsv agent replace state")
+        raise exception.AgentReplaceError("Django app registry is not ready for zsv agent replace state")
     return DjangoAgentReplaceStateStore()
 
 
@@ -535,7 +532,7 @@ def run_agent_replace_flow(
             LOG.error("No changed runtime files found in utility root.")
             return 1
         files = validate_changed_files(root, deploy_paths)
-    except AgentReplaceError as exc:
+    except exception.AgentReplaceError as exc:
         LOG.error("%s", exc)
         return 1
 
@@ -613,7 +610,7 @@ def run_agent_replace_flow(
     if auto_discovery:
         try:
             save_last_deployed_paths(worktree_key, root, current_paths, store)
-        except AgentReplaceError as exc:
+        except exception.AgentReplaceError as exc:
             LOG.error("%s", exc)
             return 1
     return 0

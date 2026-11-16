@@ -10,18 +10,14 @@ import shutil
 import subprocess
 import tempfile
 
+from cbok.bbx import exception
+
 
 LOG = logging.getLogger(__name__)
 
 DEFAULT_REMOTE_SQL_DIR = "/tmp/cbok-zsv-schema-sql"
 MANUAL_REPAIR_SKILL = "cbok-zsv-upgrade-db-repair"
 ARTIFACT_PRECHECK_MARKER = "__CBOK_ZSV_SCHEMA_PRECHECK__"
-
-
-class ZsvSchemaChecksumMismatchError(Exception):
-    def __init__(self, message: str, returncode: int = 1):
-        self.returncode = returncode
-        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -228,7 +224,7 @@ def run_schema_mismatch_precheck_for_artifact(
         applied_checksum=applied_checksum,
         resolved_checksum=resolved_checksum,
     )
-    raise ZsvSchemaChecksumMismatchError(format_manual_repair_hint(
+    raise exception.ZsvSchemaChecksumMismatchError(format_manual_repair_hint(
         address=fields.get("primary_node") or address,
         migration=migration,
         mismatch=mismatch,
