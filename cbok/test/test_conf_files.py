@@ -1,6 +1,11 @@
+import configparser
+import io
 import os
+import runpy
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest import mock
 
@@ -44,3 +49,16 @@ class CbokConfFilesTest(unittest.TestCase):
             conf = read_cbok_conf(conf_path)
 
         self.assertEqual("/tmp/cbok", conf.get("default", "workspace"))
+        self.assertEqual("Cursor", conf.get("default", "editor"))
+
+    def test_generated_config_uses_default_or_explicit_editor(self):
+        script = Path(__file__).resolve().parents[2] / "tools" / "generate_conf.py"
+        for args, editor in (([], "Cursor"), (["--editor", "VSCode"], "VSCode")):
+            with self.subTest(editor=editor), tempfile.TemporaryDirectory() as temp:
+                conf_path = str(Path(temp) / "cbok.conf")
+                argv = [str(script), "--output", conf_path, *args]
+                with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+                    runpy.run_path(str(script), run_name="__main__")
+                generated = configparser.ConfigParser()
+                generated.read(conf_path)
+                self.assertEqual(editor, generated.get("default", "editor"))

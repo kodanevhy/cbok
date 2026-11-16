@@ -476,7 +476,7 @@ class ZSphereCommands(base.BaseCommand):
     @args.action_description("Check out and fast-forward configured ZSV repository branches from upstream")
     def sync_repos(self):
         """Check out and fast-forward configured ZSV repository branches from upstream"""
-        zstack_workspace = cbok_utils.locate_project_path("Cursor", "zs", "zstack-workspace")
+        zstack_workspace = cbok_utils.locate_project_path("zs", "zstack-workspace")
         results = sync_repositories(zstack_workspace, zsv_config.zsv_sync_repos())
         for repository, branch, revision in results:
             LOG.info("Synchronized %s:%s to upstream at %s", repository, branch, revision)

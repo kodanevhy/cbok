@@ -13,6 +13,7 @@ from cbok.bbx.zsv import config as zsv_config
 from cbok.bbx.zsv import repo_sync
 from cbok.bbx.zsv.repo_sync import sync_repositories
 from cbok.cmd.zsv import ZSphereCommands
+from cbok.conf.files import read_cbok_conf
 
 
 def git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -374,12 +375,16 @@ class ZsvRepoSyncTest(unittest.TestCase):
             git(premium_seed, "push", "upstream", "5.5.48")
 
             parser = configparser.ConfigParser()
+            parser["default"] = {"workspace": str(root)}
             parser["zsv"] = {
                 "base_ref": "origin/main",
                 "sync_repos": "zsvirt:main,premium:5.5.48",
             }
+            conf_path = root / "cbok.conf"
+            with conf_path.open("w", encoding="utf-8") as stream:
+                parser.write(stream)
             settings.Workspace = str(root)
-            zsv_config.settings.CONF = parser
+            zsv_config.settings.CONF = read_cbok_conf(conf_path)
 
             command = ZSphereCommands()
             output = io.StringIO()
@@ -398,6 +403,25 @@ class ZsvRepoSyncTest(unittest.TestCase):
                 ["zsvirt", "main", "upstream/main", upstream_head[:12], "SYNCED"],
                 ["premium", "5.5.48", "upstream/5.5.48", premium_head[:12], "SYNCED"],
             ], rows)
+
+    def test_sync_repos_uses_configured_editor_and_keeps_company(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "Cursor" / "zs" / "zstack-workspace").mkdir(parents=True)
+            workspace = root / "VSCode" / "zs" / "zstack-workspace"
+            workspace.mkdir(parents=True)
+            settings.Workspace = str(root)
+            settings.CONF = configparser.ConfigParser()
+            settings.CONF.read_dict({
+                "default": {"editor": "VSCode"},
+                "zsv": {"sync_repos": "zsvirt:main"},
+            })
+
+            with mock.patch("cbok.cmd.zsv.sync_repositories", return_value=[]) as sync, \
+                    redirect_stdout(io.StringIO()):
+                self.assertEqual(0, ZSphereCommands().sync_repos())
+
+            sync.assert_called_once_with(str(workspace), ("zsvirt:main",))
 
     def test_configured_branch_is_updated_without_rewriting_development_commits(self):
         with tempfile.TemporaryDirectory() as td:

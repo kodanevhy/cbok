@@ -4,8 +4,9 @@ class ConfigGenerator:
     def __init__(self, groups):
         self.groups = groups
 
-    def generate(self, path: str, force: bool = False):
+    def generate(self, path: str, force: bool = False, *, overrides=None):
         path = Path(path)
+        overrides = overrides or {}
 
         if path.exists() and not force:
             answer = input(
@@ -25,7 +26,7 @@ class ConfigGenerator:
                 if opt.help:
                     lines.append(f"# {opt.help}")
 
-                value = opt.default
+                value = overrides.get((group.name, opt.name), opt.default)
                 if isinstance(value, bool):
                     value = str(value).lower()
                 elif value is None:

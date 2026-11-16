@@ -8,6 +8,8 @@ DEFAULT = Group(
     options=[
         Option("workspace", default="",
         help="CBoK workspace, absolutely path of CBoK parent"),
+        Option("editor", default="Cursor", required=False,
+        help="Editor directory containing managed projects under the workspace"),
         Option("debug", default=True,
         help="Enable debug log level. SECURITY WARNING: don't "
              "run with debug turned on in production!"),

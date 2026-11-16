@@ -117,9 +117,9 @@ The old `zstack` and `premium` repository labels are no longer accepted.
 ## Upstream repository sync
 
 Run `cbok zsv sync_repos` to synchronize the repositories under
-`<workspace>/Cursor/zs/zstack-workspace`, where `workspace` comes from
-`[default] workspace`. This uses the current layout without workspace
-initialization or `cbok workspace use`. Each comma-separated entry in
+`<workspace>/<editor>/zs/zstack-workspace`, using `workspace` and `editor` from
+`[default]`. The editor directory defaults to `Cursor`. No workspace
+initialization or selection command is needed. Each comma-separated entry in
 `[zsv] sync_repos` must specify `project:branch`; repository names alone are not
 accepted. The command fetches all branches from each repository's `upstream`
 remote, checks out the configured local branch, and fast-forwards it to the
