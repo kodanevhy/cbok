@@ -1,5 +1,5 @@
 from cbok.conf.schema import Option, Group
-from cbok import exception
+from cbok.conf import exception
 
 
 DEFAULT = Group(
@@ -151,12 +151,12 @@ def validate_section_strict(conf):
             if not conf.has_option(group.name, opt.name):
                 if not opt.required:
                     continue
-                raise exception.ConfigValidateFailed(err_msg=
-                    f"Missing option [{group.name}] {opt.name}"
+                raise exception.ConfigValidateFailed(
+                    err_msg=f"Missing option [{group.name}] {opt.name}"
                 )
 
             value = conf.get(group.name, opt.name)
             if not value.strip() and opt.required:
-                raise exception.ConfigValidateFailed(err_msg=
-                    f"Empty option [{group.name}] {opt.name}"
+                raise exception.ConfigValidateFailed(
+                    err_msg=f"Empty option [{group.name}] {opt.name}"
                 )

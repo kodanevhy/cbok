@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from cbok.bbx import exception
 from cbok.bbx.zsv import compile as compile_module
 from cbok.bbx.zsv import groovy_test
 from cbok.bbx.zsv import worktree_container
@@ -539,7 +540,8 @@ class GroovyContainerTest(unittest.TestCase):
                 patch.object(groovy_test, "check_worktree_clean", side_effect=base_ref.check_worktree_clean), \
                 patch.object(groovy_test, "sync_base_ref", side_effect=base_ref.sync_base_ref) as fetch, \
                 patch.object(groovy_test, "rebase_worktree", side_effect=base_ref.rebase_worktree) as rebase, \
-                patch.object(groovy_test, "_resolve_test_target", side_effect=ValueError("stop before container")):
+                patch.object(groovy_test, "_resolve_test_target",
+                             side_effect=exception.GroovyTestSetupError("stop before container")):
             for repo in (self.zsvirt_repo, self.ee_repo):
                 for kind in ("unstaged", "staged", "untracked"):
                     with self.subTest(repo=repo.name, kind=kind):
@@ -902,15 +904,15 @@ class GroovyContainerTest(unittest.TestCase):
         self.assertEqual("../zsvirt-ee", os.readlink(link))
         link.unlink()
         link.mkdir()
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(FileExistsError, "Cannot replace existing EE directory"):
             groovy_test._create_ee_link(self.zsvirt_repo)
         self.assertTrue(link.is_dir())
 
     def test_duplicate_or_missing_test_module_fails_before_build(self):
-        with self.assertRaises(ValueError):
+        with self.assertRaises(exception.GroovyTestSetupError):
             groovy_test._resolve_test_target(self.zsvirt_repo, self.ee_repo, "MissingTest", "auto")
         self._write_file(self.ee_repo / "tests-ee/test-ee/src/test/groovy/Test3.groovy", "class Test3 extends TestEe {}")
-        with self.assertRaises(ValueError):
+        with self.assertRaises(exception.GroovyTestSetupError):
             groovy_test._resolve_test_target(self.zsvirt_repo, self.ee_repo, "Test3", "auto")
 
     def test_root_test_module_remains_runnable_in_ee_reactor(self):
@@ -944,7 +946,7 @@ class GroovyContainerTest(unittest.TestCase):
             self._write_file(module_root / "src/test/groovy/org/zstack/test/integration/stabilisation/StabilityTestCase.groovy",
                              "package org.zstack.test.integration.stabilisation\n"
                              "class StabilityTestCase extends StabilityTest {}\n")
-        with self.assertRaises(ValueError) as raised:
+        with self.assertRaises(exception.GroovyTestSetupError) as raised:
             groovy_test._resolve_test_target(self.zsvirt_repo, self.ee_repo, test_class, "auto")
         for module in modules:
             self.assertIn(module, str(raised.exception))

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cbok import utils as cbok_utils
+from cbok.bbx import exception
 from cbok.bbx.zsv.base_ref import check_worktree_clean, rebase_worktree, sync_base_ref
 from cbok.bbx.zsv.config import zsv_base_ref
 from cbok.bbx.zsv.compile import RemoteDockerCompileConfig
@@ -298,9 +299,10 @@ def _find_test_module(work_zsvirt: Path, work_ee: Path, test_class: str) -> str:
     matches = [module for module in modules
                if _class_source_exists(_test_module_root(work_zsvirt, work_ee, module) / "src/test/groovy", test_class)]
     if len(matches) > 1:
-        raise ValueError(f"Test class {test_class} exists in {matches}; class must identify a unique test module")
+        raise exception.GroovyTestSetupError(
+            f"Test class {test_class} exists in {matches}; class must identify a unique test module")
     if len(matches) != 1:
-        raise ValueError(f"Test class {test_class} not found in {modules}")
+        raise exception.GroovyTestSetupError(f"Test class {test_class} not found in {modules}")
     return matches[0]
 
 
@@ -389,7 +391,7 @@ def _create_ee_link(work_zsvirt: Path) -> None:
     if link.is_symlink():
         link.unlink()
     elif link.exists():
-        raise ValueError(f"Cannot replace existing EE directory: {link}")
+        raise FileExistsError(f"Cannot replace existing EE directory: {link}")
     os.symlink("../zsvirt-ee", link)
 
 
@@ -1223,7 +1225,7 @@ def run_groovy_test_flow(
     try:
         _create_ee_link(work_zsvirt)
         target = _resolve_test_target(work_zsvirt, work_ee, test_class, test_mode)
-    except ValueError as exc:
+    except (FileExistsError, exception.GroovyTestSetupError) as exc:
         LOG.error("%s", exc)
         return 1
     if target.needs_case_file and "." not in test_class:

@@ -10,6 +10,8 @@ from types import SimpleNamespace
 from unittest import mock
 import requests
 
+from cbok import exception as cbok_exception
+from cbok.bbx import exception
 from cbok.bbx.zsv import schema_repair
 from cbok.conf import config as cbok_config
 
@@ -107,7 +109,7 @@ class SchemaRepairTest(unittest.TestCase):
         self.assertEqual("123", artifact.size)
 
     def test_tracker_rejects_upgrade_directory_url(self):
-        with self.assertRaisesRegex(ValueError, "exact \\.iso or \\.bin file URL"):
+        with self.assertRaisesRegex(cbok_exception.InvalidParam, "exact \\.iso or \\.bin file URL"):
             ZSphereTracker(
                 name="test-env",
                 upgrade_url="http://example.invalid/latest/",
@@ -123,14 +125,14 @@ class SchemaRepairTest(unittest.TestCase):
                 "http://bad host/upgrade.bin",
                 "ftp://example.invalid/upgrade.bin"):
             with self.subTest(url=url), self.assertRaisesRegex(
-                    ValueError, r"absolute HTTP\(S\) URL with a host"):
+                    cbok_exception.InvalidParam, r"absolute HTTP\(S\) URL with a host"):
                 ZSphereTracker(
                     name="test-env", upgrade_url=url,
                     primary_node="172.26.213.50", runner=FakeRunner(),
                 )
 
     def test_tracker_rejects_upgrade_url_type_mismatch(self):
-        with self.assertRaisesRegex(ValueError, "does not match upgrade_type"):
+        with self.assertRaisesRegex(cbok_exception.InvalidParam, "does not match upgrade_type"):
             ZSphereTracker(
                 name="test-env",
                 upgrade_type="bin",
@@ -172,7 +174,7 @@ class SchemaRepairTest(unittest.TestCase):
         response.url = bin_url
 
         with mock.patch.object(zsv_service.requests, "head", return_value=response):
-            with self.assertRaisesRegex(RuntimeError, "HTTP 404"):
+            with self.assertRaisesRegex(exception.ZsvArtifactMetadataError, "HTTP 404"):
                 tracker.fetch_latest_iso()
 
     def test_fetch_exact_artifact_requires_modified_time(self):
@@ -186,7 +188,7 @@ class SchemaRepairTest(unittest.TestCase):
         response.url = bin_url
 
         with mock.patch.object(zsv_service.requests, "head", return_value=response):
-            with self.assertRaisesRegex(RuntimeError, "Last-Modified"):
+            with self.assertRaisesRegex(exception.ZsvArtifactMetadataError, "Last-Modified"):
                 tracker.fetch_latest_iso()
 
     def test_fetch_exact_artifact_reports_network_error(self):
@@ -198,7 +200,7 @@ class SchemaRepairTest(unittest.TestCase):
 
         with mock.patch.object(zsv_service.requests, "head",
                                side_effect=requests.ConnectionError("proxy unavailable")):
-            with self.assertRaisesRegex(RuntimeError, "Unable to check upgrade package metadata"):
+            with self.assertRaisesRegex(exception.ZsvArtifactMetadataError, "Unable to check upgrade package metadata"):
                 tracker.fetch_latest_iso()
 
     def test_fetch_exact_artifact_rejects_invalid_modified_time(self):
@@ -213,7 +215,7 @@ class SchemaRepairTest(unittest.TestCase):
         response.headers["Last-Modified"] = "invalid"
 
         with mock.patch.object(zsv_service.requests, "head", return_value=response):
-            with self.assertRaisesRegex(RuntimeError, "invalid Last-Modified"):
+            with self.assertRaisesRegex(exception.ZsvArtifactMetadataError, "invalid Last-Modified"):
                 tracker.fetch_latest_iso()
 
     def test_scriptlet_discovers_nodes_from_hostvo_with_default_env_mysql_password(self):
@@ -594,7 +596,7 @@ class SchemaRepairTest(unittest.TestCase):
         )
 
     def test_tracker_requires_upgrade_url(self):
-        with self.assertRaisesRegex(ValueError, "upgrade_url is required"):
+        with self.assertRaisesRegex(cbok_exception.InvalidParam, "upgrade_url is required"):
             ZSphereTracker(
                 name="test-env",
                 upgrade_type="bin",
@@ -613,7 +615,7 @@ class SchemaRepairTest(unittest.TestCase):
         for required in ("name", "primary_node"):
             kwargs = dict(common)
             kwargs.pop(required)
-            with self.assertRaisesRegex(ValueError, f"{required} is required"):
+            with self.assertRaisesRegex(cbok_exception.InvalidParam, f"{required} is required"):
                 ZSphereTracker(**kwargs)
 
     def test_upgrade_discovers_nodes_from_primary_when_nodes_are_omitted(self):
@@ -892,7 +894,7 @@ class SchemaRepairTest(unittest.TestCase):
 
         runner = MismatchRunner()
 
-        with self.assertRaises(schema_repair.ZsvSchemaChecksumMismatchError) as raised:
+        with self.assertRaises(exception.ZsvSchemaChecksumMismatchError) as raised:
             schema_repair.run_schema_mismatch_precheck_for_artifact(
                 address="172.26.213.50",
                 artifact_url="http://example.invalid/ZStack-ZSphere-installer.bin",

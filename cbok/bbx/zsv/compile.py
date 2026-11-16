@@ -22,7 +22,9 @@ from pathlib import Path
 from django.apps import apps
 from django.utils import timezone
 
+from cbok import exception as cbok_exception
 from cbok import settings
+from cbok.bbx import exception
 from cbok.bbx.models import ZsvCompileState
 from cbok.bbx.zsv import base_ref as zsv_base_ref
 from cbok.bbx.zsv import config as zsv_config
@@ -197,10 +199,6 @@ def _dedupe(items: list[str]) -> list[str]:
     return out
 
 
-class CompileDeployStateError(Exception):
-    pass
-
-
 def _compile_worktree_spec(
     zsvirt_root: str,
     ee_root: str | None,
@@ -243,9 +241,9 @@ def _decode_list(value: str) -> list[str]:
     try:
         items = json.loads(value)
     except ValueError as exc:
-        raise CompileDeployStateError("invalid compile deploy DB state: %s" % exc)
+        raise exception.CompileDeployStateError("invalid compile deploy DB state: %s" % exc)
     if not isinstance(items, list):
-        raise CompileDeployStateError("invalid compile deploy DB state: expected list")
+        raise exception.CompileDeployStateError("invalid compile deploy DB state: expected list")
     return _dedupe([str(item) for item in items if str(item)])
 
 
@@ -267,18 +265,18 @@ def _decode_web_classes(value: str) -> list[CompileWebClassesState]:
     try:
         items = json.loads(value)
     except ValueError as exc:
-        raise CompileDeployStateError("invalid compile deploy web classes DB state: %s" % exc)
+        raise exception.CompileDeployStateError("invalid compile deploy web classes DB state: %s" % exc)
     if not isinstance(items, list):
-        raise CompileDeployStateError("invalid compile deploy web classes DB state: expected list")
+        raise exception.CompileDeployStateError("invalid compile deploy web classes DB state: expected list")
     out: list[CompileWebClassesState] = []
     for item in items:
         if not isinstance(item, dict):
-            raise CompileDeployStateError("invalid compile deploy web classes DB state: expected object")
+            raise exception.CompileDeployStateError("invalid compile deploy web classes DB state: expected object")
         repo = str(item.get("repo") or "")
         source_relative_path = str(item.get("source_relative_path") or "")
         relative_path = str(item.get("relative_path") or "")
         if repo not in ("zsvirt", "ee") or not source_relative_path or not relative_path:
-            raise CompileDeployStateError("invalid compile deploy web classes DB state: missing fields")
+            raise exception.CompileDeployStateError("invalid compile deploy web classes DB state: missing fields")
         out.append(CompileWebClassesState(repo, source_relative_path, relative_path))
     return _dedupe_web_classes_state(out)
 
@@ -330,7 +328,7 @@ def web_classes_state_from_files(
                 repo = "ee"
                 source_relative_path = ee_relative
         if source_relative_path is None:
-            raise CompileDeployStateError("web classes source is outside zsvirt/ee roots: %s" % item.source)
+            raise exception.CompileDeployStateError("web classes source is outside zsvirt/ee roots: %s" % item.source)
         out.append(CompileWebClassesState(repo, source_relative_path, item.relative_path))
     return _dedupe_web_classes_state(out)
 
@@ -344,13 +342,13 @@ def web_classes_files_from_state(
     for item in selection.web_classes:
         if item.repo == "ee":
             if not ee_root:
-                raise CompileDeployStateError("previous ee web classes deploy requires ee root")
+                raise exception.CompileDeployStateError("previous ee web classes deploy requires ee root")
             root = Path(ee_root)
         else:
             root = Path(zsvirt_root)
         source = root / item.source_relative_path
         if not source.is_file():
-            raise CompileDeployStateError("previous web classes source is missing: %s" % source)
+            raise exception.CompileDeployStateError("previous web classes source is missing: %s" % source)
         out.append(WebClassesFile(str(source), item.relative_path))
     return _dedupe_web_classes_files(out)
 
@@ -445,7 +443,7 @@ class DjangoCompileDeployStateStore:
 
 def default_compile_deploy_state_store():
     if not apps.ready:
-        raise CompileDeployStateError("Django app registry is not ready for zsv compile deploy state")
+        raise exception.CompileDeployStateError("Django app registry is not ready for zsv compile deploy state")
     return DjangoCompileDeployStateStore()
 
 
@@ -648,7 +646,7 @@ def collect_explicit_web_classes_files(
         elif value.startswith("ee:"):
             value = value[len("ee:"):]
             if not ee_base:
-                raise CompileDeployStateError("explicit ee web class requires ee root")
+                raise exception.CompileDeployStateError("explicit ee web class requires ee root")
             repo_base = ee_base
 
         source = Path(value)
@@ -660,16 +658,17 @@ def collect_explicit_web_classes_files(
         ee_relative = _relative_to_root(source, ee_base) if ee_base else None
         source_relative = ee_relative or zsvirt_relative
         if source_relative is None:
-            raise CompileDeployStateError("explicit web class is outside zsvirt/ee roots: %s" % raw_path)
+            raise exception.CompileDeployStateError("explicit web class is outside zsvirt/ee roots: %s" % raw_path)
         prefix = "premium/" + SPRING_CONFIG_PREFIX if source_relative.startswith("premium/") else SPRING_CONFIG_PREFIX
         if not source_relative.startswith(prefix):
-            raise CompileDeployStateError("explicit web class must be under conf/springConfigXml/: %s" % raw_path)
+            raise exception.CompileDeployStateError(
+                "explicit web class must be under conf/springConfigXml/: %s" % raw_path)
         if not source.is_file():
-            raise CompileDeployStateError("explicit web class source is missing: %s" % source)
+            raise exception.CompileDeployStateError("explicit web class source is missing: %s" % source)
 
         target = source_relative[len(prefix):].strip("/")
         if not target:
-            raise CompileDeployStateError("explicit web class target is empty: %s" % raw_path)
+            raise exception.CompileDeployStateError("explicit web class target is empty: %s" % raw_path)
         relative_path = f"springConfigXml/{target}"
         out[relative_path] = WebClassesFile(str(source), relative_path)
 
@@ -1293,7 +1292,7 @@ def run_compile_flow(
     remote_docker = remote_docker_compile_from_conf()
     try:
         pr_refs = parse_worktree_pr_refs(pr_url or "")
-    except ValueError as exc:
+    except cbok_exception.InvalidParam as exc:
         LOG.error("%s", exc)
         return 1
     if not remote_docker.docker_host:
@@ -1329,7 +1328,7 @@ def run_compile_flow(
             collect_explicit_web_classes_files(root, ee_real_root, extra_web_classes) +
             collect_changed_web_classes_files(root, ee_real_root)
         )
-    except CompileDeployStateError as exc:
+    except exception.CompileDeployStateError as exc:
         LOG.error("%s", exc)
         return 1
     current_selection: CompileDeploySelection | None = None
@@ -1355,7 +1354,7 @@ def run_compile_flow(
             )
             user_main = merged_selection.main_modules
             user_ee = merged_selection.ee_modules
-        except CompileDeployStateError as exc:
+        except exception.CompileDeployStateError as exc:
             LOG.error("%s", exc)
             return 1
     if not user_main and not user_ee and not web_classes_files:
@@ -1443,7 +1442,7 @@ def run_compile_flow(
     if state_store and current_selection is not None:
         try:
             state_store.save_selection(worktree_key, root, ee_real_root, current_selection)
-        except CompileDeployStateError as exc:
+        except exception.CompileDeployStateError as exc:
             LOG.error("%s", exc)
             return 1
     print(f"\nWARNING: compile finished but MN has not been restarted. Run: cbok zsv restart_mn --address {address}")

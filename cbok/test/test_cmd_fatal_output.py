@@ -8,9 +8,9 @@ from types import SimpleNamespace
 from unittest import mock
 import requests
 
+from cbok.bbx import exception
 from cbok.bbx.zsv import schema_repair
 from cbok.bbx.zsv import service as zsv_service
-from cbok.bbx.zsv.service import ZsvHostDiscoveryError
 from cbok.cmd import bbx, foundation, zsv
 
 
@@ -114,7 +114,7 @@ class CommandFatalOutputTest(unittest.TestCase):
         command = zsv.ZSphereCommands()
         with mock.patch.object(zsv, "_log_zsv_base_ref"), \
                 mock.patch.object(zsv, "discover_healthy_kvm_host_nodes",
-                                  side_effect=ZsvHostDiscoveryError("private remote output")):
+                                  side_effect=exception.ZsvHostDiscoveryError("private remote output")):
             stderr = io.StringIO()
             with self.assertLogs("cbok.cmd.output", level="ERROR") as logs:
                 with contextlib.redirect_stderr(stderr):

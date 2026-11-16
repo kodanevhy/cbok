@@ -12,8 +12,10 @@ import requests
 
 from django.utils import timezone
 
-from cbok.bbx.models import ZSphereUpgradeState
+from cbok import exception as cbok_exception
 from cbok import utils as cbok_utils
+from cbok.bbx import exception
+from cbok.bbx.models import ZSphereUpgradeState
 from cbok.bbx.zsv import schema_repair
 
 
@@ -49,13 +51,13 @@ def _aware(dt):
 def _normalize_upgrade_type(value):
     upgrade_type = value.strip().lower()
     if upgrade_type not in UPGRADE_TYPES:
-        raise ValueError(f"upgrade_type must be one of: {', '.join(UPGRADE_TYPES)}")
+        raise cbok_exception.InvalidParam(f"upgrade_type must be one of: {', '.join(UPGRADE_TYPES)}")
     return upgrade_type
 
 
 def _required(value, name):
     if value is None or not str(value).strip():
-        raise ValueError(f"{name} is required")
+        raise cbok_exception.InvalidParam(f"{name} is required")
     return str(value).strip()
 
 
@@ -77,13 +79,13 @@ def _require_artifact_url(url):
         hostname = parsed.hostname
         port = parsed.port
     except ValueError:
-        raise ValueError("upgrade_url must be an absolute HTTP(S) URL with a host.") from None
+        raise cbok_exception.InvalidParam("upgrade_url must be an absolute HTTP(S) URL with a host.") from None
     if (parsed.scheme not in ("http", "https") or not hostname
             or port == 0 or any(char.isspace() for char in parsed.netloc)):
-        raise ValueError("upgrade_url must be an absolute HTTP(S) URL with a host.")
+        raise cbok_exception.InvalidParam("upgrade_url must be an absolute HTTP(S) URL with a host.")
     artifact_type = _artifact_type_from_url(url)
     if not artifact_type:
-        raise ValueError("upgrade_url must be an exact .iso or .bin file URL")
+        raise cbok_exception.InvalidParam("upgrade_url must be an exact .iso or .bin file URL")
     return artifact_type
 
 
@@ -104,24 +106,6 @@ def _dedupe(items):
 
 def _is_node_address(value):
     return bool(re.fullmatch(r"[A-Za-z0-9_.:-]+", value))
-
-
-class ZsvHostDiscoveryError(RuntimeError):
-    pass
-
-
-class ZsvAlreadyUpToDateError(RuntimeError):
-    pass
-
-
-class ZsvArtifactMetadataError(RuntimeError):
-    pass
-
-
-class ZsvSshConnectionError(RuntimeError):
-    def __init__(self, message, returncode):
-        super().__init__(message)
-        self.returncode = returncode
 
 
 def discover_management_nodes(address, runner):
@@ -147,14 +131,14 @@ def discover_healthy_kvm_host_nodes(address, runner):
     ])
     if getattr(result, "returncode", 1) != 0:
         details = (getattr(result, "stderr", "") or getattr(result, "stdout", "") or "").strip()
-        raise ZsvHostDiscoveryError(details or f"failed to discover healthy KVM hosts from {address}")
+        raise exception.ZsvHostDiscoveryError(details or f"failed to discover healthy KVM hosts from {address}")
     nodes = _dedupe([
         line.strip()
         for line in (result.stdout or "").splitlines()
         if line.strip() and _is_node_address(line.strip())
     ])
     if not nodes:
-        raise ZsvHostDiscoveryError(f"no healthy KVM hosts found from {address}")
+        raise exception.ZsvHostDiscoveryError(f"no healthy KVM hosts found from {address}")
     return nodes
 
 
@@ -218,7 +202,7 @@ class ZSphereTracker:
         if upgrade_type:
             requested_type = _normalize_upgrade_type(str(upgrade_type))
             if requested_type != self.upgrade_type:
-                raise ValueError(
+                raise cbok_exception.InvalidParam(
                     f"upgrade_url file type {self.upgrade_type} "
                     f"does not match upgrade_type {requested_type}")
         self.iso_url = self.upgrade_url
@@ -233,7 +217,7 @@ class ZSphereTracker:
             nodes = nodes.split(",")
         normalized = [node.strip() for node in nodes if node and node.strip()]
         if not normalized:
-            raise ValueError("at least one ZSphere node is required")
+            raise cbok_exception.InvalidParam("at least one ZSphere node is required")
         return normalized
 
     def get_state(self, persist_source=True):
@@ -273,17 +257,17 @@ class ZSphereTracker:
             error_response = getattr(exc, "response", None)
             status = (f" (HTTP {error_response.status_code})"
                       if error_response is not None else "")
-            raise ZsvArtifactMetadataError(
+            raise exception.ZsvArtifactMetadataError(
                 f"Unable to check upgrade package metadata{status}: {artifact_name}.") from exc
         last_modified = response.headers.get("Last-Modified")
         if not last_modified:
-            raise ZsvArtifactMetadataError(
+            raise exception.ZsvArtifactMetadataError(
                 f"Unable to check upgrade package metadata (missing Last-Modified): "
                 f"{artifact_name}.")
         try:
             modified_at = _aware(parsedate_to_datetime(last_modified))
         except (TypeError, ValueError) as exc:
-            raise ZsvArtifactMetadataError(
+            raise exception.ZsvArtifactMetadataError(
                 f"Unable to check upgrade package metadata (invalid Last-Modified): "
                 f"{artifact_name}.") from exc
         return IsoInfo(
@@ -407,7 +391,7 @@ class ZSphereTracker:
     def upgrade(self, command):
         iso, state, needs_upgrade, _new_iso_detected = self.check(persist_state=False)
         if not needs_upgrade:
-            raise ZsvAlreadyUpToDateError(f"Already up to date: {iso.name}.")
+            raise exception.ZsvAlreadyUpToDateError(f"Already up to date: {iso.name}.")
         self.resolve_upgrade_nodes()
 
         if not self.discovered_nodes:
@@ -422,7 +406,7 @@ class ZSphereTracker:
                     )
                     if match:
                         reason = match.group(1).strip().rstrip(".")
-                        raise ZsvSshConnectionError(
+                        raise exception.ZsvSshConnectionError(
                             f"SSH connection to primary node {self.primary_node} "
                             f"failed: {reason}.", result.returncode)
                 return result.returncode, iso, state

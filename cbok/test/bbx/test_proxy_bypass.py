@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 from cbok.bbx import proxy_bypass
+from cbok.bbx import exception
 from cbok.cmd import bbx
 from cbok.conf import config as cbok_config
 
@@ -62,7 +63,7 @@ class ProxyBypassConfigTest(unittest.TestCase):
         )
 
     def test_read_bypass_domains_requires_proxy_option(self):
-        with self.assertRaisesRegex(proxy_bypass.ProxyBypassError, "bypass_domains"):
+        with self.assertRaisesRegex(exception.ProxyBypassError, "bypass_domains"):
             proxy_bypass.read_bypass_domains(_conf())
 
 
@@ -123,7 +124,7 @@ class ProxyBypassApplyTest(unittest.TestCase):
             },
         ])
 
-        with self.assertRaisesRegex(proxy_bypass.ProxyBypassError, "not a Wi-Fi service"):
+        with self.assertRaisesRegex(exception.ProxyBypassError, "not a Wi-Fi service"):
             proxy_bypass.apply_bypass_domains(["*.local"], runner=runner)
 
     def test_apply_bypass_domains_only_uses_current_wifi_service(self):

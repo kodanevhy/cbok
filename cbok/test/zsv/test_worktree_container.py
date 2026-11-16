@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from cbok import exception
 from cbok.bbx.zsv import worktree_container
 
 
@@ -90,7 +91,7 @@ class WorktreeContainerTest(unittest.TestCase):
     def test_old_repository_labels_are_rejected(self):
         self.assertEqual(("zsvirt", "zsvirt-ee", "zsvirt-utility", "zstack-store"), worktree_container.PR_REPOS)
         for repo in ("zstack", "premium", "zstack-utility"):
-            with self.subTest(repo=repo), self.assertRaises(ValueError):
+            with self.subTest(repo=repo), self.assertRaisesRegex(exception.InvalidParam, r"Invalid --pr-url repo"):
                 worktree_container.parse_worktree_pr_refs(repo + "=https://example.test/mr/1")
 
     def test_parse_worktree_pr_refs_validates_repo_prefixed_urls(self):
@@ -123,9 +124,9 @@ class WorktreeContainerTest(unittest.TestCase):
             ),
             refs,
         )
-        with self.assertRaises(ValueError):
+        with self.assertRaises(exception.InvalidParam):
             worktree_container.parse_worktree_pr_refs("utility=https://example.test/pr/1")
-        with self.assertRaises(ValueError):
+        with self.assertRaises(exception.InvalidParam):
             worktree_container.parse_worktree_pr_refs("badrepo=https://example.test/pr/1")
 
     def test_full_compile_runs_once_per_worktree_state(self):
