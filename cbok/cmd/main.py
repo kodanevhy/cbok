@@ -118,6 +118,7 @@ def main():
 
     from cbok import __version__
     from cbok.cmd import base
+    from cbok.cmd import alert
     from cbok.cmd import bbx
     from cbok.cmd import foundation
     from cbok.cmd import zsv
@@ -129,6 +130,7 @@ def main():
 
     CATEGORIES = {
         "default": base.DefaultCommands,
+        "alert": alert.AlertCommands,
         "bin": bbx.BinCommands,
         "openstack": bbx.OpenStackCommands,
         "foundation": foundation.FoundationCommands,

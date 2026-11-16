@@ -1,0 +1,25 @@
+# Import after `cbok alert register`; contains no live recipients or credentials.
+# Enable and configure each optional feature deliberately.
+
+[[notification_channels]]
+key = "admin-email"
+kind = "email"
+enabled = false
+config = { to = [], timeout = 30 }
+
+[[sources]]
+key = "tencent"
+kind = "web"
+adapter = "tencent"
+notification_channels = ["admin-email"]
+config = { timeout = 10, trust_env = false }
+
+[[model_profiles]]
+key = "local-model"
+backend = "openai_compatible"
+model = "replace-with-installed-model"
+base_url = "http://127.0.0.1:8000/v1"
+api_key_env = "CBOK_ALERT_MODEL_API_KEY"
+timeout = 30
+enabled = false
+options = { response_format = { type = "json_object" } }
