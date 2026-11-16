@@ -96,10 +96,11 @@ def applications():
     return install_apps
 
 
-def locate_project_path(ide, company, name):
+def locate_project_path(company, name):
     workspace = settings.Workspace
+    editor = settings.CONF.get("default", "editor").strip()
 
-    def _all_ides():
+    def _all_editors():
         base = workspace
         return [
             _name for _name in os.listdir(base)
@@ -107,16 +108,16 @@ def locate_project_path(ide, company, name):
         ]
 
     def _all_companies():
-        _base = str(os.path.join(workspace, ide))
+        _base = str(os.path.join(workspace, editor))
         return [
             _name for _name in os.listdir(_base)
             if os.path.isdir(os.path.join(_base, _name))
         ]
 
-    if ide not in _all_ides() or company not in _all_companies():
+    if editor not in _all_editors() or company not in _all_companies():
         raise exception.CannotLocateProject()
 
-    return os.path.join(workspace, ide, company, name)
+    return os.path.join(workspace, editor, company, name)
 
 
 def execute(cmd, cwd=None):

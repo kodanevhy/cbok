@@ -1,5 +1,5 @@
 import argparse
-from cbok.conf.config import ALL_GROUPS
+from cbok.conf import config
 from cbok.conf.generator import ConfigGenerator
 
 parser = argparse.ArgumentParser(
@@ -15,10 +15,15 @@ parser.add_argument(
     action="store_true",
     help="Overwrite existing config file without prompt"
 )
+parser.add_argument(
+    "--editor",
+    help="Editor directory for managed projects",
+)
 
 args = parser.parse_args()
 
-ConfigGenerator(ALL_GROUPS).generate(
+ConfigGenerator(config.ALL_GROUPS).generate(
     args.output,
-    force=args.force
+    force=args.force,
+    overrides={("default", "editor"): args.editor} if args.editor is not None else None,
 )
