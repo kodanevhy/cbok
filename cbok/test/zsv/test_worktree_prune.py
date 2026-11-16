@@ -4,18 +4,18 @@ import os
 import subprocess
 import tempfile
 import unittest
-from dataclasses import dataclass
+import dataclasses
 
 from cbok.bbx.zsv import worktree_prune
 
 
-@dataclass
+@dataclasses.dataclass
 class FakePrRef:
     repo: str
     pr_url: str
 
 
-@dataclass
+@dataclasses.dataclass
 class FakeRecord:
     worktree_key: str
     zsvirt_root: str

@@ -1,4 +1,4 @@
-from cbok.test.django_setup import setup_django_for_tests
+from cbok.test import django_setup
 
 
-setup_django_for_tests()
+django_setup.setup_django_for_tests()

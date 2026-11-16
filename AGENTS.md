@@ -33,6 +33,13 @@
 - 远端命令、部署命令、会修改环境状态的命令应有前置校验、明确日志和失败返回码，避免静默部分成功。
 - 新增命令后至少做一次最小验证：`cbok <category> <command> --help` 可用；有实际逻辑的命令补充相应单元测试或可复现的手动验证说明。
 
+## Python 导入
+
+- 导入模块或包，通过限定名调用函数，例如 `from cbok.cmd import output`
+  和 `output.fail(...)`。不要写 `from cbok.cmd.output import fail`。
+- 该规则也适用于标准库、第三方依赖和测试；类、类型和常量可以直接导入。
+  测试 mock 对应模块上的函数。
+
 ## 异常归档
 
 - CBoK 自己定义或主动抛出的业务异常必须在 `exception.py` 中分类归档。

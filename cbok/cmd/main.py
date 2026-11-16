@@ -122,7 +122,7 @@ def main():
     from cbok.cmd import foundation
     from cbok.cmd import zsv
     from cbok.cmd.base import BaseCommand
-    from cbok.cmd.output import fail
+    from cbok.cmd import output
     from cbok import utils as cbok_utils
 
     LOG = logging.getLogger(__name__)
@@ -196,9 +196,12 @@ def main():
             sys.exit(return_code)
     except subprocess.SubprocessError as exc:
         if isinstance(exc, subprocess.CalledProcessError):
-            fail("Shell command failed (exit code %s)."
-                 % exc.returncode, exit_code=exc.returncode or 1, exc_info=True)
+            output.fail(
+                "Shell command failed (exit code %s)." % exc.returncode,
+                exit_code=exc.returncode or 1,
+                exc_info=True,
+            )
         else:
-            fail("Shell command failed.", exc_info=True)
+            output.fail("Shell command failed.", exc_info=True)
     except Exception as exc:
-        fail(str(exc) or "Command failed", exc_info=True)
+        output.fail(str(exc) or "Command failed", exc_info=True)

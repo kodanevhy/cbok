@@ -1,12 +1,11 @@
-from dataclasses import dataclass
+import dataclasses
 from datetime import datetime
-from email.utils import parsedate_to_datetime
+from email import utils as email_utils
 import logging
 import os
 import re
 import shlex
-from urllib.parse import unquote
-from urllib.parse import urlparse
+from urllib import parse
 
 import requests
 
@@ -32,7 +31,7 @@ HTTP_HEADERS = {
 }
 
 
-@dataclass
+@dataclasses.dataclass
 class IsoInfo:
     name: str
     download_url: str
@@ -66,7 +65,7 @@ def _artifact_extension(upgrade_type):
 
 
 def _artifact_type_from_url(url):
-    path = unquote(urlparse(url).path).lower()
+    path = parse.unquote(parse.urlparse(url).path).lower()
     for upgrade_type in UPGRADE_TYPES:
         if path.endswith(_artifact_extension(upgrade_type)):
             return upgrade_type
@@ -75,7 +74,7 @@ def _artifact_type_from_url(url):
 
 def _require_artifact_url(url):
     try:
-        parsed = urlparse(url)
+        parsed = parse.urlparse(url)
         hostname = parsed.hostname
         port = parsed.port
     except ValueError:
@@ -90,7 +89,7 @@ def _require_artifact_url(url):
 
 
 def _artifact_name_from_url(url):
-    return os.path.basename(unquote(urlparse(url).path))
+    return os.path.basename(parse.unquote(parse.urlparse(url).path))
 
 
 def _dedupe(items):
@@ -265,7 +264,7 @@ class ZSphereTracker:
                 f"Unable to check upgrade package metadata (missing Last-Modified): "
                 f"{artifact_name}.")
         try:
-            modified_at = _aware(parsedate_to_datetime(last_modified))
+            modified_at = _aware(email_utils.parsedate_to_datetime(last_modified))
         except (TypeError, ValueError) as exc:
             raise exception.ZsvArtifactMetadataError(
                 f"Unable to check upgrade package metadata (invalid Last-Modified): "

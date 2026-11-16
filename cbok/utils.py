@@ -1,5 +1,5 @@
 import configparser
-from contextlib import contextmanager
+import contextlib
 import logging
 import os
 from pathlib import Path
@@ -134,7 +134,7 @@ def execute(cmd, cwd=None):
     return result
 
 
-@contextmanager
+@contextlib.contextmanager
 def suppress_logs(package, level=logging.ERROR):
     logger = logging.getLogger(package)
     old_level = logger.level

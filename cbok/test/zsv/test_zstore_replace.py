@@ -2,7 +2,7 @@ import os
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest import mock
 
 from cbok.bbx.zsv import base_ref, zstore_replace
 
@@ -18,7 +18,7 @@ class FakeRunner:
 
 class ZstoreReplaceTest(unittest.TestCase):
     def setUp(self):
-        rebase_patch = patch.object(base_ref, "rebase_worktree", return_value=True)
+        rebase_patch = mock.patch.object(base_ref, "rebase_worktree", return_value=True)
         self.rebase_worktree = rebase_patch.start()
         self.addCleanup(rebase_patch.stop)
 
@@ -37,7 +37,7 @@ class ZstoreReplaceTest(unittest.TestCase):
                 self.assertEqual(os.path.realpath(root), str(build_root))
                 return 0
 
-            with patch.object(zstore_replace, "_build", side_effect=build):
+            with mock.patch.object(zstore_replace, "_build", side_effect=build):
                 rc = zstore_replace.run_zstore_replace_flow(
                     root, ["192.0.2.1", "192.0.2.2"], runner)
 
@@ -51,8 +51,8 @@ class ZstoreReplaceTest(unittest.TestCase):
         self.rebase_worktree.return_value = False
         with tempfile.TemporaryDirectory() as root:
             os.makedirs(os.path.join(root, "src/image-store"))
-            with patch.object(zstore_replace, "_build") as build, \
-                    patch.object(zstore_replace, "_deploy_node") as deploy:
+            with mock.patch.object(zstore_replace, "_build") as build, \
+                    mock.patch.object(zstore_replace, "_deploy_node") as deploy:
                 rc = zstore_replace.run_zstore_replace_flow(root, ["192.0.2.1"], runner)
             self.rebase_worktree.assert_called_once_with(os.path.realpath(root))
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import dataclasses
 import logging
 import os
 from pathlib import Path
@@ -20,7 +20,7 @@ MANUAL_REPAIR_SKILL = "cbok-zsv-upgrade-db-repair"
 ARTIFACT_PRECHECK_MARKER = "__CBOK_ZSV_SCHEMA_PRECHECK__"
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class AppliedMigration:
     version: str
     version_rank: int
@@ -28,7 +28,7 @@ class AppliedMigration:
     script: str
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class ChecksumMismatch:
     version: str
     applied_checksum: int

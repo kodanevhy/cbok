@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import hashlib
 import logging
 import os
 import shlex
 import subprocess
-from dataclasses import asdict
-from dataclasses import dataclass
 
 from django.apps import apps
 from django.utils import timezone
@@ -57,13 +56,13 @@ RSYNC_EXCLUDES = (
 PR_REPOS = ("zsvirt", "zsvirt-ee", "zsvirt-utility", "zstack-store")
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class WorktreePullRequest:
     repo: str
     pr_url: str
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class WorktreeContainerSpec:
     zsvirt_root: str
     docker_host: str
@@ -79,7 +78,7 @@ class WorktreeContainerSpec:
     min_free_gb: int = DEFAULT_MIN_FREE_GB
 
 
-@dataclass
+@dataclasses.dataclass
 class WorktreeContainerRecord:
     worktree_key: str
     zsvirt_root: str
@@ -100,7 +99,7 @@ class WorktreeContainerRecord:
     last_error: str = ""
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class WorktreeContainerHandle:
     worktree_key: str
     container_name: str
@@ -114,7 +113,7 @@ class WorktreeContainerHandle:
 class DjangoWorktreeContainerStore:
     def get_or_create(self, defaults: WorktreeContainerRecord):
         pr_refs = tuple(defaults.pr_refs or ())
-        values = asdict(defaults)
+        values = dataclasses.asdict(defaults)
         key = values.pop("worktree_key")
         values.pop("pr_refs", None)
         obj, created = ZsvWorktreeContainerState.objects.get_or_create(

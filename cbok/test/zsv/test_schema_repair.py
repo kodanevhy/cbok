@@ -33,7 +33,7 @@ if "django" not in sys.modules:
 from cbok.bbx.zsv.service import IsoInfo
 from cbok.bbx.zsv.service import ZSphereTracker
 from cbok.bbx.zsv import service as zsv_service
-from cbok.cmd.zsv import _upgrade_command
+from cbok.cmd import zsv
 from cbok.cmd.zsv import ZSphereCommands
 
 
@@ -438,7 +438,7 @@ class SchemaRepairTest(unittest.TestCase):
         )
         tracker.nodes = ["172.26.213.50", "172.26.213.51"]
 
-        command = _upgrade_command(tracker)
+        command = zsv._upgrade_command(tracker)
 
         self.assertNotIn("--nodes", command)
         self.assertNotIn("--upgrade-type", command)
@@ -454,7 +454,7 @@ class SchemaRepairTest(unittest.TestCase):
             runner=FakeRunner(),
         )
 
-        command = _upgrade_command(tracker)
+        command = zsv._upgrade_command(tracker)
 
         self.assertNotIn("--db-file", command)
 

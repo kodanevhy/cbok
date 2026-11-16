@@ -1,4 +1,4 @@
-from urllib.parse import urlparse
+from urllib import parse
 
 from bs4 import BeautifulSoup
 import logging
@@ -59,7 +59,7 @@ class BaseCrawler(object):
 
     def _is_domestic_domain(self, url):
         try:
-            host = urlparse(url).netloc or ""
+            host = parse.urlparse(url).netloc or ""
             if not host:
                 return False
             ext = tldextract.extract(host)

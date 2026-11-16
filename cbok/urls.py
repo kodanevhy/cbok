@@ -10,17 +10,17 @@ Class-based views
     1. Add an import:  from other_app.views import Home
     2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
 Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+    1. Import the URL module: from django import urls
+    2. Add a URL to urlpatterns: urls.path('blog/', urls.include('blog.urls'))
 """
-from django.urls import re_path, include
+from django import urls
 
 from cbok import views
 
 
 urlpatterns = [
-    re_path(r'^csrf/', views.CSRFView.as_view()),
-    re_path(r'^bbx/', include('cbok.bbx.urls')),
-    re_path(r'^user/', include('cbok.user.urls')),
-    re_path(r'^alert/', include('cbok.alert.urls'))
+    urls.re_path(r'^csrf/', views.CSRFView.as_view()),
+    urls.re_path(r'^bbx/', urls.include('cbok.bbx.urls')),
+    urls.re_path(r'^user/', urls.include('cbok.user.urls')),
+    urls.re_path(r'^alert/', urls.include('cbok.alert.urls'))
 ]

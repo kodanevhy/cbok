@@ -1,8 +1,8 @@
-from django.template.loader import render_to_string
+from django.template import loader
 
 
 def render_email_template(
     template: str,
     context: dict,
 ) -> str:
-    return render_to_string(template, context)
+    return loader.render_to_string(template, context)

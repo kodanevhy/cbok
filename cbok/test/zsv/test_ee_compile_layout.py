@@ -1,10 +1,11 @@
+import dataclasses
 import subprocess
 import tempfile
 import unittest
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest import mock
+from unittest.mock import Mock
 
 from cbok.bbx.zsv import compile, worktree_container
 from cbok.test.zsv.test_worktree_container import FakeRunner, FakeWorktreeContainerStore
@@ -28,8 +29,8 @@ class EeCompileLayoutTest(unittest.TestCase):
     def test_container_key_identifies_both_repositories(self):
         spec = self.spec()
         key = worktree_container.worktree_key_for_spec(spec)
-        self.assertNotEqual(key, worktree_container.worktree_key_for_spec(replace(spec, ee_root='/other/ee')))
-        self.assertNotEqual(key, worktree_container.worktree_key_for_spec(replace(spec, zsvirt_root='/other/main')))
+        self.assertNotEqual(key, worktree_container.worktree_key_for_spec(dataclasses.replace(spec, ee_root='/other/ee')))
+        self.assertNotEqual(key, worktree_container.worktree_key_for_spec(dataclasses.replace(spec, zsvirt_root='/other/main')))
         self.assertIn('./runMavenProfile ee', worktree_container.full_compile_script(spec))
 
     def test_main_archive_keeps_builtin_premium_and_excludes_external_ee(self):
@@ -104,13 +105,13 @@ class EeCompileLayoutTest(unittest.TestCase):
         self.assertFalse(hasattr(handle, "work_premium"))
         self.assertEqual('/work/zsvirt/zsvirt-ee', handle.work_ee)
         self.assertNotEqual(worktree_container.worktree_key_for_spec(spec),
-                            worktree_container.worktree_key_for_spec(replace(spec, ee_root='/repo/other-ee')))
+                            worktree_container.worktree_key_for_spec(dataclasses.replace(spec, ee_root='/repo/other-ee')))
 
         obj = SimpleNamespace(save=Mock())
         manager = Mock()
         manager.get_or_create.return_value = (obj, False)
         manager.filter.return_value.first.return_value = obj
-        with patch.object(compile.ZsvCompileState, 'objects', manager):
+        with mock.patch.object(compile.ZsvCompileState, 'objects', manager):
             db = compile.DjangoCompileDeployStateStore()
             selection = compile.CompileDeploySelection(['premium/mevoco'], ['zvf'], [])
             db.save_selection('key', spec.zsvirt_root, spec.ee_root, selection)

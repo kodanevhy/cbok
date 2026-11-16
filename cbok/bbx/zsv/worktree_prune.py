@@ -7,8 +7,7 @@ import subprocess
 from cbok.bbx.models import ZsvCompileState
 from cbok.bbx.models import ZsvWorktreeContainerPullRequest
 from cbok.bbx.models import ZsvWorktreeContainerState
-from cbok.bbx.zsv.worktree_container import docker_shell_capture
-from cbok.bbx.zsv.worktree_container import normalize_docker_host
+from cbok.bbx.zsv import worktree_container
 from cbok.bbx.zsv.worktree_container import PR_REPOS
 
 
@@ -66,9 +65,9 @@ class DjangoPruneContainerStore:
 
 
 def _records_for_docker_host(records, docker_host: str):
-    expected_host = normalize_docker_host(docker_host)
+    expected_host = worktree_container.normalize_docker_host(docker_host)
     for record in records:
-        record_host = normalize_docker_host(record.docker_host)
+        record_host = worktree_container.normalize_docker_host(record.docker_host)
         if expected_host and record_host != expected_host:
             continue
         yield record
@@ -80,7 +79,7 @@ def _print_container_record(record) -> None:
     print(f"  zsvirt branch: {_branch_label(record.zsvirt_root)}")
     print(f"  ee: {record.ee_root or '-'}")
     print(f"  ee branch: {_branch_label(record.ee_root)}")
-    print(f"  docker: {normalize_docker_host(record.docker_host) or 'local'}")
+    print(f"  docker: {worktree_container.normalize_docker_host(record.docker_host) or 'local'}")
     print(f"  m2 volume: {record.m2_volume or '-'}")
     pr_refs = getattr(record, "pr_refs", []) or []
     urls_by_repo = {repo: [] for repo in PR_REPOS}
@@ -133,7 +132,7 @@ def _output(result) -> str:
 
 
 def _docker_remove_container(runner, docker_host: str, container_name: str) -> int:
-    result = docker_shell_capture(runner, docker_host, ["rm", "-f", container_name])
+    result = worktree_container.docker_shell_capture(runner, docker_host, ["rm", "-f", container_name])
     if _returncode(result) == 0:
         return 0
     text = _output(result)
@@ -146,7 +145,7 @@ def _docker_remove_container(runner, docker_host: str, container_name: str) -> i
 def _docker_remove_volume(runner, docker_host: str, volume: str) -> int:
     if not volume:
         return 0
-    result = docker_shell_capture(runner, docker_host, ["volume", "rm", volume])
+    result = worktree_container.docker_shell_capture(runner, docker_host, ["volume", "rm", volume])
     if _returncode(result) == 0:
         return 0
     text = _output(result)
@@ -160,7 +159,7 @@ def _print_delete_target(record) -> None:
     print(f"DELETE {record.container_name}")
     print(f"  zsvirt: {record.zsvirt_root}")
     print(f"  ee: {record.ee_root or '-'}")
-    print(f"  docker: {normalize_docker_host(record.docker_host) or 'local'}")
+    print(f"  docker: {worktree_container.normalize_docker_host(record.docker_host) or 'local'}")
     print(f"  m2 volume: {record.m2_volume or '-'}")
 
 

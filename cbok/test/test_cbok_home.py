@@ -2,7 +2,7 @@ import configparser
 import io
 import tempfile
 import unittest
-from contextlib import redirect_stderr
+import contextlib
 from pathlib import Path
 from unittest import mock
 
@@ -29,7 +29,7 @@ class CbokHomeTest(unittest.TestCase):
             stderr = io.StringIO()
             with mock.patch.dict("os.environ", {"CBOK_HOME": ""}), \
                     mock.patch.object(settings, "Workspace", temp), \
-                    redirect_stderr(stderr), self.assertRaises(SystemExit) as caught:
+                    contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as caught:
                 utils.assert_cbok_home()
 
             self.assertEqual(1, caught.exception.code)
@@ -47,7 +47,7 @@ class CbokHomeTest(unittest.TestCase):
             home = Path(temp) / "missing"
             stderr = io.StringIO()
             with mock.patch.dict("os.environ", {"CBOK_HOME": str(home)}), \
-                    redirect_stderr(stderr), self.assertRaises(SystemExit) as caught:
+                    contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as caught:
                 utils.assert_cbok_home()
 
             self.assertEqual(1, caught.exception.code)
