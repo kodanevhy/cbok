@@ -1,0 +1,11 @@
+{
+  "bin": {"company": null, "deprecated": false},
+  "c": {"company": null, "deprecated": false},
+  "chrome_plugins": {"company": "es", "deprecated": true},
+  "kernel": {"company": null, "deprecated": false},
+  "nginx": {"company": null, "deprecated": false},
+  "openstack": {"company": null, "deprecated": false},
+  "proxy": {"company": null, "deprecated": false},
+  "virt_devel": {"company": null, "deprecated": false},
+  "zsv": {"company": "zs", "deprecated": false}
+}
