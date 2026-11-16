@@ -20,5 +20,4 @@
 
 KnownIssue (low priority):
     1.Adaptation on Windows/Linux
-    2.Shell output capture exactly
-    3.The files locate which git ignored
+    2.The files locate which git ignored
