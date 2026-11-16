@@ -5,7 +5,7 @@ from pathlib import Path
 import shlex
 import subprocess
 
-from cbok.bbx.zsv.config import zsv_base_ref
+from cbok.bbx.zsv import config as zsv_config
 
 
 LOG = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ def remote_base_ref_fetch_spec(
 
 
 def sync_base_ref(repo_root: str, git_runner=_git) -> bool:
-    base_ref = zsv_base_ref()
+    base_ref = zsv_config.zsv_base_ref()
     if not base_ref:
         return True
 
@@ -64,7 +64,7 @@ def sync_base_ref(repo_root: str, git_runner=_git) -> bool:
 
 
 def rebase_worktree(repo_root: str) -> bool:
-    base_ref = zsv_base_ref()
+    base_ref = zsv_config.zsv_base_ref()
     if not base_ref:
         LOG.error("ZSV base_ref is not configured; set [zsv] base_ref in cbok.conf.")
         return False

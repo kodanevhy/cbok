@@ -3,7 +3,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest import mock
 
 from cbok.bbx.zsv import agent_replace, base_ref
 
@@ -20,10 +20,10 @@ class FakeRunner:
 class AgentReplaceFlowTest(unittest.TestCase):
     def setUp(self):
         self.repo = tempfile.mkdtemp()
-        rebase_patch = patch.object(base_ref, "rebase_worktree", return_value=True)
+        rebase_patch = mock.patch.object(base_ref, "rebase_worktree", return_value=True)
         self.rebase_worktree = rebase_patch.start()
         self.addCleanup(rebase_patch.stop)
-        clean_patch = patch.object(base_ref, "check_worktree_clean", return_value=True)
+        clean_patch = mock.patch.object(base_ref, "check_worktree_clean", return_value=True)
         self.check_worktree_clean = clean_patch.start()
         self.addCleanup(clean_patch.stop)
 
@@ -79,8 +79,8 @@ class AgentReplaceFlowTest(unittest.TestCase):
     def test_dirty_dry_run_stops_before_preview_without_rebasing(self):
         self.check_worktree_clean.return_value = False
         runner = FakeRunner()
-        with patch.object(agent_replace, "discover_changed_files") as discover, \
-                patch.object(agent_replace, "print_plan") as preview:
+        with mock.patch.object(agent_replace, "discover_changed_files") as discover, \
+                mock.patch.object(agent_replace, "print_plan") as preview:
             rc = agent_replace.run_agent_replace_flow(
                 utility_root=self.repo, nodes="192.0.2.1", dry_run=True, runner=runner,
             )
@@ -116,8 +116,8 @@ class AgentReplaceFlowTest(unittest.TestCase):
             return make_archive(files)
 
         self.rebase_worktree.side_effect = rebase
-        with patch.object(agent_replace, "discover_changed_files", side_effect=discover), \
-                patch.object(agent_replace, "create_agent_archive", side_effect=archive):
+        with mock.patch.object(agent_replace, "discover_changed_files", side_effect=discover), \
+                mock.patch.object(agent_replace, "create_agent_archive", side_effect=archive):
             rc = agent_replace.run_agent_replace_flow(
                 utility_root=self.repo, nodes="192.0.2.1", runner=FakeRunner(),
                 state_store=agent_replace.InMemoryAgentReplaceStateStore(),
@@ -130,8 +130,8 @@ class AgentReplaceFlowTest(unittest.TestCase):
     def test_rebase_failure_stops_before_discovery_archive_or_remote_commands(self):
         self.rebase_worktree.return_value = False
         runner = FakeRunner()
-        with patch.object(agent_replace, "discover_changed_files") as discover, \
-                patch.object(agent_replace, "create_agent_archive") as archive:
+        with mock.patch.object(agent_replace, "discover_changed_files") as discover, \
+                mock.patch.object(agent_replace, "create_agent_archive") as archive:
             rc = agent_replace.run_agent_replace_flow(
                 utility_root=self.repo, nodes="192.0.2.1", runner=runner,
             )
@@ -235,7 +235,7 @@ class AgentReplaceFlowTest(unittest.TestCase):
 
         captured = []
         runner = FakeRunner()
-        with patch.object(agent_replace, "create_agent_archive", side_effect=self.capture_archive_files(captured)):
+        with mock.patch.object(agent_replace, "create_agent_archive", side_effect=self.capture_archive_files(captured)):
             rc = agent_replace.run_agent_replace_flow(
                 utility_root=self.repo,
                 nodes="172.26.53.17",
@@ -259,7 +259,7 @@ class AgentReplaceFlowTest(unittest.TestCase):
 
         captured = []
         runner = FakeRunner()
-        with patch.object(agent_replace, "create_agent_archive", side_effect=self.capture_archive_files(captured)):
+        with mock.patch.object(agent_replace, "create_agent_archive", side_effect=self.capture_archive_files(captured)):
             rc = agent_replace.run_agent_replace_flow(
                 utility_root=self.repo,
                 nodes="172.26.53.17",

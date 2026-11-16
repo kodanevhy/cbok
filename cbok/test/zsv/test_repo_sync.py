@@ -1,5 +1,5 @@
 import configparser
-from contextlib import redirect_stdout
+import contextlib
 import io
 import subprocess
 import tempfile
@@ -11,9 +11,8 @@ from cbok import settings
 from cbok.bbx import exception
 from cbok.bbx.zsv import config as zsv_config
 from cbok.bbx.zsv import repo_sync
-from cbok.bbx.zsv.repo_sync import sync_repositories
 from cbok.cmd.zsv import ZSphereCommands
-from cbok.conf.files import read_cbok_conf
+from cbok.conf import files
 
 
 def git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -106,7 +105,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             git(seed, "push", "upstream", "main")
 
             with mock.patch.object(repo_sync, "_git", wraps=repo_sync._git) as run_git:
-                results = sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                results = repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertNotEqual(before, upstream_head)
             self.assertEqual(upstream_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
@@ -125,7 +124,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             git(child_seed, "push", "upstream", "main")
 
             with mock.patch.object(repo_sync, "_git", wraps=repo_sync._git) as run_git:
-                results = sync_repositories(workspace, ("utility:main",))
+                results = repo_sync.sync_repositories(workspace, ("utility:main",))
 
             self.assertEqual([("utility", "main", upstream_head)], results)
             self.assertEqual(upstream_head, git(submodule, "rev-parse", "HEAD").stdout.strip())
@@ -143,7 +142,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             (second / "dirty.txt").write_text("local work", encoding="utf-8")
 
             with self.assertRaisesRegex(exception.RepositorySyncError, "zsvirt-ee.*uncommitted"):
-                sync_repositories(
+                repo_sync.sync_repositories(
                     root / "zstack-workspace",
                     ("zsvirt:main", "zsvirt-ee:main"),
                 )
@@ -160,7 +159,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
                 exception.RepositorySyncError,
                 "zsvirt.*local commits or diverged",
             ):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual(local_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
 
@@ -176,7 +175,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
                 git(seed, "push", "upstream", "main")
 
             with self.assertRaisesRegex(exception.RepositorySyncError, "zsvirt-ee.*diverged"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main", "zsvirt-ee:main"))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main", "zsvirt-ee:main"))
 
             self.assertEqual(first_before, git(first, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual(second_before, git(second, "rev-parse", "HEAD").stdout.strip())
@@ -200,7 +199,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             self.assertEqual("", git(second, "status", "--porcelain").stdout)
 
             with self.assertRaisesRegex(exception.RepositorySyncError, "zsvirt-ee.*unfinished Git operation"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main", "zsvirt-ee:main"))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main", "zsvirt-ee:main"))
 
             self.assertEqual(first_before, git(first, "rev-parse", "HEAD").stdout.strip())
 
@@ -212,7 +211,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             before = git(checkout, "rev-parse", "HEAD").stdout.strip()
 
             with self.assertRaisesRegex(exception.RepositorySyncError, "remote get-url upstream failed"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual(before, git(checkout, "rev-parse", "HEAD").stdout.strip())
 
@@ -224,7 +223,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             before = git(checkout, "rev-parse", "HEAD").stdout.strip()
 
             with self.assertRaisesRegex(exception.RepositorySyncError, "upstream.*missing.*failed"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:missing",))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:missing",))
 
             self.assertEqual(before, git(checkout, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual("local-only-branch", git(checkout, "branch", "--show-current").stdout.strip())
@@ -246,7 +245,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             for names, message in cases:
                 with self.subTest(names=names):
                     with self.assertRaisesRegex(exception.RepositorySyncError, message):
-                        sync_repositories(Path(td), names)
+                        repo_sync.sync_repositories(Path(td), names)
 
     def test_fast_forward_refuses_to_overwrite_ignored_files(self):
         with tempfile.TemporaryDirectory() as td:
@@ -262,7 +261,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
                 git(seed, "push", "upstream", "main")
 
             with self.assertRaisesRegex(exception.RepositorySyncError, r"(?s)zsvirt-ee: git .*merge .*local\.conf"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main", "zsvirt-ee:main"))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main", "zsvirt-ee:main"))
 
             self.assertEqual("local-only settings", (second / "local.conf").read_text())
             self.assertEqual(first_target, git(first, "rev-parse", "HEAD").stdout.strip())
@@ -295,7 +294,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
                     with self.assertRaisesRegex(
                         exception.RepositorySyncError, "changed while preparing|uncommitted|local commits",
                     ):
-                        sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                        repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
                 self.assertEqual(changed_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
                 if change == "branch":
@@ -315,7 +314,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             (checkout / "local.txt").write_text("local work", encoding="utf-8")
 
             with self.assertRaisesRegex(exception.RepositorySyncError, "uncommitted"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual(before, git(checkout, "rev-parse", "HEAD").stdout.strip())
 
@@ -331,7 +330,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             (sequencer / "todo").write_text(f"pick {before} initial\n", encoding="utf-8")
 
             with self.assertRaisesRegex(exception.RepositorySyncError, "unfinished Git operation"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual(before, git(checkout, "rev-parse", "HEAD").stdout.strip())
 
@@ -358,7 +357,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             target = commit_file(seed, "update gitlink")
             git(seed, "push", "upstream", "main")
 
-            self.assertEqual([("zsvirt", "main", target)], sync_repositories(root / "zstack-workspace", ("zsvirt:main",)))
+            self.assertEqual([("zsvirt", "main", target)], repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",)))
 
             self.assertEqual(before, git(child, "rev-parse", "origin/main").stdout.strip())
 
@@ -384,11 +383,11 @@ class ZsvRepoSyncTest(unittest.TestCase):
             with conf_path.open("w", encoding="utf-8") as stream:
                 parser.write(stream)
             settings.Workspace = str(root)
-            zsv_config.settings.CONF = read_cbok_conf(conf_path)
+            zsv_config.settings.CONF = files.read_cbok_conf(conf_path)
 
             command = ZSphereCommands()
             output = io.StringIO()
-            with redirect_stdout(output):
+            with contextlib.redirect_stdout(output):
                 self.assertEqual(0, command.sync_repos())
             self.assertEqual(upstream_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual(premium_head, git(premium, "rev-parse", "HEAD").stdout.strip())
@@ -417,8 +416,8 @@ class ZsvRepoSyncTest(unittest.TestCase):
                 "zsv": {"sync_repos": "zsvirt:main"},
             })
 
-            with mock.patch("cbok.cmd.zsv.sync_repositories", return_value=[]) as sync, \
-                    redirect_stdout(io.StringIO()):
+            with mock.patch.object(repo_sync, "sync_repositories", return_value=[]) as sync, \
+                    contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(0, ZSphereCommands().sync_repos())
 
             sync.assert_called_once_with(str(workspace), ("zsvirt:main",))
@@ -434,7 +433,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
 
             self.assertEqual(
                 [("zsvirt", "main", upstream_head)],
-                sync_repositories(root / "zstack-workspace", ("zsvirt : main",)),
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt : main",)),
             )
 
             self.assertEqual("main", git(checkout, "branch", "--show-current").stdout.strip())
@@ -449,7 +448,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             upstream_head = commit_file(seed, "release baseline")
             git(seed, "push", "upstream", "release/5.2")
 
-            sync_repositories(root / "zstack-workspace", ("zsvirt:release/5.2",))
+            repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:release/5.2",))
 
             self.assertEqual("release/5.2", git(checkout, "branch", "--show-current").stdout.strip())
             self.assertEqual(upstream_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
@@ -468,7 +467,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
 
             self.assertEqual(
                 [("zsvirt", "main", first_head), ("premium", "5.5.48", second_head)],
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main", "premium:5.5.48")),
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main", "premium:5.5.48")),
             )
 
             self.assertEqual("main", git(first, "branch", "--show-current").stdout.strip())
@@ -484,7 +483,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             release_head = commit_file(seed, "release update")
             git(seed, "push", "upstream", "release")
 
-            sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+            repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual(main_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual(release_head, git(checkout, "rev-parse", "upstream/release").stdout.strip())
@@ -502,7 +501,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             git(second, "worktree", "add", str(root / "other"), "main")
 
             with self.assertRaisesRegex(exception.RepositorySyncError, "premium.*another worktree"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main", "premium:main"))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main", "premium:main"))
 
             self.assertEqual(first_before, git(first, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual("development", git(second, "branch", "--show-current").stdout.strip())
@@ -525,7 +524,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             git(seed, "push", "upstream", "main")
 
             with self.assertRaisesRegex(exception.RepositorySyncError, r"(?s)zsvirt: git checkout .*local\.conf"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual(development_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual("local-only settings", (checkout / "local.conf").read_text())
@@ -541,7 +540,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             before = git(checkout, "rev-parse", "HEAD").stdout.strip()
 
             with self.assertRaisesRegex(exception.RepositorySyncError, "upstream/release.*failed"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:release",))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:release",))
 
             self.assertEqual(before, git(checkout, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual("main", git(checkout, "branch", "--show-current").stdout.strip())
@@ -564,7 +563,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
 
             with mock.patch.object(repo_sync, "_git", side_effect=fetch_then_move_target):
                 with self.assertRaisesRegex(exception.RepositorySyncError, "changed while preparing"):
-                    sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                    repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual("development", git(checkout, "branch", "--show-current").stdout.strip())
             self.assertEqual(development_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
@@ -579,7 +578,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             development_head = commit_file(checkout, "local feature")
 
             with self.assertRaisesRegex(exception.RepositorySyncError, "configured branch main.*local commits"):
-                sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual("development", git(checkout, "branch", "--show-current").stdout.strip())
             self.assertEqual(development_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
@@ -603,7 +602,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
 
             with mock.patch.object(repo_sync, "_git", side_effect=checkout_then_change):
                 with self.assertRaisesRegex(exception.RepositorySyncError, "uncommitted"):
-                    sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                    repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual(before, git(checkout, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual("concurrent work", (checkout / "local.txt").read_text())
@@ -617,7 +616,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             upstream_head = commit_file(seed, "latest baseline")
             git(seed, "push", "upstream", "main")
 
-            sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+            repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual("refs/heads/main", git(checkout, "symbolic-ref", "HEAD").stdout.strip())
             self.assertEqual(upstream_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
@@ -638,7 +637,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
             upstream_head = commit_file(seed, "latest baseline")
             git(seed, "push", "upstream", "main")
 
-            sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+            repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
             self.assertEqual(upstream_head, git(checkout, "rev-parse", "HEAD").stdout.strip())
             self.assertEqual(development_head, git(checkout, "rev-parse", "development").stdout.strip())
@@ -676,7 +675,7 @@ class ZsvRepoSyncTest(unittest.TestCase):
 
                 with mock.patch.object(repo_sync, "_git", side_effect=checkout_then_change_submodule):
                     with self.assertRaisesRegex(exception.RepositorySyncError, "uncommitted"):
-                        sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
+                        repo_sync.sync_repositories(root / "zstack-workspace", ("zsvirt:main",))
 
                 self.assertEqual(before, git(checkout, "rev-parse", "HEAD").stdout.strip())
                 self.assertEqual(child_head, git(child, "rev-parse", "HEAD").stdout.strip())

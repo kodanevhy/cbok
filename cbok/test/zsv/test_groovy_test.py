@@ -8,10 +8,12 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest import mock
 
 from cbok.bbx import exception
+from cbok.bbx.zsv import base_ref
 from cbok.bbx.zsv import compile as compile_module
+from cbok.bbx.zsv import config as zsv_config
 from cbok.bbx.zsv import groovy_test
 from cbok.bbx.zsv import worktree_container
 
@@ -77,21 +79,27 @@ class FakeWorktreeContainerStore:
 
 class GroovyContainerTest(unittest.TestCase):
     def setUp(self):
-        for name, value in (("check_worktree_clean", True), ("sync_base_ref", True), ("rebase_worktree", True), ("zsv_base_ref", "origin/main")):
-            mocked = patch.object(groovy_test, name, return_value=value)
-            mocked.start()
-            self.addCleanup(mocked.stop)
+        self._base_ref_patches = [
+            mock.patch.object(base_ref, name, return_value=True)
+            for name in ("check_worktree_clean", "sync_base_ref", "rebase_worktree")
+        ]
+        for patcher in self._base_ref_patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        config_patch = mock.patch.object(zsv_config, "zsv_base_ref", return_value="origin/main")
+        config_patch.start()
+        self.addCleanup(config_patch.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self._orig_default_state_store = worktree_container.default_state_store
         self._worktree_store = FakeWorktreeContainerStore()
         worktree_container.default_state_store = lambda: self._worktree_store
         self.addCleanup(self._restore_state_store)
-        self._orig_remote_docker_compile_from_conf = groovy_test.remote_docker_compile_from_conf
+        self._orig_remote_docker_compile_from_conf = compile_module.remote_docker_compile_from_conf
         self.addCleanup(self._restore_compile_conf)
-        self._orig_validate_changed_paths_base_ref = groovy_test.validate_changed_paths_base_ref
+        self._orig_validate_changed_paths_base_ref = compile_module.validate_changed_paths_base_ref
         self.addCleanup(self._restore_base_ref_validation)
-        groovy_test.remote_docker_compile_from_conf = lambda _container_name="": groovy_test.RemoteDockerCompileConfig(
+        compile_module.remote_docker_compile_from_conf = lambda _container_name="": groovy_test.RemoteDockerCompileConfig(
             image="compile-image:unit",
             platform="linux/amd64",
             docker_host="",
@@ -99,7 +107,7 @@ class GroovyContainerTest(unittest.TestCase):
             container_name="",
             m2_volume="zsv-m2",
         )
-        groovy_test.validate_changed_paths_base_ref = lambda _root: True
+        compile_module.validate_changed_paths_base_ref = lambda _root: True
         self.root = Path(self.tmp.name)
         self.zsvirt_repo = self.root / "source-zsvirt"
         self.ee_repo = self.root / "source-ee"
@@ -111,10 +119,10 @@ class GroovyContainerTest(unittest.TestCase):
         worktree_container.default_state_store = self._orig_default_state_store
 
     def _restore_compile_conf(self):
-        groovy_test.remote_docker_compile_from_conf = self._orig_remote_docker_compile_from_conf
+        compile_module.remote_docker_compile_from_conf = self._orig_remote_docker_compile_from_conf
 
     def _restore_base_ref_validation(self):
-        groovy_test.validate_changed_paths_base_ref = self._orig_validate_changed_paths_base_ref
+        compile_module.validate_changed_paths_base_ref = self._orig_validate_changed_paths_base_ref
 
     def _write_minimal_repo_sources(self):
         (self.zsvirt_repo / "tests/testlib-simple").mkdir(parents=True)
@@ -433,20 +441,20 @@ class GroovyContainerTest(unittest.TestCase):
         events = []
         runner = FakeRunner()
         work_root = self.root / "run"
-        with patch.object(groovy_test, "check_worktree_clean", side_effect=lambda root: events.append(("check", root)) or True), \
-                patch.object(groovy_test, "sync_base_ref", side_effect=lambda root: events.append(("fetch", root)) or True), \
-                patch.object(groovy_test, "rebase_worktree", side_effect=lambda root: events.append(("rebase", root)) or True), \
-                patch.object(groovy_test, "_reset_test_worktree", side_effect=lambda *args: events.append(("reset", str(args[1]))) or 0), \
-                patch.object(groovy_test, "ensure_worktree_container", side_effect=lambda *args, **kwargs: (events.append(("container", "")) or (1, None))):
+        with mock.patch.object(base_ref, "check_worktree_clean", side_effect=lambda root: events.append(("check", root)) or True), \
+                mock.patch.object(base_ref, "sync_base_ref", side_effect=lambda root: events.append(("fetch", root)) or True), \
+                mock.patch.object(base_ref, "rebase_worktree", side_effect=lambda root: events.append(("rebase", root)) or True), \
+                mock.patch.object(groovy_test, "_reset_test_worktree", side_effect=lambda *args: events.append(("reset", str(args[1]))) or 0), \
+                mock.patch.object(worktree_container, "ensure_worktree_container", side_effect=lambda *args, **kwargs: (events.append(("container", "")) or (1, None))):
             self.assertEqual(1, self._run_preparation_flow(runner, work_root))
         self.assertEqual(["check", "check", "fetch", "fetch", "rebase", "rebase", "reset", "reset", "container"], [e[0] for e in events])
         self.assertEqual([str((work_root / "zsvirt").resolve()), str((work_root / "zsvirt-ee").resolve())], [e[1] for e in events if e[0] == "rebase"])
 
     def test_rebase_failure_halts_before_reset_and_test_resolution(self):
-        with patch.object(groovy_test, "rebase_worktree", return_value=False), \
-                patch.object(groovy_test, "_reset_test_worktree") as reset, \
-                patch.object(groovy_test, "_resolve_test_target") as resolve, \
-                patch.object(groovy_test, "ensure_worktree_container", return_value=(1, None)) as container:
+        with mock.patch.object(base_ref, "rebase_worktree", return_value=False), \
+                mock.patch.object(groovy_test, "_reset_test_worktree") as reset, \
+                mock.patch.object(groovy_test, "_resolve_test_target") as resolve, \
+                mock.patch.object(worktree_container, "ensure_worktree_container", return_value=(1, None)) as container:
             self.assertEqual(1, self._run_preparation_flow(FakeRunner(), self.root / "run"))
         reset.assert_not_called()
         resolve.assert_not_called()
@@ -456,9 +464,9 @@ class GroovyContainerTest(unittest.TestCase):
         for clean_results in ([False], [True, False]):
             with self.subTest(clean_results=clean_results):
                 runner = FakeRunner()
-                with patch.object(groovy_test, "check_worktree_clean", side_effect=clean_results), \
-                        patch.object(groovy_test, "sync_base_ref") as fetch, \
-                        patch.object(groovy_test, "ensure_worktree_container", return_value=(1, None)) as container:
+                with mock.patch.object(base_ref, "check_worktree_clean", side_effect=clean_results), \
+                        mock.patch.object(base_ref, "sync_base_ref") as fetch, \
+                        mock.patch.object(worktree_container, "ensure_worktree_container", return_value=(1, None)) as container:
                     self.assertEqual(1, self._run_preparation_flow(runner, self.root / "run"))
                 fetch.assert_not_called()
                 container.assert_not_called()
@@ -466,28 +474,29 @@ class GroovyContainerTest(unittest.TestCase):
 
     def test_fetch_failure_stops_before_worktree_creation(self):
         runner = FakeRunner()
-        with patch.object(groovy_test, "sync_base_ref", side_effect=[True, False]), \
-                patch.object(groovy_test, "rebase_worktree") as rebase:
+        with mock.patch.object(base_ref, "sync_base_ref", side_effect=[True, False]), \
+                mock.patch.object(base_ref, "rebase_worktree") as rebase:
             self.assertEqual(1, self._run_preparation_flow(runner, self.root / "run"))
         self.assertEqual([], runner.commands)
         rebase.assert_not_called()
 
     def test_missing_base_ref_rejects_even_existing_worktrees(self):
-        with patch.object(groovy_test, "zsv_base_ref", return_value=""), \
-                patch.object(groovy_test, "sync_base_ref") as fetch:
+        with mock.patch.object(zsv_config, "zsv_base_ref", return_value=""), \
+                mock.patch.object(base_ref, "sync_base_ref") as fetch:
             self.assertEqual(1, self._run_preparation_flow(FakeRunner(), self.root / "run"))
         fetch.assert_not_called()
 
     def test_successful_rebased_worktrees_are_reused(self):
         runner = FakeRunner()
-        with patch.object(groovy_test, "rebase_worktree", return_value=True) as rebase:
+        with mock.patch.object(base_ref, "rebase_worktree", return_value=True) as rebase:
             self.assertEqual(0, self._run_preparation_flow(runner, self.root / "run"))
             self.assertEqual(0, self._run_preparation_flow(runner, self.root / "run"))
         self.assertEqual(2, rebase.call_count)
         self.assertEqual(2, sum(cmd[3:5] == ["worktree", "add"] for cmd, _ in runner.commands))
 
     def test_local_git_refresh_rebase_reuse_and_upstream_change(self):
-        from cbok.bbx.zsv import base_ref
+        for patcher in self._base_ref_patches:
+            patcher.stop()
 
         class LocalGitRunner:
             def __init__(self):
@@ -536,11 +545,9 @@ class GroovyContainerTest(unittest.TestCase):
                 zsvirt_repo=str(self.zsvirt_repo), ee_repo=str(self.ee_repo),
                 work_root=str(work_root), runner=runner,
             )
-        with patch.object(base_ref, "zsv_base_ref", return_value="origin/main"), \
-                patch.object(groovy_test, "check_worktree_clean", side_effect=base_ref.check_worktree_clean), \
-                patch.object(groovy_test, "sync_base_ref", side_effect=base_ref.sync_base_ref) as fetch, \
-                patch.object(groovy_test, "rebase_worktree", side_effect=base_ref.rebase_worktree) as rebase, \
-                patch.object(groovy_test, "_resolve_test_target",
+        with mock.patch.object(base_ref, "sync_base_ref", wraps=base_ref.sync_base_ref) as fetch, \
+                mock.patch.object(base_ref, "rebase_worktree", wraps=base_ref.rebase_worktree) as rebase, \
+                mock.patch.object(groovy_test, "_resolve_test_target",
                              side_effect=exception.GroovyTestSetupError("stop before container")):
             for repo in (self.zsvirt_repo, self.ee_repo):
                 for kind in ("unstaged", "staged", "untracked"):
@@ -598,8 +605,8 @@ class GroovyContainerTest(unittest.TestCase):
             return ["storage/src/main/java/Probe.java", "premium/crypto/src/main/java/Probe.java",
                     "test/src/test/groovy/ProbeCase.groovy", "tests/test-simple/src/test/groovy/ProbeCase.groovy"]
 
-        with patch.object(compile_module, "changed_paths_from_worktree", side_effect=changed_paths), \
-                patch.object(compile_module, "changed_paths_from_head_commit", return_value=[]):
+        with mock.patch.object(compile_module, "changed_paths_from_worktree", side_effect=changed_paths), \
+                mock.patch.object(compile_module, "changed_paths_from_head_commit", return_value=[]):
             rc1 = groovy_test.run_groovy_test_flow(
                 zsvirt_branch="feature-zsvirt",
                 ee_branch="feature-ee",
@@ -629,8 +636,8 @@ class GroovyContainerTest(unittest.TestCase):
 
     def test_different_run_roots_reuse_source_worktree_container(self):
         runner = FakeRunner()
-        original_auto_detect = groovy_test.auto_detect_modules
-        groovy_test.auto_detect_modules = lambda _zsvirt, _ee, **_kwargs: (["premium/volumebackup"], ["rewrite-for-ee/core-ee"])
+        original_auto_detect = compile_module.auto_detect_modules
+        compile_module.auto_detect_modules = lambda _zsvirt, _ee, **_kwargs: (["premium/volumebackup"], ["rewrite-for-ee/core-ee"])
         try:
             rc1 = groovy_test.run_groovy_test_flow(
                 zsvirt_branch="feature-zsvirt",
@@ -651,7 +658,7 @@ class GroovyContainerTest(unittest.TestCase):
                 runner=runner,
             )
         finally:
-            groovy_test.auto_detect_modules = original_auto_detect
+            compile_module.auto_detect_modules = original_auto_detect
 
         self.assertEqual(0, rc1)
         self.assertEqual(0, rc2)
@@ -961,7 +968,7 @@ class GroovyContainerTest(unittest.TestCase):
         argv = ["--zsvirt-repo", str(self.zsvirt_repo), "--ee-repo", str(self.ee_repo),
                 "--zsvirt-branch", "zsv_5.2.0", "--ee-branch", "zsv_5.2.0",
                 "--test-class", "org.zstack.test.integration.core.MustPassCase"]
-        with patch.object(zsv, "run_groovy_test_flow", return_value=0) as run_flow:
+        with mock.patch.object(groovy_test, "run_groovy_test_flow", return_value=0) as run_flow:
             self.assertEqual(0, zsv.ZSphereCommands().groovy_test(**vars(parser.parse_args(argv))))
         self.assertNotIn("test_module", run_flow.call_args.kwargs)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):

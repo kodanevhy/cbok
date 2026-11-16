@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest import mock
 
 from cbok import exception
 from cbok.bbx.zsv import worktree_container
@@ -238,7 +238,7 @@ class WorktreeContainerTest(unittest.TestCase):
                     return ""
                 return heads[str(Path(root).resolve())]
 
-            with patch.object(worktree_container, "_git_head", side_effect=fake_git_head):
+            with mock.patch.object(worktree_container, "_git_head", side_effect=fake_git_head):
                 rc, first = worktree_container.ensure_worktree_container(
                     runner,
                     spec,

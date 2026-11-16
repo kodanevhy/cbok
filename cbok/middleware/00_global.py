@@ -1,6 +1,6 @@
 import re
 
-from django.urls import resolve
+from django import urls
 from django.utils.deprecation import MiddlewareMixin
 from oslo_utils import uuidutils
 
@@ -24,7 +24,7 @@ class GlobalMiddleware(MiddlewareMixin):
         return f'req-{uuid_str}'
 
     def process_request(self, request):
-        resolver = resolve(request.path_info)
+        resolver = urls.resolve(request.path_info)
         request.resolver_match = resolver
 
         request.request_id = self.generate_r_id()

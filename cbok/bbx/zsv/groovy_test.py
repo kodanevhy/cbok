@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -7,24 +8,16 @@ import re
 import shlex
 import shutil
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
 from cbok import utils as cbok_utils
 from cbok.bbx import exception
-from cbok.bbx.zsv.base_ref import check_worktree_clean, rebase_worktree, sync_base_ref
-from cbok.bbx.zsv.config import zsv_base_ref
+from cbok.bbx.zsv import base_ref as zsv_base_ref
+from cbok.bbx.zsv import compile as zsv_compile
+from cbok.bbx.zsv import config as zsv_config
+from cbok.bbx.zsv import worktree_container
 from cbok.bbx.zsv.compile import RemoteDockerCompileConfig
-from cbok.bbx.zsv.compile import _docker_env_prefix
-from cbok.bbx.zsv.compile import _docker_rm_container
-from cbok.bbx.zsv.compile import _docker_shell
-from cbok.bbx.zsv.compile import _normalize_docker_host
-from cbok.bbx.zsv.compile import auto_detect_modules
-from cbok.bbx.zsv.compile import maven_build_plan
-from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
-from cbok.bbx.zsv.compile import validate_changed_paths_base_ref
 from cbok.bbx.zsv.worktree_container import WorktreeContainerSpec
-from cbok.bbx.zsv.worktree_container import ensure_worktree_container
 
 
 LOG = logging.getLogger(__name__)
@@ -140,7 +133,7 @@ class ContainerEeGroovyTest extends TestEe {
 """
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class TestTarget:
     module: str
     mode: str
@@ -151,16 +144,16 @@ class TestTarget:
 
 
 def default_test_image() -> str:
-    image = remote_docker_compile_from_conf().image.strip()
+    image = zsv_compile.remote_docker_compile_from_conf().image.strip()
     return image or FALLBACK_IMAGE
 
 
 def default_test_platform() -> str:
-    return remote_docker_compile_from_conf().platform.strip()
+    return zsv_compile.remote_docker_compile_from_conf().platform.strip()
 
 
 def default_test_docker_host() -> str:
-    return remote_docker_compile_from_conf().docker_host.strip()
+    return zsv_compile.remote_docker_compile_from_conf().docker_host.strip()
 
 
 def _safe_run_id(raw: str | None = None) -> str:
@@ -802,17 +795,17 @@ git -C "$target_worktree" clean -fd >/dev/null
 
 
 def _incremental_compile_changed_modules(runner, docker_host: str, handle, work_zsvirt: Path, work_ee: Path) -> int:
-    if not validate_changed_paths_base_ref(str(work_zsvirt)):
+    if not zsv_compile.validate_changed_paths_base_ref(str(work_zsvirt)):
         return 1
-    if work_ee.is_dir() and not validate_changed_paths_base_ref(str(work_ee)):
+    if work_ee.is_dir() and not zsv_compile.validate_changed_paths_base_ref(str(work_ee)):
         return 1
 
-    main_mods, ee_mods = auto_detect_modules(
+    main_mods, ee_mods = zsv_compile.auto_detect_modules(
         str(work_zsvirt),
         str(work_ee),
         excluded_modules=GROOVY_TEST_AUTO_EXCLUDED_MODULES,
     )
-    plan = maven_build_plan(main_mods, ee_mods)
+    plan = zsv_compile.maven_build_plan(main_mods, ee_mods)
     if not plan.modules:
         return 0
 
@@ -827,7 +820,7 @@ set -euo pipefail
 cd {shlex.quote(handle.work_zsvirt)}
 {mvn_inner}
 """
-    return _docker_shell(
+    return zsv_compile._docker_shell(
         runner,
         docker_host,
         ["exec", handle.container_name, "bash", "-lc", script],
@@ -836,7 +829,7 @@ cd {shlex.quote(handle.work_zsvirt)}
 
 def _remove_container(runner, name: str, docker_host: str = "") -> None:
     if docker_host:
-        _docker_rm_container(runner, docker_host, name)
+        zsv_compile._docker_rm_container(runner, docker_host, name)
         return
     _run_shell(runner, f"docker rm -f {shlex.quote(name)} >/dev/null 2>&1 || true")
 
@@ -849,7 +842,7 @@ def _docker_cp_file_to_container(
         dest_file: str,
 ) -> int:
     command = (
-        f"{_docker_env_prefix(docker_host)}docker cp "
+        f"{zsv_compile._docker_env_prefix(docker_host)}docker cp "
         f"{shlex.quote(str(source_file))} "
         f"{shlex.quote(container_name)}:{shlex.quote(dest_file)}"
     )
@@ -859,7 +852,7 @@ def _docker_cp_file_to_container(
 def _docker_shell_capture(runner, docker_host: str, args: list[str]):
     command = "docker " + " ".join(shlex.quote(arg) for arg in args)
     return runner.run_command(
-        ["bash", "-lc", _docker_env_prefix(docker_host) + command],
+        ["bash", "-lc", zsv_compile._docker_env_prefix(docker_host) + command],
     )
 
 
@@ -907,7 +900,7 @@ def _docker_stream_archive_to_container(
     )
     script = (
         f"COPYFILE_DISABLE=1 tar -C {shlex.quote(str(source_dir))} {excludes} -czf - . | "
-        f"{_docker_env_prefix(docker_host)}docker exec -i "
+        f"{zsv_compile._docker_env_prefix(docker_host)}docker exec -i "
         f"{shlex.quote(container_name)} tar -xzf - -C {shlex.quote(dest_dir)}"
     )
     return _run_shell(runner, script)
@@ -938,7 +931,7 @@ def _run_remote_container_script(
         f"(bash {REMOTE_RUN_SCRIPT} >{REMOTE_RUN_LOG} 2>&1; "
         f"echo $? >{REMOTE_RUN_EXIT}) &"
     )
-    rc = _docker_shell(
+    rc = zsv_compile._docker_shell(
         runner,
         docker_host,
         ["exec", "-d", container_name, "bash", "-lc", launch],
@@ -1017,14 +1010,14 @@ def _run_remote_docker_test(
         create_cmd.extend(["-v", f"{m2_volume}:/var/maven/.m2"])
     create_cmd.extend([image, "sleep", "infinity"])
 
-    rc = _docker_shell(runner, docker_host, create_cmd)
+    rc = zsv_compile._docker_shell(runner, docker_host, create_cmd)
     if rc != 0:
         return rc
     try:
-        rc = _docker_shell(runner, docker_host, ["start", runner_container])
+        rc = zsv_compile._docker_shell(runner, docker_host, ["start", runner_container])
         if rc != 0:
             return rc
-        rc = _docker_shell(
+        rc = zsv_compile._docker_shell(
             runner,
             docker_host,
             [
@@ -1055,7 +1048,7 @@ def _run_remote_docker_test(
         )
         if rc != 0:
             return rc
-        rc = _docker_shell(
+        rc = zsv_compile._docker_shell(
             runner,
             docker_host,
             [
@@ -1132,16 +1125,16 @@ def run_groovy_test_flow(
         return 1
 
     runner = runner or cbok_utils.UnifiedProcessRunner()
-    base_ref = zsv_base_ref()
+    base_ref = zsv_config.zsv_base_ref()
     if not base_ref:
         LOG.error("Configure zsv.base_ref before running Groovy tests.")
         return 1
     for repo in (zsvirt_repo, ee_repo):
-        if not check_worktree_clean(repo):
+        if not zsv_base_ref.check_worktree_clean(repo):
             return 1
     # Refresh both repositories before resolving remote branch inputs.
     for repo in (zsvirt_repo, ee_repo):
-        if not sync_base_ref(repo):
+        if not zsv_base_ref.sync_base_ref(repo):
             return 1
     inputs = []
     for repo, ref in ((zsvirt_repo, zsvirt_branch), (ee_repo, ee_branch)):
@@ -1151,7 +1144,7 @@ def run_groovy_test_flow(
             LOG.error("Cannot resolve requested ref %s or base %s in %s", ref, base_ref, repo)
             return 1
         inputs.append({"repo": repo, "ref": ref, "source": source, "base_ref": base_ref, "base": base})
-    docker_conf = remote_docker_compile_from_conf()
+    docker_conf = zsv_compile.remote_docker_compile_from_conf()
     run_id = _safe_run_id(run_id or f"{zsvirt_branch}-{ee_branch}")
     if work_root:
         root = Path(os.path.realpath(work_root))
@@ -1167,7 +1160,7 @@ def run_groovy_test_flow(
     runner_container = f"cbok-zsv-groovy-{run_id}-runner"
     image = image or docker_conf.image.strip() or FALLBACK_IMAGE
     platform = docker_conf.platform.strip() if platform is None else platform
-    docker_host = _normalize_docker_host(docker_conf.docker_host if docker_host is None else docker_host)
+    docker_host = zsv_compile._normalize_docker_host(docker_conf.docker_host if docker_host is None else docker_host)
     if docker_host.lower() in ("none", "-", "disabled", "off", "false", "0"):
         docker_host = ""
     workdir = (docker_conf.workdir.strip() or DOCKER_WORK_ROOT).rstrip("/")
@@ -1204,7 +1197,7 @@ def run_groovy_test_flow(
             return rc
 
         for worktree in (work_zsvirt, work_ee):
-            if not rebase_worktree(str(worktree)):
+            if not zsv_base_ref.rebase_worktree(str(worktree)):
                 return 1
         # rebase fetches again; record the base actually used for the resulting HEAD.
         for item, worktree in zip(inputs, (work_zsvirt, work_ee)):
@@ -1248,7 +1241,7 @@ def run_groovy_test_flow(
         identity_ee_root=ee_repo,
         min_free_gb=docker_conf.min_free_gb,
     )
-    rc, handle = ensure_worktree_container(
+    rc, handle = worktree_container.ensure_worktree_container(
         runner,
         spec,
         require_full_compile=True,

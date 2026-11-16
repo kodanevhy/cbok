@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 import unittest
-from contextlib import redirect_stderr
+import contextlib
 from unittest import mock
 
 from cbok.cmd import main as cmd_main
@@ -61,7 +61,7 @@ class CommandLoggingTest(unittest.TestCase):
                 mock.patch("cbok.utils.assert_cbok_home", return_value=os.getcwd()), \
                 mock.patch("cbok.utils.discover_command_groups", return_value=groups), \
                 mock.patch.object(sys, "argv", argv), \
-                redirect_stderr(stderr):
+                contextlib.redirect_stderr(stderr):
             with self.assertRaises(SystemExit) as exited:
                 cmd_main.main()
         return exited.exception.code, stderr.getvalue(), file_output.getvalue()

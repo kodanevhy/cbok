@@ -21,22 +21,16 @@ from cbok.bbx.zsv.agent_replace import DEFAULT_KVM_VIRTUALENV
 from cbok.bbx.zsv.agent_replace import DEFAULT_SITE_PACKAGES
 from cbok.bbx.zsv.agent_replace import DEFAULT_ZBS_PRIMARY_SITE_PACKAGES
 from cbok.bbx.zsv.agent_replace import DEFAULT_ZBS_PRIMARY_VIRTUALENV
-from cbok.bbx.zsv.agent_replace import run_agent_replace_flow
+from cbok.bbx.zsv import agent_replace
 from cbok.bbx.zsv import ZSphereTracker
-from cbok.bbx.zsv.service import discover_ceph_primary_storage_nodes
-from cbok.bbx.zsv.service import discover_healthy_kvm_host_nodes
-from cbok.bbx.zsv.service import discover_imagestore_backup_storage_nodes
-from cbok.bbx.zsv.service import discover_management_nodes
-from cbok.bbx.zsv.service import discover_zbs_primary_storage_nodes
+from cbok.bbx.zsv import service
 from cbok.bbx.zsv.compile import DEFAULT_REMOTE_LIB
-from cbok.bbx.zsv.compile import remote_docker_compile_from_conf
-from cbok.bbx.zsv.compile import run_compile_flow
+from cbok.bbx.zsv import compile as zsv_compile
 from cbok.bbx.zsv import config as zsv_config
-from cbok.bbx.zsv.groovy_test import run_groovy_test_flow
-from cbok.bbx.zsv.repo_sync import sync_repositories
-from cbok.bbx.zsv.worktree_prune import list_worktree_container_prs
-from cbok.bbx.zsv.worktree_prune import prune_worktree_containers
-from cbok.bbx.zsv.zstore_replace import run_zstore_replace_flow
+from cbok.bbx.zsv import groovy_test
+from cbok.bbx.zsv import repo_sync
+from cbok.bbx.zsv import worktree_prune
+from cbok.bbx.zsv import zstore_replace
 from cbok.cmd import args
 from cbok.cmd import base
 from cbok.cmd import output
@@ -208,7 +202,7 @@ class ZSphereCommands(base.BaseCommand):
         if ensure_returncode != 0:
             output.fail(f"Shell command failed (exit code {ensure_returncode}).",
                         exit_code=ensure_returncode or 1)
-        nodes = discover_management_nodes(primary_node, self.p_runner)
+        nodes = service.discover_management_nodes(primary_node, self.p_runner)
         if not nodes:
             LOG.warning(
                 "No management nodes discovered from primary node %s; "
@@ -281,8 +275,8 @@ class ZSphereCommands(base.BaseCommand):
             if getattr(result, "returncode", 0) != 0:
                 return getattr(result, "returncode", 1) or 1
 
-            nodes = discover_management_nodes(primary_node, self.p_runner)
-            ceph_nodes = discover_ceph_primary_storage_nodes(primary_node, self.p_runner)
+            nodes = service.discover_management_nodes(primary_node, self.p_runner)
+            ceph_nodes = service.discover_ceph_primary_storage_nodes(primary_node, self.p_runner)
             if not nodes:
                 LOG.warning(
                     "No management nodes discovered from primary node %s; "
@@ -399,7 +393,7 @@ class ZSphereCommands(base.BaseCommand):
             res = self.ensure_remote_scriptlet(address)
             if getattr(res, "returncode", 0) != 0:
                 return getattr(res, "returncode", 1) or 1
-        return run_compile_flow(
+        return zsv_compile.run_compile_flow(
             address=address if deploy else None,
             remote_lib=_zsv_deploy_conf("remote_lib", DEFAULT_REMOTE_LIB),
             no_deploy=no_deploy,
@@ -459,7 +453,7 @@ class ZSphereCommands(base.BaseCommand):
     ):
         """Run a ZSvirt Groovy integration test in a reusable Docker container"""
         _log_zsv_base_ref()
-        return run_groovy_test_flow(
+        return groovy_test.run_groovy_test_flow(
             zsvirt_branch=zsvirt_branch,
             ee_branch=ee_branch,
             test_class=test_class,
@@ -477,7 +471,7 @@ class ZSphereCommands(base.BaseCommand):
     def sync_repos(self):
         """Check out and fast-forward configured ZSV repository branches from upstream"""
         zstack_workspace = cbok_utils.locate_project_path("zs", "zstack-workspace")
-        results = sync_repositories(zstack_workspace, zsv_config.zsv_sync_repos())
+        results = repo_sync.sync_repositories(zstack_workspace, zsv_config.zsv_sync_repos())
         for repository, branch, revision in results:
             LOG.info("Synchronized %s:%s to upstream at %s", repository, branch, revision)
         _print_repo_sync_results(results)
@@ -486,8 +480,8 @@ class ZSphereCommands(base.BaseCommand):
     @args.action_description("List reusable ZSV worktree containers and PR/MR links")
     def list_worktree_container_prs(self):
         """List reusable ZSV worktree containers and PR/MR links"""
-        return list_worktree_container_prs(
-            docker_host=remote_docker_compile_from_conf().docker_host,
+        return worktree_prune.list_worktree_container_prs(
+            docker_host=zsv_compile.remote_docker_compile_from_conf().docker_host,
         )
 
     @args.action_description("Delete selected reusable ZSV worktree containers")
@@ -508,11 +502,11 @@ class ZSphereCommands(base.BaseCommand):
     ):
         """Delete selected reusable ZSV worktree containers"""
         effective_dry_run = dry_run or not execute
-        return prune_worktree_containers(
+        return worktree_prune.prune_worktree_containers(
             self.p_runner,
             container_names=container_name or [],
             dry_run=effective_dry_run,
-            docker_host=remote_docker_compile_from_conf().docker_host,
+            docker_host=zsv_compile.remote_docker_compile_from_conf().docker_host,
         )
 
     @args.action_description(
@@ -544,16 +538,16 @@ class ZSphereCommands(base.BaseCommand):
             output.fail("replace_agent requires --primary-node.")
         if not utility_root:
             output.fail("replace_agent requires --utility-root.")
-        discovered = discover_management_nodes(primary_node, self.p_runner)
-        ceph_nodes = discover_ceph_primary_storage_nodes(primary_node, self.p_runner)
-        zbs_nodes = discover_zbs_primary_storage_nodes(primary_node, self.p_runner)
+        discovered = service.discover_management_nodes(primary_node, self.p_runner)
+        ceph_nodes = service.discover_ceph_primary_storage_nodes(primary_node, self.p_runner)
+        zbs_nodes = service.discover_zbs_primary_storage_nodes(primary_node, self.p_runner)
         nodes = list(discovered or [])
         if primary_node not in nodes:
             nodes.append(primary_node)
         target_nodes = ",".join(nodes)
         ceph_target_nodes = ",".join(ceph_nodes)
         zbs_target_nodes = ",".join(zbs_nodes)
-        return run_agent_replace_flow(
+        return agent_replace.run_agent_replace_flow(
             utility_root=utility_root,
             nodes=target_nodes,
             site_packages=_zsv_deploy_conf("site_packages", DEFAULT_SITE_PACKAGES),
@@ -592,12 +586,12 @@ class ZSphereCommands(base.BaseCommand):
         if not primary_node or not zstore_root:
             output.fail("replace_zstore requires --primary-node and --zstore-root.")
         try:
-            nodes = discover_healthy_kvm_host_nodes(primary_node, self.p_runner)
+            nodes = service.discover_healthy_kvm_host_nodes(primary_node, self.p_runner)
         except exception.ZsvHostDiscoveryError:
             output.fail("Failed to discover healthy KVM hosts.", exc_info=True)
-        bs_nodes = discover_imagestore_backup_storage_nodes(primary_node, self.p_runner)
+        bs_nodes = service.discover_imagestore_backup_storage_nodes(primary_node, self.p_runner)
         for node in bs_nodes:
             if node not in nodes:
                 nodes.append(node)
         LOG.info("zstore deploy targets: %s", ", ".join(nodes))
-        return run_zstore_replace_flow(zstore_root, nodes, self.p_runner)
+        return zstore_replace.run_zstore_replace_flow(zstore_root, nodes, self.p_runner)

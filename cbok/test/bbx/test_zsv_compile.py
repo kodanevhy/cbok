@@ -1,14 +1,14 @@
 import argparse
 import configparser
+import contextlib
 import io
 import os
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import call, patch
+from unittest import mock
 
 from cbok.bbx.zsv import compile
 from cbok.bbx.zsv import groovy_test
@@ -79,10 +79,10 @@ class ZsvCompileTest(unittest.TestCase):
         self._orig_collect_changed_web_classes_files = compile.collect_changed_web_classes_files
         self._orig_default_compile_state_store = compile.default_compile_deploy_state_store
         self._orig_default_state_store = worktree_container.default_state_store
-        rebase_patch = patch.object(compile.zsv_base_ref, "rebase_worktree", return_value=True)
+        rebase_patch = mock.patch.object(compile.zsv_base_ref, "rebase_worktree", return_value=True)
         self._rebase_worktree = rebase_patch.start()
         self.addCleanup(rebase_patch.stop)
-        clean_patch = patch.object(compile.zsv_base_ref, "check_worktree_clean", return_value=True)
+        clean_patch = mock.patch.object(compile.zsv_base_ref, "check_worktree_clean", return_value=True)
         self._check_worktree_clean = clean_patch.start()
         self.addCleanup(clean_patch.stop)
         self._worktree_store = FakeWorktreeContainerStore()
@@ -217,14 +217,14 @@ class ZsvCompileTest(unittest.TestCase):
         argv = ["--zsvirt-root", "/repo/zsvirt", "--ee-root", "/repo/zsvirt-ee", "--no-deploy",
                 "--web-class", "zsvirt:premium/conf/springConfigXml/crypto.xml",
                 "--web-class", "ee:conf/springConfigXml/ee/coreEe.xml"]
-        with patch.object(zsv, "run_compile_flow", return_value=0) as flow:
+        with mock.patch.object(compile, "run_compile_flow", return_value=0) as flow:
             self.assertEqual(0, zsv.ZSphereCommands().compile(**vars(parser.parse_args(argv))))
         self.assertEqual("/repo/zsvirt", flow.call_args.kwargs["zsvirt_root"])
         self.assertEqual("/repo/zsvirt-ee", flow.call_args.kwargs["ee_root"])
         self.assertEqual([argv[-3], argv[-1]], flow.call_args.kwargs["extra_web_classes"])
         self.assertTrue(flow.call_args.kwargs["no_deploy"])
         self.assertIsNone(flow.call_args.kwargs["address"])
-        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             parser.parse_args(["--zstack-root", "/repo/main", "--premium-root", "/repo/premium"])
 
     def test_run_compile_flow_defaults_to_worktree_container_name(self):
@@ -429,7 +429,7 @@ class ZsvCompileTest(unittest.TestCase):
             self._rebase_worktree.side_effect = rebase
             compile.auto_detect_modules = detect
             compile.git_summary = lambda repo: (heads[repo], heads[repo])
-            with patch.object(worktree_container, "_git_head", side_effect=lambda repo: heads[repo]):
+            with mock.patch.object(worktree_container, "_git_head", side_effect=lambda repo: heads[repo]):
                 rc = compile.run_compile_flow(
                     address=None, remote_lib=compile.DEFAULT_REMOTE_LIB, no_deploy=True,
                     zsvirt_root=roots[0], ee_root=roots[1], runner=FakeRunner(),
@@ -438,7 +438,7 @@ class ZsvCompileTest(unittest.TestCase):
             record = next(iter(self._worktree_store.records.values()))
             self.assertEqual("rebased-zsvirt", record.zsvirt_head)
             self.assertEqual("rebased-zsvirt-ee", record.ee_head)
-            self.assertEqual([call(roots[0]), call(roots[1])], self._rebase_worktree.call_args_list)
+            self.assertEqual([mock.call(roots[0]), mock.call(roots[1])], self._rebase_worktree.call_args_list)
 
     def test_dirty_ee_stops_before_rebasing_either_repo_or_running_docker(self):
         compile.settings.CONF = _conf(remote_docker_host="tcp://build:2375", base_ref="origin/main")
@@ -450,14 +450,14 @@ class ZsvCompileTest(unittest.TestCase):
             roots = [str(root.resolve()), str(ee.resolve())]
             self._check_worktree_clean.side_effect = lambda repo: repo != roots[1]
             runner = FakeRunner()
-            with patch.object(compile, "auto_detect_modules", return_value=([], [])) as detect:
+            with mock.patch.object(compile, "auto_detect_modules", return_value=([], [])) as detect:
                 rc = compile.run_compile_flow(
                     address=None, remote_lib=compile.DEFAULT_REMOTE_LIB, no_deploy=True,
                     zsvirt_root=roots[0], ee_root=roots[1], runner=runner,
                 )
 
         self.assertEqual(1, rc)
-        self.assertEqual([call(repo) for repo in roots], self._check_worktree_clean.call_args_list)
+        self.assertEqual([mock.call(repo) for repo in roots], self._check_worktree_clean.call_args_list)
         self._rebase_worktree.assert_not_called()
         detect.assert_not_called()
         self.assertEqual([], runner.calls)
@@ -475,15 +475,15 @@ class ZsvCompileTest(unittest.TestCase):
                     self._rebase_worktree.reset_mock()
                     self._rebase_worktree.side_effect = lambda repo: repo != failed_repo
                     runner = FakeRunner()
-                    with patch.object(compile, "auto_detect_modules", return_value=([], [])) as detect, \
-                            patch.object(compile, "run_mvn_in_remote_docker") as build:
+                    with mock.patch.object(compile, "auto_detect_modules", return_value=([], [])) as detect, \
+                            mock.patch.object(compile, "run_mvn_in_remote_docker") as build:
                         rc = compile.run_compile_flow(
                             address="192.0.2.1", remote_lib=compile.DEFAULT_REMOTE_LIB, no_deploy=False,
                             zsvirt_root=roots[0], ee_root=roots[1], runner=runner,
                         )
                     self.assertEqual(1, rc)
                     expected_roots = roots[:roots.index(failed_repo) + 1]
-                    self.assertEqual([call(repo) for repo in expected_roots], self._rebase_worktree.call_args_list)
+                    self.assertEqual([mock.call(repo) for repo in expected_roots], self._rebase_worktree.call_args_list)
                     detect.assert_not_called()
                     build.assert_not_called()
                     self.assertEqual([], runner.calls)
@@ -829,7 +829,7 @@ class ZsvCompileTest(unittest.TestCase):
             ]
 
             stdout = io.StringIO()
-            with redirect_stdout(stdout):
+            with contextlib.redirect_stdout(stdout):
                 rc = compile.run_compile_flow(
                     address=None,
                     remote_lib=compile.DEFAULT_REMOTE_LIB,
@@ -871,7 +871,7 @@ class ZsvCompileTest(unittest.TestCase):
             runner = FakeRunner()
 
             stdout = io.StringIO()
-            with redirect_stdout(stdout):
+            with contextlib.redirect_stdout(stdout):
                 rc = compile.run_compile_flow(
                     address="172.26.213.50",
                     remote_lib=compile.DEFAULT_REMOTE_LIB,

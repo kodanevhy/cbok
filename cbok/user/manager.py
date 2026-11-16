@@ -1,5 +1,4 @@
-from django.contrib.auth import authenticate
-from django.contrib.auth import login
+from django.contrib import auth
 
 from cbok.user import exception
 from cbok.user import models
@@ -29,7 +28,7 @@ class UserManager:
     def login(self, request, login_kwargs):
         username = login_kwargs['username']
         password = login_kwargs['password']
-        user = authenticate(request, username=username, password=password)
+        user = auth.authenticate(request, username=username, password=password)
 
         csrf = request.META.get('CSRF_COOKIE')
 
@@ -41,5 +40,5 @@ class UserManager:
             request.META['CSRF_COOKIE_USED'] = True
 
         if user and user.is_active:
-            login(request, user)
+            auth.login(request, user)
             _rollback_csrf_token()

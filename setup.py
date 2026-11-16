@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from setuptools import find_packages, setup
+import setuptools
 
 
 def _read_version():
@@ -12,10 +12,10 @@ def _read_version():
     return m.group(1)
 
 
-setup(
+setuptools.setup(
     name="CBoK",
     version=_read_version(),
-    packages=find_packages(),
+    packages=setuptools.find_packages(),
     package_data={"cbok.bbx": ["manifest.json"]},
     entry_points={
         'console_scripts': [

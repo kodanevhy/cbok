@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+import dataclasses
 import os
 from pathlib import Path
 import subprocess
@@ -8,7 +8,7 @@ import subprocess
 from cbok.bbx import exception
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class _Repository:
     name: str
     root: Path
@@ -18,7 +18,7 @@ class _Repository:
     current_head: str
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class _SyncPlan:
     repository: _Repository
     target: str
@@ -184,7 +184,7 @@ def sync_repositories(
                 "checkout", "--no-guess", "--no-recurse-submodules", "--no-overwrite-ignore",
                 *checkout_args,
             )
-            checked_out = replace(
+            checked_out = dataclasses.replace(
                 repository,
                 head=repository.head or plan.target,
                 current_branch=branch_ref,

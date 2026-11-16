@@ -113,7 +113,7 @@ class CommandFatalOutputTest(unittest.TestCase):
     def test_zsv_host_discovery_hides_remote_output(self):
         command = zsv.ZSphereCommands()
         with mock.patch.object(zsv, "_log_zsv_base_ref"), \
-                mock.patch.object(zsv, "discover_healthy_kvm_host_nodes",
+                mock.patch.object(zsv_service, "discover_healthy_kvm_host_nodes",
                                   side_effect=exception.ZsvHostDiscoveryError("private remote output")):
             stderr = io.StringIO()
             with self.assertLogs("cbok.cmd.output", level="ERROR") as logs:

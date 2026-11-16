@@ -3,9 +3,10 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest import mock
 
 from cbok.bbx.zsv import base_ref
+from cbok.bbx.zsv import config as zsv_config
 
 
 class RebaseWorktreeTest(unittest.TestCase):
@@ -25,7 +26,7 @@ class RebaseWorktreeTest(unittest.TestCase):
         self.git(root, "clone", str(self.origin), str(self.source))
         self.configure(self.source)
         self.git(self.source, "checkout", "-b", "feature")
-        config = patch.object(base_ref, "zsv_base_ref", return_value="origin/main")
+        config = mock.patch.object(zsv_config, "zsv_base_ref", return_value="origin/main")
         config.start()
         self.addCleanup(config.stop)
 
@@ -66,7 +67,7 @@ class RebaseWorktreeTest(unittest.TestCase):
         before_status = self.git(self.source, "status", "--porcelain").stdout
         before_index = self.git(self.source, "show", ":notes.txt").stdout
         before_content = (self.source / "notes.txt").read_text()
-        with patch.object(base_ref, "sync_base_ref", wraps=base_ref.sync_base_ref) as fetch:
+        with mock.patch.object(base_ref, "sync_base_ref", wraps=base_ref.sync_base_ref) as fetch:
             self.assertFalse(self.prepare())
             fetch.assert_not_called()
         self.assertEqual(before_head, self.git(self.source, "rev-parse", "HEAD").stdout)
@@ -117,5 +118,5 @@ class RebaseWorktreeTest(unittest.TestCase):
         self.assertEqual(previous_head, self.git(self.source, "rev-parse", "HEAD").stdout)
 
     def test_requires_configured_base_ref(self):
-        with patch.object(base_ref, "zsv_base_ref", return_value=""):
+        with mock.patch.object(zsv_config, "zsv_base_ref", return_value=""):
             self.assertFalse(self.prepare())

@@ -4,6 +4,7 @@ import subprocess
 import unittest
 from unittest import mock
 
+from cbok.bbx.zsv import service as zsv_service
 from cbok.cmd import zsv
 
 
@@ -16,7 +17,7 @@ class ZsvStatusOutputTest(unittest.TestCase):
         stdout = io.StringIO()
 
         with mock.patch.object(command, "ensure_remote_scriptlet", return_value=None), \
-                mock.patch.object(zsv, "discover_management_nodes", return_value=[
+                mock.patch.object(zsv_service, "discover_management_nodes", return_value=[
                     "192.0.2.10", "192.0.2.11"]), \
                 contextlib.redirect_stdout(stdout):
             result = command.status(primary_node="192.0.2.10")
@@ -75,7 +76,7 @@ class ZsvStatusOutputTest(unittest.TestCase):
 
                 with mock.patch.object(command, "ensure_remote_scriptlet",
                                        return_value=ensure_result), \
-                        mock.patch.object(zsv, "discover_management_nodes",
+                        mock.patch.object(zsv_service, "discover_management_nodes",
                                           return_value=["192.0.2.10"]) as discover, \
                         mock.patch.object(zsv.output, "LOG") as log, \
                         contextlib.redirect_stdout(stdout), \

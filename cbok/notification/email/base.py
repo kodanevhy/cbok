@@ -1,9 +1,10 @@
-from abc import ABC, abstractmethod
+import abc
+from abc import ABC
 from typing import List, Optional
 
 
 class BaseEmailService(ABC):
-    @abstractmethod
+    @abc.abstractmethod
     def send(
         self,
         subject: str,

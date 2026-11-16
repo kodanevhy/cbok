@@ -5,17 +5,17 @@ import runpy
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+import contextlib
 from pathlib import Path
 from unittest import mock
 
-from cbok.conf.files import read_cbok_conf, resolve_cbok_conf_path
+from cbok.conf import files
 
 
 class CbokConfFilesTest(unittest.TestCase):
     def test_resolve_cbok_conf_path_defaults_to_repo_root(self):
         with mock.patch.dict(os.environ, {}, clear=True):
-            path = resolve_cbok_conf_path("/repo/root")
+            path = files.resolve_cbok_conf_path("/repo/root")
 
         self.assertEqual("/repo/root/cbok.conf", path)
 
@@ -23,7 +23,7 @@ class CbokConfFilesTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             raw_path = os.path.join(tmpdir, "custom.conf")
             with mock.patch.dict(os.environ, {"CBOK_CONF": raw_path}):
-                path = resolve_cbok_conf_path("/repo/root")
+                path = files.resolve_cbok_conf_path("/repo/root")
 
         self.assertEqual(raw_path, path)
 
@@ -36,7 +36,7 @@ class CbokConfFilesTest(unittest.TestCase):
                     "CBOK_CONF": "$CBOK_CONF_DIR/../custom.conf",
                 },
             ):
-                path = resolve_cbok_conf_path("/repo/root")
+                path = files.resolve_cbok_conf_path("/repo/root")
 
         self.assertEqual(str(Path(tmpdir).parent / "custom.conf"), path)
 
@@ -46,7 +46,7 @@ class CbokConfFilesTest(unittest.TestCase):
             with open(conf_path, "w", encoding="utf-8") as fp:
                 fp.write("[default]\nworkspace = /tmp/cbok\n")
 
-            conf = read_cbok_conf(conf_path)
+            conf = files.read_cbok_conf(conf_path)
 
         self.assertEqual("/tmp/cbok", conf.get("default", "workspace"))
         self.assertEqual("Cursor", conf.get("default", "editor"))
@@ -57,7 +57,7 @@ class CbokConfFilesTest(unittest.TestCase):
             with self.subTest(editor=editor), tempfile.TemporaryDirectory() as temp:
                 conf_path = str(Path(temp) / "cbok.conf")
                 argv = [str(script), "--output", conf_path, *args]
-                with mock.patch.object(sys, "argv", argv), redirect_stdout(io.StringIO()):
+                with mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()):
                     runpy.run_path(str(script), run_name="__main__")
                 generated = configparser.ConfigParser()
                 generated.read(conf_path)

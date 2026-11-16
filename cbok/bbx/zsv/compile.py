@@ -4,6 +4,7 @@ ZSvirt: build changed modules from explicit main and zsvirt-ee worktree roots.
 from __future__ import annotations
 
 from collections.abc import Collection
+import dataclasses
 import hashlib
 import json
 import logging
@@ -16,7 +17,6 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
 from django.apps import apps
@@ -28,11 +28,9 @@ from cbok.bbx import exception
 from cbok.bbx.models import ZsvCompileState
 from cbok.bbx.zsv import base_ref as zsv_base_ref
 from cbok.bbx.zsv import config as zsv_config
+from cbok.bbx.zsv import worktree_container
 from cbok.bbx.zsv.worktree_container import DEFAULT_MIN_FREE_GB
 from cbok.bbx.zsv.worktree_container import WorktreeContainerSpec
-from cbok.bbx.zsv.worktree_container import ensure_worktree_container
-from cbok.bbx.zsv.worktree_container import parse_worktree_pr_refs
-from cbok.bbx.zsv.worktree_container import worktree_key_for_spec
 
 
 LOG = logging.getLogger(__name__)
@@ -59,13 +57,13 @@ RSYNC_SOURCE_EXCLUDES = "--exclude .git --exclude target --exclude '*/target' --
 SPRING_CONFIG_PREFIX = "conf/springConfigXml/"
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class MavenBuildPlan:
     modules: list[str]
     profiles: list[str]
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class RemoteDockerCompileConfig:
     image: str
     platform: str
@@ -76,27 +74,27 @@ class RemoteDockerCompileConfig:
     min_free_gb: int = DEFAULT_MIN_FREE_GB
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class WebClassesFile:
     source: str
     relative_path: str
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class CompileWebClassesState:
     repo: str
     source_relative_path: str
     relative_path: str
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class CompileDeploySelection:
     main_modules: list[str]
     ee_modules: list[str]
     web_classes: list[CompileWebClassesState]
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class JavaInterfaceChange:
     name: str
     package: str
@@ -224,7 +222,7 @@ def compile_worktree_key(
     ee_root: str | None,
     remote: RemoteDockerCompileConfig,
 ) -> str:
-    container_key = worktree_key_for_spec(
+    container_key = worktree_container.worktree_key_for_spec(
         _compile_worktree_spec(zsvirt_root, ee_root, remote)
     )
     base_ref = zsv_config.zsv_base_ref()
@@ -1118,7 +1116,7 @@ def run_mvn_in_remote_docker(
         ),
         pr_refs=pr_refs,
     )
-    rc, handle = ensure_worktree_container(
+    rc, handle = worktree_container.ensure_worktree_container(
         runner,
         spec,
         require_full_compile=True,
@@ -1291,7 +1289,7 @@ def run_compile_flow(
 
     remote_docker = remote_docker_compile_from_conf()
     try:
-        pr_refs = parse_worktree_pr_refs(pr_url or "")
+        pr_refs = worktree_container.parse_worktree_pr_refs(pr_url or "")
     except cbok_exception.InvalidParam as exc:
         LOG.error("%s", exc)
         return 1
