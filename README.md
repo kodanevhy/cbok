@@ -1,5 +1,9 @@
 # CBoK - Career Body of Knowledge
 
+## 架构文档
+
+- [Alert 架构](docs/alert/architecture.md)：现有话题流程、监控框架设计及通知扩展边界。
+
 # 安装依赖
 
 宿主机推荐安装Python 3.12.10，配置虚拟环境，在项目根目录执行如下命令。
